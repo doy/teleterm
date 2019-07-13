@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+message ListRequest {
+  // NEXT: 1
+}
+
+message ListResponse {
+  // NEXT: 1
+}
+
+message WatchRequest {
+  // NEXT: 1
+}
+
+message WatchProgress {
+  // NEXT: 1
+}
+
+service Termcast {
+  rpc List(ListRequest) returns (ListResponse) {}
+  rpc Watch(WatchRequest) returns  (stream WatchProgress) {}
+}

@@ -5,7 +5,9 @@ authors = ["Jesse Luehrs <doy@tozt.net>"]
 edition = "2018"
 
 [dependencies]
+clap = "2"
 grpc = "0.6"
+snafu = "0.4"
 
 [build-dependencies]
 protoc-rust-grpc = "0.6"

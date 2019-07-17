@@ -15,8 +15,3 @@ message WatchRequest {
 message WatchProgress {
   // NEXT: 1
 }
-
-service Termcast {
-  rpc List(ListRequest) returns (ListResponse) {}
-  rpc Watch(WatchRequest) returns  (stream WatchProgress) {}
-}

@@ -6,8 +6,8 @@ edition = "2018"
 
 [dependencies]
 clap = "2"
-grpc = "0.6"
+protobuf = "2"
 snafu = "0.4"
 
 [build-dependencies]
-protoc-rust-grpc = "0.6"
+protobuf-codegen-pure = "2"

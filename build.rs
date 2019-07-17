@@ -1,12 +1,11 @@
-extern crate protoc_rust_grpc;
-
 fn main() {
-    protoc_rust_grpc::run(protoc_rust_grpc::Args {
-        out_dir: "src",
-        includes: &["proto"],
+    protobuf_codegen_pure::run(protobuf_codegen_pure::Args {
+        out_dir: "src/pb",
         input: &["proto/termcast.proto"],
-        rust_protobuf: true,
-        ..Default::default()
+        includes: &["proto"],
+        customize: protobuf_codegen_pure::Customize {
+            ..Default::default()
+        },
     })
-    .expect("protoc_rust_grpc");
+    .expect("protobuf_codegen_pure");
 }

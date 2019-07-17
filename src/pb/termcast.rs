@@ -531,10 +531,9 @@ impl ::protobuf::reflect::ProtobufValue for WatchProgress {
 }
 
 static file_descriptor_proto_data: &'static [u8] = b"\
-    \n\x0etermcast.proto\"\r\n\x0bListRequest\"\x0e\n\x0cListResponse\"\x0e\
-    \n\x0cWatchRequest\"\x0f\n\rWatchProgress2]\n\x08Termcast\x12%\n\x04List\
-    \x12\x0c.ListRequest\x1a\r.ListResponse\"\0\x12*\n\x05Watch\x12\r.WatchR\
-    equest\x1a\x0e.WatchProgress\"\00\x01b\x06proto3\
+    \n\x0etermcast.proto\x12\0\"\x0f\n\x0bListRequest:\0\"\x10\n\x0cListResp\
+    onse:\0\"\x10\n\x0cWatchRequest:\0\"\x11\n\rWatchProgress:\0B\0b\x06prot\
+    o3\
 ";
 
 static mut file_descriptor_proto_lazy: ::protobuf::lazy::Lazy<::protobuf::descriptor::FileDescriptorProto> = ::protobuf::lazy::Lazy {

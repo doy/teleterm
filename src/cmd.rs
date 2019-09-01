@@ -26,8 +26,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 struct Command {
     name: &'static str,
-    cmd: &'static for<'a, 'b> Fn(clap::App<'a, 'b>) -> clap::App<'a, 'b>,
-    run: &'static for<'a> Fn(&clap::ArgMatches<'a>) -> Result<()>,
+    cmd: &'static dyn for<'a, 'b> Fn(clap::App<'a, 'b>) -> clap::App<'a, 'b>,
+    run: &'static dyn for<'a> Fn(&clap::ArgMatches<'a>) -> Result<()>,
 }
 
 const COMMANDS: &[Command] = &[

@@ -14,19 +14,30 @@ pub enum Error {
     #[snafu(display("invalid StartCasting message: {}", source))]
     ParseStartCastingMessage { source: std::string::FromUtf8Error },
 
+    #[snafu(display("invalid StartWatching message: {}", source))]
+    ParseStartWatchingMessage { source: std::string::FromUtf8Error },
+
     #[snafu(display("invalid message type: {}", ty))]
     InvalidMessageType { ty: u32 },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Debug)]
 pub enum Message {
     StartCasting { username: String },
+    StartWatching { username: String },
 }
 
 impl Message {
     pub fn start_casting(username: &str) -> Message {
         Message::StartCasting {
+            username: username.to_string(),
+        }
+    }
+
+    pub fn start_watching(username: &str) -> Message {
+        Message::StartWatching {
             username: username.to_string(),
         }
     }
@@ -96,6 +107,10 @@ impl From<&Message> for Packet {
                 ty: 0,
                 data: username.as_bytes().to_vec(),
             },
+            Message::StartWatching { username } => Packet {
+                ty: 1,
+                data: username.as_bytes().to_vec(),
+            },
         }
     }
 }
@@ -108,6 +123,10 @@ impl std::convert::TryFrom<Packet> for Message {
             0 => Ok(Message::StartCasting {
                 username: std::string::String::from_utf8(packet.data)
                     .context(ParseStartCastingMessage)?,
+            }),
+            1 => Ok(Message::StartWatching {
+                username: std::string::String::from_utf8(packet.data)
+                    .context(ParseStartWatchingMessage)?,
             }),
             _ => Err(Error::InvalidMessageType { ty: packet.ty }),
         }

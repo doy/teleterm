@@ -6,6 +6,9 @@ use std::convert::{TryFrom as _, TryInto as _};
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
     #[snafu(display("failed to read packet: {}", source))]
+    Read { source: std::io::Error },
+
+    #[snafu(display("failed to read packet: {}", source))]
     ReadAsync { source: tokio::io::Error },
 
     #[snafu(display("failed to write packet: {}", source))]
@@ -83,6 +86,10 @@ impl Message {
         Message::WatchSession { id: id.to_string() }
     }
 
+    pub fn read<R: std::io::Read>(r: R) -> Result<Self> {
+        Packet::read(r).and_then(|packet| Self::try_from(packet))
+    }
+
     pub fn read_async<R: tokio::io::AsyncRead>(
         r: R,
     ) -> impl futures::future::Future<Item = (Self, R), Error = Error> {
@@ -109,6 +116,20 @@ struct Packet {
 }
 
 impl Packet {
+    fn read<R: std::io::Read>(mut r: R) -> Result<Self> {
+        let mut header_buf = [0u8; std::mem::size_of::<u32>() * 2];
+        r.read_exact(&mut header_buf).context(Read)?;
+
+        let (len_buf, ty_buf) =
+            header_buf.split_at(std::mem::size_of::<u32>());
+        let len = u32::from_le_bytes(len_buf.try_into().unwrap());
+        let ty = u32::from_le_bytes(ty_buf.try_into().unwrap());
+        let mut data = vec![0u8; len.try_into().unwrap()];
+        r.read_exact(&mut data).context(Read)?;
+
+        Ok(Packet { ty, data })
+    }
+
     fn read_async<R: tokio::io::AsyncRead>(
         r: R,
     ) -> impl futures::future::Future<Item = (Self, R), Error = Error> {

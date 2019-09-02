@@ -184,9 +184,11 @@ impl From<&Message> for Packet {
             },
             Message::Sessions { ids } => {
                 let mut data = vec![];
-                data.extend_from_slice(&ids.len().to_le_bytes());
+                let len: u32 = ids.len().try_into().unwrap();
+                data.extend_from_slice(&len.to_le_bytes());
                 for id in ids {
-                    data.extend_from_slice(&id.len().to_le_bytes());
+                    let len: u32 = id.len().try_into().unwrap();
+                    data.extend_from_slice(&len.to_le_bytes());
                     data.extend_from_slice(&id.as_bytes());
                 }
                 Packet { ty: 5, data }

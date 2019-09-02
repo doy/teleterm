@@ -1,6 +1,7 @@
+use futures::future::Future as _;
+use futures::stream::Stream as _;
 use snafu::futures01::stream::StreamExt as _;
 use snafu::ResultExt as _;
-use tokio::prelude::*;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {

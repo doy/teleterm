@@ -146,6 +146,9 @@ struct ConnectionHandler {
                 > + Send,
         >,
     >,
+    in_progress_writes: Vec<
+        Box<dyn futures::future::Future<Item = Socket, Error = Error> + Send>,
+    >,
 }
 
 impl ConnectionHandler {
@@ -162,6 +165,7 @@ impl ConnectionHandler {
 
             sock_stream: Box::new(sock_stream),
             in_progress_reads: vec![],
+            in_progress_writes: vec![],
         }
     }
 
@@ -231,6 +235,46 @@ impl ConnectionHandler {
                         {
                             println!("disconnect");
                             self.in_progress_reads.swap_remove(i);
+                        } else {
+                            return Err(e);
+                        }
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        Ok(did_work)
+    }
+
+    fn poll_write(&mut self) -> Result<bool> {
+        let mut did_work = false;
+
+        let mut i = 0;
+        while i < self.in_progress_writes.len() {
+            match self.in_progress_writes[i].poll() {
+                Ok(futures::Async::Ready(sock)) => {
+                    self.in_progress_writes.swap_remove(i);
+                    self.socks.push(sock);
+                    did_work = true;
+                }
+                Ok(futures::Async::NotReady) => {
+                    i += 1;
+                }
+                Err(e) => {
+                    if let Error::ReadMessage {
+                        source:
+                            crate::protocol::Error::WriteAsync {
+                                source: ref tokio_err,
+                            },
+                    } = e
+                    {
+                        if tokio_err.kind()
+                            == tokio::io::ErrorKind::UnexpectedEof
+                        {
+                            println!("disconnect");
+                            self.in_progress_writes.swap_remove(i);
                         } else {
                             return Err(e);
                         }
@@ -328,6 +372,7 @@ impl futures::stream::Stream for ConnectionHandler {
             did_work |= self.poll_new_connections()?;
             did_work |= self.poll_readable()?;
             did_work |= self.poll_read()?;
+            did_work |= self.poll_write()?;
 
             if !did_work {
                 break;

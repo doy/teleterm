@@ -11,6 +11,9 @@ pub enum Error {
     #[snafu(display("failed to write packet: {}", source))]
     Write { source: std::io::Error },
 
+    #[snafu(display("failed to write packet: {}", source))]
+    WriteAsync { source: tokio::io::Error },
+
     #[snafu(display("invalid StartCasting message: {}", source))]
     ParseStartCastingMessage { source: std::string::FromUtf8Error },
 
@@ -91,6 +94,13 @@ impl Message {
     pub fn write<W: std::io::Write>(&self, w: W) -> Result<()> {
         Packet::from(self).write(w)
     }
+
+    pub fn write_async<W: tokio::io::AsyncWrite>(
+        &self,
+        w: W,
+    ) -> impl futures::future::Future<Item = W, Error = Error> {
+        Packet::from(self).write_async(w)
+    }
 }
 
 struct Packet {
@@ -125,6 +135,15 @@ impl Packet {
 
     fn write<W: std::io::Write>(&self, mut w: W) -> Result<()> {
         Ok(w.write_all(&self.as_bytes()).context(Write)?)
+    }
+
+    fn write_async<W: tokio::io::AsyncWrite>(
+        &self,
+        w: W,
+    ) -> impl futures::future::Future<Item = W, Error = Error> {
+        tokio::io::write_all(w, self.as_bytes())
+            .map(|(w, _)| w)
+            .context(WriteAsync)
     }
 
     fn as_bytes(&self) -> Vec<u8> {

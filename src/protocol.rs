@@ -44,8 +44,10 @@ impl Message {
 
     pub fn read_async<R: tokio::io::AsyncRead>(
         r: R,
-    ) -> impl futures::future::Future<Item = Self, Error = Error> {
-        Packet::read_async(r).and_then(Self::try_from)
+    ) -> impl futures::future::Future<Item = (Self, R), Error = Error> {
+        Packet::read_async(r).and_then(|(packet, r)| {
+            Self::try_from(packet).map(|msg| (msg, r))
+        })
     }
 
     pub fn write<W: std::io::Write>(&self, w: W) -> Result<()> {
@@ -61,7 +63,7 @@ struct Packet {
 impl Packet {
     fn read_async<R: tokio::io::AsyncRead>(
         r: R,
-    ) -> impl futures::future::Future<Item = Self, Error = Error> {
+    ) -> impl futures::future::Future<Item = (Self, R), Error = Error> {
         let header_buf = [0u8; std::mem::size_of::<u32>() * 2];
         tokio::io::read_exact(r, header_buf)
             .and_then(|(r, buf)| {
@@ -73,13 +75,14 @@ impl Packet {
             })
             .and_then(|(r, len, ty)| {
                 let body_buf = vec![0u8; len as usize];
-                tokio::io::read_exact(r, body_buf)
-                    .map(move |(_, buf)| (ty, buf))
-            })
-            .and_then(|(ty, buf)| {
-                futures::future::ok(Packet {
-                    ty,
-                    data: buf.to_vec(),
+                tokio::io::read_exact(r, body_buf).map(move |(r, buf)| {
+                    (
+                        Packet {
+                            ty,
+                            data: buf.to_vec(),
+                        },
+                        r,
+                    )
                 })
             })
             .context(ReadAsync)

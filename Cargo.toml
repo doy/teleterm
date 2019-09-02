@@ -10,3 +10,4 @@ futures = "0.1"
 mio = "0.6"
 snafu = { version = "0.4", features = ["futures-01"] }
 tokio = "0.1"
+uuid = { version = "0.7", features = ["v4"] }

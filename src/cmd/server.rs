@@ -102,6 +102,7 @@ enum SockType {
 #[derive(Debug)]
 struct SocketMetadata {
     ty: SockType,
+    id: String,
     username: Option<String>,
     saved_data: Vec<u8>,
 }
@@ -118,6 +119,7 @@ impl Socket {
             s,
             meta: SocketMetadata {
                 ty: SockType::Cast,
+                id: format!("{}", uuid::Uuid::new_v4()),
                 username: None,
                 saved_data: vec![],
             },
@@ -129,6 +131,7 @@ impl Socket {
             s,
             meta: SocketMetadata {
                 ty: SockType::Watch,
+                id: format!("{}", uuid::Uuid::new_v4()),
                 username: None,
                 saved_data: vec![],
             },

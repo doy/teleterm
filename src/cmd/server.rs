@@ -1,3 +1,4 @@
+use snafu::futures01::stream::StreamExt as _;
 use snafu::ResultExt as _;
 use tokio::prelude::*;
 
@@ -91,33 +92,43 @@ fn run_impl() -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy)]
 enum SockType {
     Cast,
     Watch,
 }
 
-struct ConnectionHandler {
-    cast_socks: Vec<tokio::net::tcp::TcpStream>,
-    watch_socks: Vec<tokio::net::tcp::TcpStream>,
+#[derive(Debug)]
+struct Socket {
+    ty: SockType,
+    s: tokio::net::tcp::TcpStream,
+}
 
-    sock_stream: Box<
-        dyn futures::stream::Stream<
-                Item = (SockType, tokio::net::tcp::TcpStream),
-                Error = tokio::sync::mpsc::error::RecvError,
-            > + Send,
-    >,
-    in_progress_cast_reads: Vec<
+impl Socket {
+    fn cast(s: tokio::net::tcp::TcpStream) -> Self {
+        Self {
+            ty: SockType::Cast,
+            s,
+        }
+    }
+
+    fn watch(s: tokio::net::tcp::TcpStream) -> Self {
+        Self {
+            ty: SockType::Watch,
+            s,
+        }
+    }
+}
+
+struct ConnectionHandler {
+    socks: Vec<Socket>,
+
+    sock_stream:
+        Box<dyn futures::stream::Stream<Item = Socket, Error = Error> + Send>,
+    in_progress_reads: Vec<
         Box<
             dyn futures::future::Future<
-                    Item = tokio::net::tcp::TcpStream,
-                    Error = Error,
-                > + Send,
-        >,
-    >,
-    in_progress_watch_reads: Vec<
-        Box<
-            dyn futures::future::Future<
-                    Item = tokio::net::tcp::TcpStream,
+                    Item = (crate::protocol::Message, Socket),
                     Error = Error,
                 > + Send,
         >,
@@ -130,68 +141,43 @@ impl ConnectionHandler {
         watch_sock_r: tokio::sync::mpsc::Receiver<tokio::net::tcp::TcpStream>,
     ) -> Self {
         let sock_stream = cast_sock_r
-            .map(|s| (SockType::Cast, s))
-            .select(watch_sock_r.map(|s| (SockType::Watch, s)));
+            .map(Socket::cast)
+            .select(watch_sock_r.map(Socket::watch))
+            .context(SocketChannelReceive);
         Self {
-            cast_socks: vec![],
-            watch_socks: vec![],
+            socks: vec![],
 
             sock_stream: Box::new(sock_stream),
-            in_progress_cast_reads: vec![],
-            in_progress_watch_reads: vec![],
+            in_progress_reads: vec![],
         }
     }
 
     fn poll_new_connections(&mut self) -> Result<bool> {
         match self.sock_stream.poll() {
-            Ok(futures::Async::Ready(Some((sock_ty, sock)))) => {
-                match sock_ty {
-                    SockType::Cast => {
-                        self.cast_socks.push(sock);
-                    }
-                    SockType::Watch => {
-                        self.watch_socks.push(sock);
-                    }
-                }
+            Ok(futures::Async::Ready(Some(s))) => {
+                self.socks.push(s);
                 Ok(true)
             }
             Ok(futures::Async::Ready(None)) => {
                 Err(Error::SocketChannelClosed)
             }
             Ok(futures::Async::NotReady) => Ok(false),
-            Err(e) => Err(e).context(SocketChannelReceive),
+            Err(e) => Err(e),
         }
     }
 
-    fn poll_cast_readable(&mut self) -> Result<bool> {
+    fn poll_readable(&mut self) -> Result<bool> {
         let mut did_work = false;
 
         let mut i = 0;
-        while i < self.cast_socks.len() {
-            match self.cast_socks[i].poll_read_ready(mio::Ready::readable()) {
+        while i < self.socks.len() {
+            match self.socks[i].s.poll_read_ready(mio::Ready::readable()) {
                 Ok(futures::Async::Ready(_)) => {
-                    let s = self.cast_socks.swap_remove(i);
+                    let Socket { s, ty } = self.socks.swap_remove(i);
                     let read_fut = crate::protocol::Message::read_async(s)
                         .map_err(|e| Error::ReadMessage { source: e })
-                        .and_then(|(msg, s)| {
-                            match msg {
-                                crate::protocol::Message::StartCasting {
-                                    username,
-                                } => {
-                                    println!(
-                                        "got a cast connection from {}",
-                                        username
-                                    );
-                                }
-                                m => {
-                                    return Err(Error::UnexpectedMessage {
-                                        message: m,
-                                    })
-                                }
-                            }
-                            Ok(s)
-                        });
-                    self.in_progress_cast_reads.push(Box::new(read_fut));
+                        .map(move |(msg, s)| (msg, Socket { s, ty }));
+                    self.in_progress_reads.push(Box::new(read_fut));
                     did_work = true;
                 }
                 Ok(futures::Async::NotReady) => {
@@ -204,57 +190,16 @@ impl ConnectionHandler {
         Ok(did_work)
     }
 
-    fn poll_watch_readable(&mut self) -> Result<bool> {
+    fn poll_read(&mut self) -> Result<bool> {
         let mut did_work = false;
 
         let mut i = 0;
-        while i < self.watch_socks.len() {
-            match self.watch_socks[i].poll_read_ready(mio::Ready::readable())
-            {
-                Ok(futures::Async::Ready(_)) => {
-                    let s = self.watch_socks.swap_remove(i);
-                    let read_fut = crate::protocol::Message::read_async(s)
-                        .map_err(|e| Error::ReadMessage { source: e })
-                        .and_then(|(msg, s)| {
-                            match msg {
-                                crate::protocol::Message::StartWatching {
-                                    username,
-                                } => {
-                                    println!(
-                                        "got a watch connection from {}",
-                                        username
-                                    );
-                                }
-                                m => {
-                                    return Err(Error::UnexpectedMessage {
-                                        message: m,
-                                    })
-                                }
-                            }
-                            Ok(s)
-                        });
-                    self.in_progress_watch_reads.push(Box::new(read_fut));
-                    did_work = true;
-                }
-                Ok(futures::Async::NotReady) => {
-                    i += 1;
-                }
-                Err(e) => return Err(e).context(PollReadReady),
-            }
-        }
-
-        Ok(did_work)
-    }
-
-    fn poll_cast_read(&mut self) -> Result<bool> {
-        let mut did_work = false;
-
-        let mut i = 0;
-        while i < self.in_progress_cast_reads.len() {
-            match self.in_progress_cast_reads[i].poll() {
-                Ok(futures::Async::Ready(s)) => {
-                    self.in_progress_cast_reads.swap_remove(i);
-                    self.cast_socks.push(s);
+        while i < self.in_progress_reads.len() {
+            match self.in_progress_reads[i].poll() {
+                Ok(futures::Async::Ready((msg, sock))) => {
+                    self.handle_message(sock.ty, msg)?;
+                    self.in_progress_reads.swap_remove(i);
+                    self.socks.push(sock);
                     did_work = true;
                 }
                 Ok(futures::Async::NotReady) => {
@@ -271,7 +216,7 @@ impl ConnectionHandler {
                         if tokio_err.kind()
                             == tokio::io::ErrorKind::UnexpectedEof
                         {
-                            self.in_progress_cast_reads.swap_remove(i);
+                            self.in_progress_reads.swap_remove(i);
                         } else {
                             return Err(e);
                         }
@@ -285,43 +230,41 @@ impl ConnectionHandler {
         Ok(did_work)
     }
 
-    fn poll_watch_read(&mut self) -> Result<bool> {
-        let mut did_work = false;
-
-        let mut i = 0;
-        while i < self.in_progress_watch_reads.len() {
-            match self.in_progress_watch_reads[i].poll() {
-                Ok(futures::Async::Ready(s)) => {
-                    self.in_progress_watch_reads.swap_remove(i);
-                    self.watch_socks.push(s);
-                    did_work = true;
-                }
-                Ok(futures::Async::NotReady) => {
-                    i += 1;
-                }
-                Err(e) => {
-                    if let Error::ReadMessage {
-                        source:
-                            crate::protocol::Error::ReadAsync {
-                                source: ref tokio_err,
-                            },
-                    } = e
-                    {
-                        if tokio_err.kind()
-                            == tokio::io::ErrorKind::UnexpectedEof
-                        {
-                            self.in_progress_watch_reads.swap_remove(i);
-                        } else {
-                            return Err(e);
-                        }
-                    } else {
-                        return Err(e);
-                    }
-                }
-            }
+    fn handle_message(
+        &self,
+        ty: SockType,
+        message: crate::protocol::Message,
+    ) -> Result<()> {
+        match ty {
+            SockType::Cast => self.handle_cast_message(message),
+            SockType::Watch => self.handle_watch_message(message),
         }
+    }
 
-        Ok(did_work)
+    fn handle_cast_message(
+        &self,
+        message: crate::protocol::Message,
+    ) -> Result<()> {
+        match message {
+            crate::protocol::Message::StartCasting { username } => {
+                println!("got a cast connection from {}", username);
+                Ok(())
+            }
+            m => Err(Error::UnexpectedMessage { message: m }),
+        }
+    }
+
+    fn handle_watch_message(
+        &self,
+        message: crate::protocol::Message,
+    ) -> Result<()> {
+        match message {
+            crate::protocol::Message::StartWatching { username } => {
+                println!("got a watch connection from {}", username);
+                Ok(())
+            }
+            m => Err(Error::UnexpectedMessage { message: m }),
+        }
     }
 }
 
@@ -334,10 +277,8 @@ impl futures::stream::Stream for ConnectionHandler {
             let mut did_work = false;
 
             did_work |= self.poll_new_connections()?;
-            did_work |= self.poll_cast_readable()?;
-            did_work |= self.poll_watch_readable()?;
-            did_work |= self.poll_cast_read()?;
-            did_work |= self.poll_watch_read()?;
+            did_work |= self.poll_readable()?;
+            did_work |= self.poll_read()?;
 
             if !did_work {
                 break;

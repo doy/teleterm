@@ -71,9 +71,6 @@ impl Packet {
                     buf.split_at(std::mem::size_of::<u32>());
                 let len = u32::from_le_bytes(len_buf.try_into().unwrap());
                 let ty = u32::from_le_bytes(ty_buf.try_into().unwrap());
-                futures::future::ok((r, len, ty))
-            })
-            .and_then(|(r, len, ty)| {
                 let body_buf = vec![0u8; len as usize];
                 tokio::io::read_exact(r, body_buf).map(move |(r, buf)| {
                     (

@@ -184,11 +184,11 @@ impl std::convert::TryFrom<Packet> for Message {
     fn try_from(packet: Packet) -> Result<Self> {
         match packet.ty {
             0 => Ok(Message::StartCasting {
-                username: std::string::String::from_utf8(packet.data)
+                username: String::from_utf8(packet.data)
                     .context(ParseStartCastingMessage)?,
             }),
             1 => Ok(Message::StartWatching {
-                username: std::string::String::from_utf8(packet.data)
+                username: String::from_utf8(packet.data)
                     .context(ParseStartWatchingMessage)?,
             }),
             2 => Ok(Message::Heartbeat),
@@ -218,7 +218,7 @@ impl std::convert::TryFrom<Packet> for Message {
                     data = rest;
 
                     let (id_buf, rest) = data.split_at(len as usize);
-                    let id = std::string::String::from_utf8(id_buf.to_vec())
+                    let id = String::from_utf8(id_buf.to_vec())
                         .context(ParseSessionsMessageId)?;
                     ids.push(id);
                     data = rest;
@@ -226,7 +226,7 @@ impl std::convert::TryFrom<Packet> for Message {
                 Ok(Message::Sessions { ids })
             }
             6 => Ok(Message::WatchSession {
-                id: std::string::String::from_utf8(packet.data)
+                id: String::from_utf8(packet.data)
                     .context(ParseWatchSessionMessage)?,
             }),
             _ => Err(Error::InvalidMessageType { ty: packet.ty }),

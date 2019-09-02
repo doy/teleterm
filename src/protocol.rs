@@ -109,7 +109,7 @@ impl Packet {
                     buf.split_at(std::mem::size_of::<u32>());
                 let len = u32::from_le_bytes(len_buf.try_into().unwrap());
                 let ty = u32::from_le_bytes(ty_buf.try_into().unwrap());
-                let body_buf = vec![0u8; len as usize];
+                let body_buf = vec![0u8; len.try_into().unwrap()];
                 tokio::io::read_exact(r, body_buf).map(move |(r, buf)| {
                     (
                         Packet {
@@ -128,9 +128,11 @@ impl Packet {
     }
 
     fn as_bytes(&self) -> Vec<u8> {
-        let len = (self.data.len() as u32).to_le_bytes();
+        let len: u32 = self.data.len().try_into().unwrap();
+        let len_buf = len.to_le_bytes();
         let ty = self.ty.to_le_bytes();
-        len.iter()
+        len_buf
+            .iter()
             .chain(ty.iter())
             .chain(self.data.iter())
             .cloned()
@@ -217,7 +219,8 @@ impl std::convert::TryFrom<Packet> for Message {
                     );
                     data = rest;
 
-                    let (id_buf, rest) = data.split_at(len as usize);
+                    let (id_buf, rest) =
+                        data.split_at(len.try_into().unwrap());
                     let id = String::from_utf8(id_buf.to_vec())
                         .context(ParseSessionsMessageId)?;
                     ids.push(id);

@@ -87,7 +87,7 @@ impl Message {
     }
 
     pub fn read<R: std::io::Read>(r: R) -> Result<Self> {
-        Packet::read(r).and_then(|packet| Self::try_from(packet))
+        Packet::read(r).and_then(Self::try_from)
     }
 
     pub fn read_async<R: tokio::io::AsyncRead>(

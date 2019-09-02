@@ -92,7 +92,7 @@ fn run_impl() -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SockType {
     Cast,
     Watch,
@@ -102,6 +102,7 @@ enum SockType {
 struct SocketMetadata {
     ty: SockType,
     username: Option<String>,
+    saved_data: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -117,6 +118,7 @@ impl Socket {
             meta: SocketMetadata {
                 ty: SockType::Cast,
                 username: None,
+                saved_data: vec![],
             },
         }
     }
@@ -127,6 +129,7 @@ impl Socket {
             meta: SocketMetadata {
                 ty: SockType::Watch,
                 username: None,
+                saved_data: vec![],
             },
         }
     }
@@ -228,6 +231,7 @@ impl ConnectionHandler {
                         if tokio_err.kind()
                             == tokio::io::ErrorKind::UnexpectedEof
                         {
+                            println!("disconnect");
                             self.in_progress_reads.swap_remove(i);
                         } else {
                             return Err(e);
@@ -264,6 +268,26 @@ impl ConnectionHandler {
                 sock.meta.username = Some(username);
                 Ok(())
             }
+            crate::protocol::Message::Heartbeat => {
+                println!(
+                    "got a heartbeat from {}",
+                    sock.meta.username.as_ref().unwrap()
+                );
+                Ok(())
+            }
+            crate::protocol::Message::TerminalOutput { data } => {
+                sock.meta.saved_data.extend_from_slice(&data);
+                // XXX truncate data before most recent screen clear
+                for sock in self.socks.iter() {
+                    if sock.meta.ty == SockType::Watch {
+                        // XXX test if it's watching the correct session
+                        // XXX async-send a TerminalOutput message back
+                        // (probably need another vec of in-progress async
+                        // sends)
+                    }
+                }
+                Ok(())
+            }
             m => Err(Error::UnexpectedMessage { message: m }),
         }
     }
@@ -277,6 +301,17 @@ impl ConnectionHandler {
             crate::protocol::Message::StartWatching { username } => {
                 println!("got a watch connection from {}", username);
                 sock.meta.username = Some(username);
+                Ok(())
+            }
+            crate::protocol::Message::ListSessions => {
+                // XXX send a Sessions reply back
+                Ok(())
+            }
+            crate::protocol::Message::WatchSession { id } => {
+                let _id = id;
+                // XXX start by sending a TerminalOutput message containing
+                // the saved_data for the given session, then register for
+                // further updates
                 Ok(())
             }
             m => Err(Error::UnexpectedMessage { message: m }),

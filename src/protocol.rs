@@ -17,6 +17,17 @@ pub enum Error {
     #[snafu(display("invalid StartWatching message: {}", source))]
     ParseStartWatchingMessage { source: std::string::FromUtf8Error },
 
+    #[snafu(display("invalid Sessions message: {}", source))]
+    ParseSessionsMessageLen {
+        source: std::array::TryFromSliceError,
+    },
+
+    #[snafu(display("invalid Sessions message: {}", source))]
+    ParseSessionsMessageId { source: std::string::FromUtf8Error },
+
+    #[snafu(display("invalid WatchSession message: {}", source))]
+    ParseWatchSessionMessage { source: std::string::FromUtf8Error },
+
     #[snafu(display("invalid message type: {}", ty))]
     InvalidMessageType { ty: u32 },
 }
@@ -27,6 +38,11 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Message {
     StartCasting { username: String },
     StartWatching { username: String },
+    Heartbeat,
+    TerminalOutput { data: Vec<u8> },
+    ListSessions,
+    Sessions { ids: Vec<String> },
+    WatchSession { id: String },
 }
 
 impl Message {
@@ -40,6 +56,28 @@ impl Message {
         Message::StartWatching {
             username: username.to_string(),
         }
+    }
+
+    pub fn heartbeat() -> Message {
+        Message::Heartbeat
+    }
+
+    pub fn terminal_output(data: &[u8]) -> Message {
+        Message::TerminalOutput {
+            data: data.to_vec(),
+        }
+    }
+
+    pub fn list_sessions() -> Message {
+        Message::ListSessions
+    }
+
+    pub fn sessions(ids: &[String]) -> Message {
+        Message::Sessions { ids: ids.to_vec() }
+    }
+
+    pub fn watch_session(id: &str) -> Message {
+        Message::WatchSession { id: id.to_string() }
     }
 
     pub fn read_async<R: tokio::io::AsyncRead>(
@@ -111,6 +149,31 @@ impl From<&Message> for Packet {
                 ty: 1,
                 data: username.as_bytes().to_vec(),
             },
+            Message::Heartbeat => Packet {
+                ty: 2,
+                data: vec![],
+            },
+            Message::TerminalOutput { data } => Packet {
+                ty: 3,
+                data: data.to_vec(),
+            },
+            Message::ListSessions => Packet {
+                ty: 4,
+                data: vec![],
+            },
+            Message::Sessions { ids } => {
+                let mut data = vec![];
+                data.extend_from_slice(&ids.len().to_le_bytes());
+                for id in ids {
+                    data.extend_from_slice(&id.len().to_le_bytes());
+                    data.extend_from_slice(&id.as_bytes());
+                }
+                Packet { ty: 5, data }
+            }
+            Message::WatchSession { id } => Packet {
+                ty: 6,
+                data: id.as_bytes().to_vec(),
+            },
         }
     }
 }
@@ -127,6 +190,44 @@ impl std::convert::TryFrom<Packet> for Message {
             1 => Ok(Message::StartWatching {
                 username: std::string::String::from_utf8(packet.data)
                     .context(ParseStartWatchingMessage)?,
+            }),
+            2 => Ok(Message::Heartbeat),
+            3 => Ok(Message::TerminalOutput { data: packet.data }),
+            4 => Ok(Message::ListSessions),
+            5 => {
+                let mut ids = vec![];
+                let mut data: &[u8] = packet.data.as_ref();
+
+                let (num_sessions_buf, rest) =
+                    data.split_at(std::mem::size_of::<u32>());
+                let num_sessions = u32::from_le_bytes(
+                    num_sessions_buf
+                        .try_into()
+                        .context(ParseSessionsMessageLen)?,
+                );
+                data = rest;
+
+                for _ in 0..num_sessions {
+                    let (len_buf, rest) =
+                        data.split_at(std::mem::size_of::<u32>());
+                    let len = u32::from_le_bytes(
+                        len_buf
+                            .try_into()
+                            .context(ParseSessionsMessageLen)?,
+                    );
+                    data = rest;
+
+                    let (id_buf, rest) = data.split_at(len as usize);
+                    let id = std::string::String::from_utf8(id_buf.to_vec())
+                        .context(ParseSessionsMessageId)?;
+                    ids.push(id);
+                    data = rest;
+                }
+                Ok(Message::Sessions { ids })
+            }
+            6 => Ok(Message::WatchSession {
+                id: std::string::String::from_utf8(packet.data)
+                    .context(ParseWatchSessionMessage)?,
             }),
             _ => Err(Error::InvalidMessageType { ty: packet.ty }),
         }

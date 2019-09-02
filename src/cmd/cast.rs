@@ -23,7 +23,11 @@ fn run_impl() -> Result<()> {
     let sock =
         std::net::TcpStream::connect("127.0.0.1:8000").context(Connect)?;
     let msg = crate::protocol::Message::start_casting("doy");
-    msg.write(sock).context(Write)?;
-    println!("wrote message successfully");
-    Ok(())
+    msg.write(&sock).context(Write)?;
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        crate::protocol::Message::heartbeat()
+            .write(&sock)
+            .context(Write)?;
+    }
 }

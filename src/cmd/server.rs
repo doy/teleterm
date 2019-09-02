@@ -107,6 +107,17 @@ struct SocketMetadata {
     saved_data: Vec<u8>,
 }
 
+impl SocketMetadata {
+    fn new(ty: SockType) -> Self {
+        Self {
+            ty,
+            id: format!("{}", uuid::Uuid::new_v4()),
+            username: None,
+            saved_data: vec![],
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Socket {
     s: tokio::net::tcp::TcpStream,
@@ -114,27 +125,10 @@ struct Socket {
 }
 
 impl Socket {
-    fn cast(s: tokio::net::tcp::TcpStream) -> Self {
+    fn new(s: tokio::net::tcp::TcpStream, ty: SockType) -> Self {
         Self {
             s,
-            meta: SocketMetadata {
-                ty: SockType::Cast,
-                id: format!("{}", uuid::Uuid::new_v4()),
-                username: None,
-                saved_data: vec![],
-            },
-        }
-    }
-
-    fn watch(s: tokio::net::tcp::TcpStream) -> Self {
-        Self {
-            s,
-            meta: SocketMetadata {
-                ty: SockType::Watch,
-                id: format!("{}", uuid::Uuid::new_v4()),
-                username: None,
-                saved_data: vec![],
-            },
+            meta: SocketMetadata::new(ty),
         }
     }
 }
@@ -160,8 +154,8 @@ impl ConnectionHandler {
         watch_sock_r: tokio::sync::mpsc::Receiver<tokio::net::tcp::TcpStream>,
     ) -> Self {
         let sock_stream = cast_sock_r
-            .map(Socket::cast)
-            .select(watch_sock_r.map(Socket::watch))
+            .map(|s| Socket::new(s, SockType::Cast))
+            .select(watch_sock_r.map(|s| Socket::new(s, SockType::Watch)))
             .context(SocketChannelReceive);
         Self {
             socks: vec![],

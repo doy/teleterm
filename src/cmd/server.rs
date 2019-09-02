@@ -134,10 +134,10 @@ impl Socket {
 }
 
 struct ConnectionHandler {
-    socks: Vec<Socket>,
-
     sock_stream:
         Box<dyn futures::stream::Stream<Item = Socket, Error = Error> + Send>,
+
+    socks: Vec<Socket>,
     in_progress_reads: Vec<
         Box<
             dyn futures::future::Future<
@@ -161,9 +161,9 @@ impl ConnectionHandler {
             .select(watch_sock_r.map(|s| Socket::new(s, SockType::Watch)))
             .context(SocketChannelReceive);
         Self {
-            socks: vec![],
-
             sock_stream: Box::new(sock_stream),
+
+            socks: vec![],
             in_progress_reads: vec![],
             in_progress_writes: vec![],
         }

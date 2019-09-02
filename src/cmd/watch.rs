@@ -5,8 +5,14 @@ pub enum Error {
     #[snafu(display("failed to connect: {}", source))]
     Connect { source: std::io::Error },
 
+    #[snafu(display("failed to read message: {}", source))]
+    Read { source: crate::protocol::Error },
+
     #[snafu(display("failed to write message: {}", source))]
     Write { source: crate::protocol::Error },
+
+    #[snafu(display("failed to read message: unexpected message received"))]
+    UnexpectedMessage,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -23,7 +29,23 @@ fn run_impl() -> Result<()> {
     let sock =
         std::net::TcpStream::connect("127.0.0.1:8001").context(Connect)?;
     let msg = crate::protocol::Message::start_watching("doy");
-    msg.write(sock).context(Write)?;
-    println!("wrote message successfully");
+    msg.write(&sock).context(Write)?;
+
+    let msg = crate::protocol::Message::list_sessions();
+    msg.write(&sock).context(Write)?;
+
+    let res = crate::protocol::Message::read(&sock).context(Read)?;
+    match res {
+        crate::protocol::Message::Sessions { ids } => {
+            println!("available sessions:");
+            for id in ids {
+                println!("got id '{}'", id);
+            }
+        }
+        _ => {
+            return Err(Error::UnexpectedMessage);
+        }
+    }
+
     Ok(())
 }

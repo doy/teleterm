@@ -408,8 +408,16 @@ impl ConnectionHandler {
                 Ok(None)
             }
             crate::protocol::Message::ListSessions => {
-                // XXX send a Sessions reply back
-                Ok(None)
+                let mut ids = vec![];
+                for sock in self.socks.iter() {
+                    if sock.meta().ty == SockType::Cast {
+                        ids.push(sock.meta().id.clone());
+                    }
+                }
+                let msg = crate::protocol::Message::sessions(&ids);
+                Ok(Some(Box::new(move |s| {
+                    Box::new(msg.write_async(s).context(WriteMessage))
+                })))
             }
             crate::protocol::Message::WatchSession { id } => {
                 let _id = id;

@@ -377,7 +377,10 @@ impl ConnectionHandler {
                     "got a heartbeat from {}",
                     meta.username.as_ref().unwrap()
                 );
-                Ok(None)
+                let msg = crate::protocol::Message::heartbeat();
+                Ok(Some(Box::new(move |s| {
+                    Box::new(msg.write_async(s).context(WriteMessage))
+                })))
             }
             crate::protocol::Message::TerminalOutput { data } => {
                 meta.saved_data.extend_from_slice(&data);

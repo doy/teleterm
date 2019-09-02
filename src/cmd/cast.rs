@@ -5,8 +5,14 @@ pub enum Error {
     #[snafu(display("failed to connect: {}", source))]
     Connect { source: std::io::Error },
 
+    #[snafu(display("failed to read message: {}", source))]
+    Read { source: crate::protocol::Error },
+
     #[snafu(display("failed to write message: {}", source))]
     Write { source: crate::protocol::Error },
+
+    #[snafu(display("failed to read message: unexpected message received"))]
+    UnexpectedMessage,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -29,5 +35,14 @@ fn run_impl() -> Result<()> {
         crate::protocol::Message::heartbeat()
             .write(&sock)
             .context(Write)?;
+        let res = crate::protocol::Message::read(&sock).context(Read)?;
+        match res {
+            crate::protocol::Message::Heartbeat => {
+                println!("received heartbeat response");
+            }
+            _ => {
+                return Err(Error::UnexpectedMessage);
+            }
+        }
     }
 }

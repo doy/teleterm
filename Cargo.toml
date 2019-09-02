@@ -6,9 +6,6 @@ edition = "2018"
 
 [dependencies]
 clap = "2"
-protobuf = "2"
-snafu = "0.4"
+futures = "0.1"
+snafu = { version = "0.4", features = ["futures-01"] }
 tokio = "0.1"
-
-[build-dependencies]
-protobuf-codegen-pure = "2"

@@ -25,12 +25,19 @@ fn run_impl() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr).context(Bind)?;
     let server = listener
         .incoming()
-        .for_each(|_sock| {
-            println!("got a connection");
-            Ok(())
-        })
         .map_err(|e| {
             eprintln!("accept failed: {}", e);
+        })
+        .for_each(|sock| {
+            crate::protocol::Message::read_async(sock)
+                .map(|msg| match msg {
+                    crate::protocol::Message::StartCasting { username } => {
+                        println!("got a connection from {}", username);
+                    }
+                })
+                .map_err(|e| {
+                    eprintln!("failed to read message: {}", e);
+                })
         });
     tokio::run(server);
     Ok(())

@@ -1,5 +1,5 @@
 mod cmd;
-mod pb;
+mod protocol;
 mod util;
 
 fn main() {

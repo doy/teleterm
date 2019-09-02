@@ -99,23 +99,35 @@ enum SockType {
 }
 
 #[derive(Debug)]
-struct Socket {
+struct SocketMetadata {
     ty: SockType,
+    username: Option<String>,
+}
+
+#[derive(Debug)]
+struct Socket {
     s: tokio::net::tcp::TcpStream,
+    meta: SocketMetadata,
 }
 
 impl Socket {
     fn cast(s: tokio::net::tcp::TcpStream) -> Self {
         Self {
-            ty: SockType::Cast,
             s,
+            meta: SocketMetadata {
+                ty: SockType::Cast,
+                username: None,
+            },
         }
     }
 
     fn watch(s: tokio::net::tcp::TcpStream) -> Self {
         Self {
-            ty: SockType::Watch,
             s,
+            meta: SocketMetadata {
+                ty: SockType::Watch,
+                username: None,
+            },
         }
     }
 }
@@ -173,10 +185,10 @@ impl ConnectionHandler {
         while i < self.socks.len() {
             match self.socks[i].s.poll_read_ready(mio::Ready::readable()) {
                 Ok(futures::Async::Ready(_)) => {
-                    let Socket { s, ty } = self.socks.swap_remove(i);
+                    let Socket { s, meta } = self.socks.swap_remove(i);
                     let read_fut = crate::protocol::Message::read_async(s)
                         .map_err(|e| Error::ReadMessage { source: e })
-                        .map(move |(msg, s)| (msg, Socket { s, ty }));
+                        .map(move |(msg, s)| (msg, Socket { s, meta }));
                     self.in_progress_reads.push(Box::new(read_fut));
                     did_work = true;
                 }
@@ -196,8 +208,8 @@ impl ConnectionHandler {
         let mut i = 0;
         while i < self.in_progress_reads.len() {
             match self.in_progress_reads[i].poll() {
-                Ok(futures::Async::Ready((msg, sock))) => {
-                    self.handle_message(sock.ty, msg)?;
+                Ok(futures::Async::Ready((msg, mut sock))) => {
+                    self.handle_message(&mut sock, msg)?;
                     self.in_progress_reads.swap_remove(i);
                     self.socks.push(sock);
                     did_work = true;
@@ -232,22 +244,24 @@ impl ConnectionHandler {
 
     fn handle_message(
         &self,
-        ty: SockType,
+        sock: &mut Socket,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        match ty {
-            SockType::Cast => self.handle_cast_message(message),
-            SockType::Watch => self.handle_watch_message(message),
+        match sock.meta.ty {
+            SockType::Cast => self.handle_cast_message(sock, message),
+            SockType::Watch => self.handle_watch_message(sock, message),
         }
     }
 
     fn handle_cast_message(
         &self,
+        sock: &mut Socket,
         message: crate::protocol::Message,
     ) -> Result<()> {
         match message {
             crate::protocol::Message::StartCasting { username } => {
                 println!("got a cast connection from {}", username);
+                sock.meta.username = Some(username);
                 Ok(())
             }
             m => Err(Error::UnexpectedMessage { message: m }),
@@ -256,11 +270,13 @@ impl ConnectionHandler {
 
     fn handle_watch_message(
         &self,
+        sock: &mut Socket,
         message: crate::protocol::Message,
     ) -> Result<()> {
         match message {
             crate::protocol::Message::StartWatching { username } => {
                 println!("got a watch connection from {}", username);
+                sock.meta.username = Some(username);
                 Ok(())
             }
             m => Err(Error::UnexpectedMessage { message: m }),

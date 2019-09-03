@@ -144,11 +144,10 @@ impl Process {
         if let Ok(futures::Async::Ready(_)) = input_poll {
             let stdin = std::io::stdin();
             let mut stdin = stdin.lock();
-            let mut buf = vec![0; 4096];
             // TODO: async
-            let n = stdin.read(&mut buf).context(ReadFromTerminal)?;
+            let n = stdin.read(&mut self.buf).context(ReadFromTerminal)?;
             if n > 0 {
-                let bytes = buf[..n].to_vec();
+                let bytes = self.buf[..n].to_vec();
 
                 // TODO: async
                 self.pty.write_all(&bytes).context(WriteToPty)?;

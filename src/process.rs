@@ -121,30 +121,24 @@ impl Process {
         self.manage_screen = raw;
         self
     }
-}
 
-#[must_use = "streams do nothing unless polled"]
-impl futures::stream::Stream for Process {
-    type Item = CommandEvent;
-    type Error = Error;
-
-    fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
-        if self.manage_screen && self.raw_screen.is_none() {
-            self.raw_screen = Some(
-                crossterm::RawScreen::into_raw_mode().context(IntoRawMode)?,
-            );
+    fn poll_command_start(
+        &mut self,
+    ) -> futures::Poll<Option<CommandEvent>, Error> {
+        if self.started {
+            return Ok(futures::Async::NotReady);
         }
 
-        if !self.started {
-            self.started = true;
-            return Ok(futures::Async::Ready(Some(
-                CommandEvent::CommandStart(
-                    self.cmd.clone(),
-                    self.args.clone(),
-                ),
-            )));
-        }
+        self.started = true;
+        Ok(futures::Async::Ready(Some(CommandEvent::CommandStart(
+            self.cmd.clone(),
+            self.args.clone(),
+        ))))
+    }
 
+    fn poll_read_stdin(
+        &mut self,
+    ) -> futures::Poll<Option<CommandEvent>, Error> {
         let ready = mio::Ready::readable();
         let input_poll = self.input.poll_read_ready(ready);
         if let Ok(futures::Async::Ready(_)) = input_poll {
@@ -168,59 +162,108 @@ impl futures::stream::Stream for Process {
             .clear_read_ready(ready)
             .context(PtyClearReadReady)?;
 
-        if !self.output_done {
-            self.buf.clear();
-            let output_poll = self.pty.read_buf(&mut self.buf);
-            match output_poll {
-                Ok(futures::Async::Ready(n)) => {
-                    let bytes = self.buf[..n].to_vec();
-                    let bytes: Vec<_> = bytes
-                        .iter()
-                        // replace \n with \r\n
-                        .fold(vec![], |mut acc, &c| {
-                            if c == b'\n' {
-                                acc.push(b'\r');
-                                acc.push(b'\n');
-                            } else {
-                                acc.push(c);
-                            }
-                            acc
-                        });
-                    return Ok(futures::Async::Ready(Some(
-                        CommandEvent::Output(bytes),
-                    )));
-                }
-                Ok(futures::Async::NotReady) => {
-                    return Ok(futures::Async::NotReady);
-                }
-                Err(_) => {
-                    // explicitly ignoring errors (for now?) because we
-                    // always read off the end of the pty after the process
-                    // is done
-                    self.output_done = true;
-                }
-            }
+        Ok(futures::Async::NotReady)
+    }
+
+    fn poll_read_stdout(
+        &mut self,
+    ) -> futures::Poll<Option<CommandEvent>, Error> {
+        if self.output_done {
+            return Ok(futures::Async::NotReady);
         }
 
-        if !self.exit_done {
-            let exit_poll = self.process.poll().context(ProcessExitPoll);
-            match exit_poll {
-                Ok(futures::Async::Ready(status)) => {
-                    self.exit_done = true;
-                    return Ok(futures::Async::Ready(Some(
-                        CommandEvent::CommandExit(status),
-                    )));
-                }
-                Ok(futures::Async::NotReady) => {
-                    return Ok(futures::Async::NotReady);
-                }
-                Err(e) => {
-                    return Err(e);
-                }
+        self.buf.clear();
+        let output_poll = self.pty.read_buf(&mut self.buf);
+        match output_poll {
+            Ok(futures::Async::Ready(n)) => {
+                let bytes = self.buf[..n].to_vec();
+                let bytes: Vec<_> = bytes
+                    .iter()
+                    // replace \n with \r\n
+                    .fold(vec![], |mut acc, &c| {
+                        if c == b'\n' {
+                            acc.push(b'\r');
+                            acc.push(b'\n');
+                        } else {
+                            acc.push(c);
+                        }
+                        acc
+                    });
+                Ok(futures::Async::Ready(Some(CommandEvent::Output(bytes))))
+            }
+            Ok(futures::Async::NotReady) => Ok(futures::Async::NotReady),
+            Err(_) => {
+                // explicitly ignoring errors (for now?) because we
+                // always read off the end of the pty after the process
+                // is done
+                self.output_done = true;
+                Ok(futures::Async::NotReady)
             }
         }
+    }
 
-        Ok(futures::Async::Ready(None))
+    fn poll_command_exit(
+        &mut self,
+    ) -> futures::Poll<Option<CommandEvent>, Error> {
+        if self.exit_done {
+            return Ok(futures::Async::NotReady);
+        }
+
+        let exit_poll = self.process.poll().context(ProcessExitPoll);
+        match exit_poll {
+            Ok(futures::Async::Ready(status)) => {
+                self.exit_done = true;
+                Ok(futures::Async::Ready(Some(CommandEvent::CommandExit(
+                    status,
+                ))))
+            }
+            Ok(futures::Async::NotReady) => Ok(futures::Async::NotReady),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+#[must_use = "streams do nothing unless polled"]
+impl futures::stream::Stream for Process {
+    type Item = CommandEvent;
+    type Error = Error;
+
+    fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
+        if self.manage_screen && self.raw_screen.is_none() {
+            self.raw_screen = Some(
+                crossterm::RawScreen::into_raw_mode().context(IntoRawMode)?,
+            );
+        }
+
+        match self.poll_command_start() {
+            r @ Ok(futures::Async::Ready(_)) => return r,
+            e @ Err(_) => return e,
+            _ => {}
+        }
+
+        match self.poll_read_stdin() {
+            r @ Ok(futures::Async::Ready(_)) => return r,
+            e @ Err(_) => return e,
+            _ => {}
+        }
+
+        match self.poll_read_stdout() {
+            r @ Ok(futures::Async::Ready(_)) => return r,
+            e @ Err(_) => return e,
+            _ => {}
+        }
+
+        match self.poll_command_exit() {
+            r @ Ok(futures::Async::Ready(_)) => return r,
+            e @ Err(_) => return e,
+            _ => {}
+        }
+
+        if self.exit_done {
+            Ok(futures::Async::Ready(None))
+        } else {
+            Ok(futures::Async::NotReady)
+        }
     }
 }
 

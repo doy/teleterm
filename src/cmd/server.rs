@@ -86,7 +86,6 @@ fn run_impl() -> Result<()> {
     tokio::run(futures::future::lazy(move || {
         let connection_handler =
             ConnectionHandler::new(cast_sock_r, watch_sock_r)
-                .for_each(|_| futures::future::ok(()))
                 .map_err(|e| eprintln!("{}", e));
         tokio::spawn(connection_handler);
 
@@ -434,11 +433,11 @@ impl ConnectionHandler {
     }
 }
 
-impl futures::stream::Stream for ConnectionHandler {
+impl futures::future::Future for ConnectionHandler {
     type Item = ();
     type Error = Error;
 
-    fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
+    fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
         loop {
             let mut did_work = false;
 

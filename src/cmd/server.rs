@@ -382,6 +382,7 @@ impl ConnectionHandler {
                 })))
             }
             crate::protocol::Message::TerminalOutput { data } => {
+                println!("got {} bytes of cast data", data.len());
                 meta.saved_data.extend_from_slice(&data);
                 // XXX truncate data before most recent screen clear
                 for sock in self.socks.iter() {

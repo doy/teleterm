@@ -64,6 +64,8 @@ fn run_impl() -> Result<()> {
     Ok(())
 }
 
+const RESET: &[&[u8]] = &[b"\x1b[H\x1b[J", b"\x1b[2J"];
+
 enum ReadSocket {
     NotConnected,
     Connected(tokio::io::ReadHalf<tokio::net::tcp::TcpStream>),
@@ -240,9 +242,8 @@ impl CastSession {
                 crate::process::CommandEvent::CommandExit(..) => {
                     self.done = true
                 }
-                crate::process::CommandEvent::Output(mut output) => {
-                    // XXX handle terminal resets
-                    self.buffer.append(&mut output);
+                crate::process::CommandEvent::Output(output) => {
+                    self.record_bytes(output);
                 }
             },
             futures::Async::Ready(None) => {
@@ -416,6 +417,19 @@ impl CastSession {
         self.rsock = ReadSocket::NotConnected;
         self.wsock = WriteSocket::NotConnected;
         self.sent_remote = 0;
+    }
+
+    fn record_bytes(&mut self, mut buf: Vec<u8>) {
+        for reset in RESET {
+            if let Some(i) = twoway::find_bytes(&buf, reset) {
+                self.buffer.clear();
+                self.sent_local = 0;
+                self.sent_remote = 0;
+                buf = buf.split_off(i);
+            }
+        }
+
+        self.buffer.append(&mut buf);
     }
 }
 

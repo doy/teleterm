@@ -130,6 +130,7 @@ struct CastSession {
     sent_local: usize,
     sent_remote: usize,
     needs_flush: bool,
+    needs_send_heartbeat: bool,
     done: bool,
     last_server_time: std::time::Instant,
 }
@@ -156,6 +157,7 @@ impl CastSession {
             sent_local: 0,
             sent_remote: 0,
             needs_flush: false,
+            needs_send_heartbeat: false,
             done: false,
             last_server_time: std::time::Instant::now(),
         })
@@ -364,37 +366,50 @@ impl CastSession {
         }
     }
 
+    fn poll_needs_heartbeat(&mut self) -> Result<bool> {
+        match self.heartbeat_timer.poll().context(Timer)? {
+            futures::Async::Ready(..) => {
+                self.needs_send_heartbeat = true;
+                Ok(true)
+            }
+            futures::Async::NotReady => Ok(false),
+        }
+    }
+
     fn poll_write_server_heartbeat(&mut self) -> Result<bool> {
         match self.wsock {
             WriteSocket::NotConnected => Ok(false),
             WriteSocket::Connecting(..) => Ok(false),
             WriteSocket::LoggingIn(..) => Ok(false),
             WriteSocket::Connected(..) => {
-                match self.heartbeat_timer.poll().context(Timer)? {
-                    futures::Async::Ready(..) => {
-                        let mut tmp = WriteSocket::NotConnected;
-                        std::mem::swap(&mut self.wsock, &mut tmp);
-                        if let WriteSocket::Connected(s) = tmp {
-                            let fut = crate::protocol::Message::heartbeat()
-                                .write_async(s)
-                                .context(Heartbeat);
-                            self.wsock =
-                                WriteSocket::SendingHeartbeat(Box::new(fut));
-                            Ok(true)
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                    futures::Async::NotReady => Ok(false),
+                if !self.needs_send_heartbeat {
+                    return Ok(false);
+                }
+
+                self.needs_send_heartbeat = false;
+                let mut tmp = WriteSocket::NotConnected;
+                std::mem::swap(&mut self.wsock, &mut tmp);
+                if let WriteSocket::Connected(s) = tmp {
+                    let fut = crate::protocol::Message::heartbeat()
+                        .write_async(s)
+                        .context(Heartbeat);
+                    self.wsock = WriteSocket::SendingHeartbeat(Box::new(fut));
+                    Ok(true)
+                } else {
+                    unreachable!()
                 }
             }
             WriteSocket::SendingOutput(..) => Ok(false),
-            WriteSocket::SendingHeartbeat(ref mut fut) => match fut.poll()? {
-                futures::Async::Ready(s) => {
+            WriteSocket::SendingHeartbeat(ref mut fut) => match fut.poll() {
+                Ok(futures::Async::Ready(s)) => {
                     self.wsock = WriteSocket::Connected(s);
                     Ok(true)
                 }
-                futures::Async::NotReady => Ok(false),
+                Ok(futures::Async::NotReady) => Ok(false),
+                Err(e) => {
+                    self.needs_send_heartbeat = true;
+                    Err(e)
+                }
             },
         }
     }
@@ -414,6 +429,7 @@ impl futures::future::Future for CastSession {
             did_work |= self.poll_write_terminal()?;
             did_work |= self.poll_flush_terminal()?;
             did_work |= self.poll_write_server_output()?;
+            did_work |= self.poll_needs_heartbeat()?;
             did_work |= self.poll_write_server_heartbeat()?;
 
             if self.done {

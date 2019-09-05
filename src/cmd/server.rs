@@ -3,6 +3,7 @@ use futures::stream::Stream as _;
 use snafu::futures01::stream::StreamExt as _;
 use snafu::futures01::FutureExt as _;
 use snafu::ResultExt as _;
+use tokio::io::AsyncRead as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
@@ -90,9 +91,9 @@ struct SocketMetadata {
 }
 
 impl SocketMetadata {
-    fn new(ty: SockType) -> Self {
+    fn new() -> Self {
         Self {
-            ty,
+            ty: SockType::Unknown,
             id: format!("{}", uuid::Uuid::new_v4()),
             username: None,
             term_type: None,
@@ -102,58 +103,55 @@ impl SocketMetadata {
 }
 
 type AcceptStream =
-    Box<dyn futures::stream::Stream<Item = Socket, Error = Error> + Send>;
+    Box<dyn futures::stream::Stream<Item = Connection, Error = Error> + Send>;
 type ReadFuture = Box<
     dyn futures::future::Future<
-            Item = (crate::protocol::Message, tokio::net::tcp::TcpStream),
+            Item = (
+                crate::protocol::Message,
+                tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
+            ),
             Error = Error,
         > + Send,
 >;
 type WriteFuture = Box<
     dyn futures::future::Future<
-            Item = tokio::net::tcp::TcpStream,
+            Item = tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
             Error = Error,
         > + Send,
 >;
-type WriteFutureFactory =
-    Box<dyn FnOnce(tokio::net::tcp::TcpStream) -> WriteFuture>;
 
-enum Socket {
-    Listening {
-        s: tokio::net::tcp::TcpStream,
-        meta: SocketMetadata,
-    },
-    Reading {
-        future: ReadFuture,
-        meta: SocketMetadata,
-    },
-    Writing {
-        future: WriteFuture,
-        meta: SocketMetadata,
-    },
+enum ReadSocket {
+    Connected(tokio::io::ReadHalf<tokio::net::tcp::TcpStream>),
+    Reading(ReadFuture),
 }
 
-impl Socket {
-    fn new(s: tokio::net::tcp::TcpStream) -> Self {
-        Self::Listening {
-            s,
-            meta: SocketMetadata::new(SockType::Unknown),
-        }
-    }
+enum WriteSocket {
+    Connected(tokio::io::WriteHalf<tokio::net::tcp::TcpStream>),
+    Writing(WriteFuture),
+}
 
-    fn meta(&self) -> &SocketMetadata {
-        match self {
-            Socket::Listening { meta, .. } => meta,
-            Socket::Reading { meta, .. } => meta,
-            Socket::Writing { meta, .. } => meta,
+struct Connection {
+    rsock: Option<ReadSocket>,
+    wsock: Option<WriteSocket>,
+    meta: SocketMetadata,
+    to_send: std::collections::VecDeque<crate::protocol::Message>,
+}
+
+impl Connection {
+    fn new(s: tokio::net::tcp::TcpStream) -> Self {
+        let (rs, ws) = s.split();
+        Self {
+            rsock: Some(ReadSocket::Connected(rs)),
+            wsock: Some(WriteSocket::Connected(ws)),
+            meta: SocketMetadata::new(),
+            to_send: std::collections::VecDeque::new(),
         }
     }
 }
 
 struct ConnectionHandler {
     sock_stream: AcceptStream,
-
-    socks: Vec<Socket>,
+    connections: Vec<Connection>,
 }
 
 impl ConnectionHandler {
@@ -161,18 +159,17 @@ impl ConnectionHandler {
         sock_r: tokio::sync::mpsc::Receiver<tokio::net::tcp::TcpStream>,
     ) -> Self {
         let sock_stream =
-            sock_r.map(Socket::new).context(SocketChannelReceive);
+            sock_r.map(Connection::new).context(SocketChannelReceive);
         Self {
             sock_stream: Box::new(sock_stream),
-
-            socks: vec![],
+            connections: vec![],
         }
     }
 
     fn poll_new_connections(&mut self) -> Result<bool> {
         match self.sock_stream.poll() {
-            Ok(futures::Async::Ready(Some(s))) => {
-                self.socks.push(s);
+            Ok(futures::Async::Ready(Some(conn))) => {
+                self.connections.push(conn);
                 Ok(true)
             }
             Ok(futures::Async::Ready(None)) => {
@@ -183,66 +180,33 @@ impl ConnectionHandler {
         }
     }
 
-    fn poll_readable(&mut self) -> Result<bool> {
-        let mut did_work = false;
-
-        let mut i = 0;
-        while i < self.socks.len() {
-            if let Socket::Listening { s, .. } = &self.socks[i] {
-                match s.poll_read_ready(mio::Ready::readable()) {
-                    Ok(futures::Async::Ready(_)) => {
-                        if let Socket::Listening { s, meta } =
-                            self.socks.swap_remove(i)
-                        {
-                            let future = Box::new(
-                                crate::protocol::Message::read_async(s)
-                                    .context(ReadMessage),
-                            );
-                            self.socks.push(Socket::Reading { future, meta });
-                            did_work = true;
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                    Ok(futures::Async::NotReady) => {
-                        i += 1;
-                    }
-                    Err(e) => return Err(e).context(PollReadReady),
-                }
-            } else {
-                i += 1;
-            }
-        }
-
-        Ok(did_work)
-    }
-
     fn poll_read(&mut self) -> Result<bool> {
         let mut did_work = false;
 
         let mut i = 0;
-        while i < self.socks.len() {
-            if let Socket::Reading { future, .. } = &mut self.socks[i] {
-                match future.poll() {
+        while i < self.connections.len() {
+            match &mut self.connections[i].rsock {
+                Some(ReadSocket::Connected(..)) => {
+                    if let Some(ReadSocket::Connected(s)) =
+                        self.connections[i].rsock.take()
+                    {
+                        let fut = Box::new(
+                            crate::protocol::Message::read_async(s)
+                                .context(ReadMessage),
+                        );
+                        self.connections[i].rsock =
+                            Some(ReadSocket::Reading(fut));
+                    } else {
+                        unreachable!()
+                    }
+                    did_work = true;
+                }
+                Some(ReadSocket::Reading(fut)) => match fut.poll() {
                     Ok(futures::Async::Ready((msg, s))) => {
-                        if let Socket::Reading { mut meta, .. } =
-                            self.socks.swap_remove(i)
-                        {
-                            if let Some(future) =
-                                self.handle_message(&mut meta, msg)?
-                            {
-                                self.socks.push(Socket::Writing {
-                                    future: future(s),
-                                    meta,
-                                });
-                            } else {
-                                self.socks
-                                    .push(Socket::Listening { s, meta });
-                            }
-                            did_work = true;
-                        } else {
-                            unreachable!()
-                        }
+                        self.handle_message(i, msg)?;
+                        self.connections[i].rsock =
+                            Some(ReadSocket::Connected(s));
+                        did_work = true;
                     }
                     Ok(futures::Async::NotReady) => {
                         i += 1;
@@ -259,7 +223,7 @@ impl ConnectionHandler {
                                 == tokio::io::ErrorKind::UnexpectedEof
                             {
                                 println!("disconnect");
-                                self.socks.swap_remove(i);
+                                self.connections.swap_remove(i);
                             } else {
                                 return Err(e);
                             }
@@ -267,9 +231,8 @@ impl ConnectionHandler {
                             return Err(e);
                         }
                     }
-                }
-            } else {
-                i += 1;
+                },
+                _ => i += 1,
             }
         }
 
@@ -280,19 +243,31 @@ impl ConnectionHandler {
         let mut did_work = false;
 
         let mut i = 0;
-        while i < self.socks.len() {
-            if let Socket::Writing { future, .. } = &mut self.socks[i] {
-                match future.poll() {
-                    Ok(futures::Async::Ready(s)) => {
-                        if let Socket::Writing { meta, .. } =
-                            self.socks.swap_remove(i)
+        while i < self.connections.len() {
+            match &mut self.connections[i].wsock {
+                Some(WriteSocket::Connected(..)) => {
+                    if let Some(msg) = self.connections[i].to_send.pop_front()
+                    {
+                        if let Some(WriteSocket::Connected(s)) =
+                            self.connections[i].wsock.take()
                         {
-                            let sock = Socket::Listening { s, meta };
-                            self.socks.push(sock);
-                            did_work = true;
+                            let fut =
+                                msg.write_async(s).context(WriteMessage);
+                            self.connections[i].wsock =
+                                Some(WriteSocket::Writing(Box::new(fut)));
                         } else {
                             unreachable!()
                         }
+                        did_work = true;
+                    } else {
+                        i += 1;
+                    }
+                }
+                Some(WriteSocket::Writing(fut)) => match fut.poll() {
+                    Ok(futures::Async::Ready(s)) => {
+                        self.connections[i].wsock =
+                            Some(WriteSocket::Connected(s));
+                        did_work = true;
                     }
                     Ok(futures::Async::NotReady) => {
                         i += 1;
@@ -309,7 +284,7 @@ impl ConnectionHandler {
                                 == tokio::io::ErrorKind::UnexpectedEof
                             {
                                 println!("disconnect");
-                                self.socks.swap_remove(i);
+                                self.connections.swap_remove(i);
                             } else {
                                 return Err(e);
                             }
@@ -317,9 +292,8 @@ impl ConnectionHandler {
                             return Err(e);
                         }
                     }
-                }
-            } else {
-                i += 1;
+                },
+                _ => i += 1,
             }
         }
 
@@ -327,22 +301,23 @@ impl ConnectionHandler {
     }
 
     fn handle_message(
-        &self,
-        meta: &mut SocketMetadata,
+        &mut self,
+        i: usize,
         message: crate::protocol::Message,
-    ) -> Result<Option<WriteFutureFactory>> {
-        match meta.ty {
-            SockType::Unknown => self.handle_login_message(meta, message),
-            SockType::Cast => self.handle_cast_message(meta, message),
-            SockType::Watch => self.handle_watch_message(meta, message),
+    ) -> Result<()> {
+        match self.connections[i].meta.ty {
+            SockType::Unknown => self.handle_login_message(i, message),
+            SockType::Cast => self.handle_cast_message(i, message),
+            SockType::Watch => self.handle_watch_message(i, message),
         }
     }
 
     fn handle_login_message(
-        &self,
-        meta: &mut SocketMetadata,
+        &mut self,
+        i: usize,
         message: crate::protocol::Message,
-    ) -> Result<Option<WriteFutureFactory>> {
+    ) -> Result<()> {
+        let conn = &mut self.connections[i];
         match message {
             crate::protocol::Message::StartCasting {
                 username,
@@ -350,10 +325,10 @@ impl ConnectionHandler {
                 ..
             } => {
                 println!("got a cast connection from {}", username);
-                meta.ty = SockType::Cast;
-                meta.username = Some(username);
-                meta.term_type = Some(term_type);
-                Ok(None)
+                conn.meta.ty = SockType::Cast;
+                conn.meta.username = Some(username);
+                conn.meta.term_type = Some(term_type);
+                Ok(())
             }
             crate::protocol::Message::StartWatching {
                 username,
@@ -361,77 +336,74 @@ impl ConnectionHandler {
                 ..
             } => {
                 println!("got a watch connection from {}", username);
-                meta.ty = SockType::Watch;
-                meta.username = Some(username);
-                meta.term_type = Some(term_type);
-                Ok(None)
+                conn.meta.ty = SockType::Watch;
+                conn.meta.username = Some(username);
+                conn.meta.term_type = Some(term_type);
+                Ok(())
             }
             m => Err(Error::UnexpectedMessage { message: m }),
         }
     }
 
     fn handle_cast_message(
-        &self,
-        meta: &mut SocketMetadata,
+        &mut self,
+        i: usize,
         message: crate::protocol::Message,
-    ) -> Result<Option<WriteFutureFactory>> {
+    ) -> Result<()> {
+        let conn = &mut self.connections[i];
         match message {
-            crate::protocol::Message::StartCasting { username, .. } => {
-                println!("got a cast connection from {}", username);
-                meta.username = Some(username);
-                Ok(None)
-            }
             crate::protocol::Message::Heartbeat => {
                 println!(
                     "got a heartbeat from {}",
-                    meta.username.as_ref().unwrap()
+                    conn.meta.username.as_ref().unwrap()
                 );
-                let msg = crate::protocol::Message::heartbeat();
-                Ok(Some(Box::new(move |s| {
-                    Box::new(msg.write_async(s).context(WriteMessage))
-                })))
+                conn.to_send
+                    .push_back(crate::protocol::Message::heartbeat());
+                Ok(())
             }
             crate::protocol::Message::TerminalOutput { data } => {
                 println!("got {} bytes of cast data", data.len());
-                meta.saved_data.append(data);
-                for sock in self.socks.iter() {
-                    if sock.meta().ty == SockType::Watch {
+                conn.meta.saved_data.append(data);
+                for conn in self.connections.iter() {
+                    if conn.meta.ty == SockType::Watch {
                         // XXX test if it's watching the correct session
                         // XXX async-send a TerminalOutput message back
                         // (probably need another vec of in-progress async
                         // sends)
                     }
                 }
-                Ok(None)
+                Ok(())
             }
             m => Err(Error::UnexpectedMessage { message: m }),
         }
     }
 
     fn handle_watch_message(
-        &self,
-        meta: &mut SocketMetadata,
+        &mut self,
+        i: usize,
         message: crate::protocol::Message,
-    ) -> Result<Option<WriteFutureFactory>> {
+    ) -> Result<()> {
         match message {
             crate::protocol::Message::ListSessions => {
                 let mut ids = vec![];
-                for sock in self.socks.iter() {
-                    if sock.meta().ty == SockType::Cast {
-                        ids.push(sock.meta().id.clone());
-                    }
+                for caster in self
+                    .connections
+                    .iter()
+                    .filter(|c| c.meta.ty == SockType::Cast)
+                {
+                    ids.push(caster.meta.id.clone());
                 }
-                let msg = crate::protocol::Message::sessions(&ids);
-                Ok(Some(Box::new(move |s| {
-                    Box::new(msg.write_async(s).context(WriteMessage))
-                })))
+                let conn = &mut self.connections[i];
+                conn.to_send
+                    .push_back(crate::protocol::Message::sessions(&ids));
+                Ok(())
             }
             crate::protocol::Message::WatchSession { id } => {
                 let _id = id;
                 // XXX start by sending a TerminalOutput message containing
                 // the saved_data for the given session, then register for
                 // further updates
-                Ok(None)
+                Ok(())
             }
             m => Err(Error::UnexpectedMessage { message: m }),
         }
@@ -447,7 +419,6 @@ impl futures::future::Future for ConnectionHandler {
             let mut did_work = false;
 
             did_work |= self.poll_new_connections()?;
-            did_work |= self.poll_readable()?;
             did_work |= self.poll_read()?;
             did_work |= self.poll_write()?;
 

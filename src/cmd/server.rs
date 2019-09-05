@@ -81,59 +81,43 @@ enum SockType {
     Watch,
 }
 
-#[derive(Debug)]
-struct SocketMetadata {
-    ty: SockType,
-    id: String,
-    username: Option<String>,
-    term_type: Option<String>,
-    saved_data: crate::term::Buffer,
-}
-
-impl SocketMetadata {
-    fn new() -> Self {
-        Self {
-            ty: SockType::Unknown,
-            id: format!("{}", uuid::Uuid::new_v4()),
-            username: None,
-            term_type: None,
-            saved_data: crate::term::Buffer::new(),
-        }
-    }
-}
-
-type AcceptStream =
-    Box<dyn futures::stream::Stream<Item = Connection, Error = Error> + Send>;
-type ReadFuture = Box<
-    dyn futures::future::Future<
-            Item = (
-                crate::protocol::Message,
-                tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
-            ),
-            Error = Error,
-        > + Send,
->;
-type WriteFuture = Box<
-    dyn futures::future::Future<
-            Item = tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
-            Error = Error,
-        > + Send,
->;
-
 enum ReadSocket {
     Connected(tokio::io::ReadHalf<tokio::net::tcp::TcpStream>),
-    Reading(ReadFuture),
+    Reading(
+        Box<
+            dyn futures::future::Future<
+                    Item = (
+                        crate::protocol::Message,
+                        tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
+                    ),
+                    Error = Error,
+                > + Send,
+        >,
+    ),
 }
 
 enum WriteSocket {
     Connected(tokio::io::WriteHalf<tokio::net::tcp::TcpStream>),
-    Writing(WriteFuture),
+    Writing(
+        Box<
+            dyn futures::future::Future<
+                    Item = tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
+                    Error = Error,
+                > + Send,
+        >,
+    ),
 }
 
 struct Connection {
     rsock: Option<ReadSocket>,
     wsock: Option<WriteSocket>,
-    meta: SocketMetadata,
+
+    ty: SockType,
+    id: String,
+    username: Option<String>,
+    term_type: Option<String>,
+    saved_data: crate::term::Buffer,
+
     to_send: std::collections::VecDeque<crate::protocol::Message>,
 }
 
@@ -143,14 +127,22 @@ impl Connection {
         Self {
             rsock: Some(ReadSocket::Connected(rs)),
             wsock: Some(WriteSocket::Connected(ws)),
-            meta: SocketMetadata::new(),
+
+            ty: SockType::Unknown,
+            id: format!("{}", uuid::Uuid::new_v4()),
+            username: None,
+            term_type: None,
+            saved_data: crate::term::Buffer::new(),
+
             to_send: std::collections::VecDeque::new(),
         }
     }
 }
 
 struct ConnectionHandler {
-    sock_stream: AcceptStream,
+    sock_stream: Box<
+        dyn futures::stream::Stream<Item = Connection, Error = Error> + Send,
+    >,
     connections: Vec<Connection>,
 }
 
@@ -305,7 +297,7 @@ impl ConnectionHandler {
         i: usize,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        match self.connections[i].meta.ty {
+        match self.connections[i].ty {
             SockType::Unknown => self.handle_login_message(i, message),
             SockType::Cast => self.handle_cast_message(i, message),
             SockType::Watch => self.handle_watch_message(i, message),
@@ -325,9 +317,9 @@ impl ConnectionHandler {
                 ..
             } => {
                 println!("got a cast connection from {}", username);
-                conn.meta.ty = SockType::Cast;
-                conn.meta.username = Some(username);
-                conn.meta.term_type = Some(term_type);
+                conn.ty = SockType::Cast;
+                conn.username = Some(username);
+                conn.term_type = Some(term_type);
                 Ok(())
             }
             crate::protocol::Message::StartWatching {
@@ -336,9 +328,9 @@ impl ConnectionHandler {
                 ..
             } => {
                 println!("got a watch connection from {}", username);
-                conn.meta.ty = SockType::Watch;
-                conn.meta.username = Some(username);
-                conn.meta.term_type = Some(term_type);
+                conn.ty = SockType::Watch;
+                conn.username = Some(username);
+                conn.term_type = Some(term_type);
                 Ok(())
             }
             m => Err(Error::UnexpectedMessage { message: m }),
@@ -355,7 +347,7 @@ impl ConnectionHandler {
             crate::protocol::Message::Heartbeat => {
                 println!(
                     "got a heartbeat from {}",
-                    conn.meta.username.as_ref().unwrap()
+                    conn.username.as_ref().unwrap()
                 );
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
@@ -363,9 +355,9 @@ impl ConnectionHandler {
             }
             crate::protocol::Message::TerminalOutput { data } => {
                 println!("got {} bytes of cast data", data.len());
-                conn.meta.saved_data.append(data);
+                conn.saved_data.append(data);
                 for conn in self.connections.iter() {
-                    if conn.meta.ty == SockType::Watch {
+                    if conn.ty == SockType::Watch {
                         // XXX test if it's watching the correct session
                         // XXX async-send a TerminalOutput message back
                         // (probably need another vec of in-progress async
@@ -386,12 +378,10 @@ impl ConnectionHandler {
         match message {
             crate::protocol::Message::ListSessions => {
                 let mut ids = vec![];
-                for caster in self
-                    .connections
-                    .iter()
-                    .filter(|c| c.meta.ty == SockType::Cast)
+                for caster in
+                    self.connections.iter().filter(|c| c.ty == SockType::Cast)
                 {
-                    ids.push(caster.meta.id.clone());
+                    ids.push(caster.id.clone());
                 }
                 let conn = &mut self.connections[i];
                 conn.to_send

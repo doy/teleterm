@@ -171,9 +171,7 @@ impl CastSession {
                 let since_last_server = std::time::Instant::now()
                     .duration_since(self.last_server_time);
                 if since_last_server > self.heartbeat_duration * 2 {
-                    self.rsock = ReadSocket::NotConnected;
-                    self.wsock = WriteSocket::NotConnected;
-                    self.sent_remote = 0;
+                    self.reconnect();
                     return Ok(true);
                 }
             }
@@ -288,8 +286,7 @@ impl CastSession {
                 }
                 Ok(futures::Async::NotReady) => Ok(false),
                 Err(..) => {
-                    self.rsock = ReadSocket::NotConnected;
-                    self.wsock = WriteSocket::NotConnected;
+                    self.reconnect();
                     Ok(true)
                 }
             },
@@ -412,6 +409,12 @@ impl CastSession {
                 }
             },
         }
+    }
+
+    fn reconnect(&mut self) {
+        self.rsock = ReadSocket::NotConnected;
+        self.wsock = WriteSocket::NotConnected;
+        self.sent_remote = 0;
     }
 }
 

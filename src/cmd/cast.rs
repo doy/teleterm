@@ -54,9 +54,12 @@ pub fn run<'a>(_matches: &clap::ArgMatches<'a>) -> super::Result<()> {
 }
 
 fn run_impl() -> Result<()> {
-    tokio::run(CastSession::new("zsh", &[])?.map_err(|e| {
-        eprintln!("{}", e);
-    }));
+    tokio::run(
+        CastSession::new("zsh", &[], std::time::Duration::from_secs(5))?
+            .map_err(|e| {
+                eprintln!("{}", e);
+            }),
+    );
 
     Ok(())
 }
@@ -119,6 +122,7 @@ struct CastSession {
     process: crate::process::Process,
     heartbeat_timer: tokio::timer::Interval,
     reconnect_timer: Option<tokio::timer::Delay>,
+    heartbeat_duration: std::time::Duration,
     stdout: tokio::io::Stdout,
     rsock: ReadSocket,
     wsock: WriteSocket,
@@ -131,16 +135,20 @@ struct CastSession {
 }
 
 impl CastSession {
-    fn new(cmd: &str, args: &[String]) -> Result<Self> {
+    fn new(
+        cmd: &str,
+        args: &[String],
+        heartbeat_duration: std::time::Duration,
+    ) -> Result<Self> {
         let process =
             crate::process::Process::new(cmd, args).context(Spawn)?;
-        let heartbeat_timer = tokio::timer::Interval::new_interval(
-            std::time::Duration::from_secs(5),
-        );
+        let heartbeat_timer =
+            tokio::timer::Interval::new_interval(heartbeat_duration);
         Ok(Self {
             process,
             heartbeat_timer,
             reconnect_timer: None,
+            heartbeat_duration,
             stdout: tokio::io::stdout(),
             rsock: ReadSocket::NotConnected,
             wsock: WriteSocket::NotConnected,
@@ -160,7 +168,7 @@ impl CastSession {
             _ => {
                 let since_last_server = std::time::Instant::now()
                     .duration_since(self.last_server_time);
-                if since_last_server > std::time::Duration::from_secs(10) {
+                if since_last_server > self.heartbeat_duration * 2 {
                     self.rsock = ReadSocket::NotConnected;
                     self.wsock = WriteSocket::NotConnected;
                     self.sent_remote = 0;

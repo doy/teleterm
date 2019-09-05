@@ -1,6 +1,7 @@
 mod cmd;
 mod process;
 mod protocol;
+mod term;
 mod util;
 
 fn main() {

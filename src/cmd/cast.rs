@@ -64,8 +64,6 @@ fn run_impl() -> Result<()> {
     Ok(())
 }
 
-const RESET: &[&[u8]] = &[b"\x1b[H\x1b[J", b"\x1b[2J"];
-
 enum ReadSocket {
     NotConnected,
     Connected(tokio::io::ReadHalf<tokio::net::tcp::TcpStream>),
@@ -128,7 +126,7 @@ struct CastSession {
     stdout: tokio::io::Stdout,
     rsock: ReadSocket,
     wsock: WriteSocket,
-    buffer: Vec<u8>,
+    buffer: crate::term::Buffer,
     sent_local: usize,
     sent_remote: usize,
     needs_flush: bool,
@@ -155,7 +153,7 @@ impl CastSession {
             stdout: tokio::io::stdout(),
             rsock: ReadSocket::NotConnected,
             wsock: WriteSocket::NotConnected,
-            buffer: vec![],
+            buffer: crate::term::Buffer::new(),
             sent_local: 0,
             sent_remote: 0,
             needs_flush: false,
@@ -301,7 +299,7 @@ impl CastSession {
 
         match self
             .stdout
-            .poll_write(&self.buffer[self.sent_local..])
+            .poll_write(&self.buffer.contents()[self.sent_local..])
             .context(WriteTerminal)?
         {
             futures::Async::Ready(n) => {
@@ -336,7 +334,7 @@ impl CastSession {
                 if self.sent_remote == self.buffer.len() {
                     return Ok(false);
                 }
-                let buf = &self.buffer[self.sent_remote..];
+                let buf = &self.buffer.contents()[self.sent_remote..];
                 let mut tmp = WriteSocket::NotConnected;
                 std::mem::swap(&mut self.wsock, &mut tmp);
                 if let WriteSocket::Connected(s) = tmp {
@@ -419,17 +417,11 @@ impl CastSession {
         self.sent_remote = 0;
     }
 
-    fn record_bytes(&mut self, mut buf: Vec<u8>) {
-        for reset in RESET {
-            if let Some(i) = twoway::find_bytes(&buf, reset) {
-                self.buffer.clear();
-                self.sent_local = 0;
-                self.sent_remote = 0;
-                buf = buf.split_off(i);
-            }
+    fn record_bytes(&mut self, buf: Vec<u8>) {
+        if self.buffer.append(buf) {
+            self.sent_local = 0;
+            self.sent_remote = 0;
         }
-
-        self.buffer.append(&mut buf);
     }
 }
 

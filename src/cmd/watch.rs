@@ -27,8 +27,9 @@ pub fn run<'a>(_matches: &clap::ArgMatches<'a>) -> super::Result<()> {
 
 fn run_impl() -> Result<()> {
     let sock =
-        std::net::TcpStream::connect("127.0.0.1:8001").context(Connect)?;
-    let msg = crate::protocol::Message::start_watching("doy");
+        std::net::TcpStream::connect("127.0.0.1:8000").context(Connect)?;
+    let term = std::env::var("TERM").unwrap_or_else(|_| "".to_string());
+    let msg = crate::protocol::Message::start_watching("doy", &term);
     msg.write(&sock).context(Write)?;
 
     let msg = crate::protocol::Message::list_sessions();

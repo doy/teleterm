@@ -49,55 +49,33 @@ pub fn run<'a>(_matches: &clap::ArgMatches<'a>) -> super::Result<()> {
 }
 
 fn run_impl() -> Result<()> {
-    let (mut cast_sock_w, cast_sock_r) = tokio::sync::mpsc::channel(1);
-    let cast_addr = "127.0.0.1:8000".parse().context(ParseAddress)?;
-    let cast_listener =
-        tokio::net::TcpListener::bind(&cast_addr).context(Bind)?;
-    let cast_server = cast_listener
+    let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(1);
+    let addr = "127.0.0.1:8000".parse().context(ParseAddress)?;
+    let listener = tokio::net::TcpListener::bind(&addr).context(Bind)?;
+    let server = listener
         .incoming()
         .map_err(|e| {
             eprintln!("accept failed: {}", e);
         })
         .for_each(move |sock| {
-            cast_sock_w.try_send(sock).map_err(|e| {
+            sock_w.try_send(sock).map_err(|e| {
                 eprintln!("sending socket to manager thread failed: {}", e);
             })
         });
-
-    let (mut watch_sock_w, watch_sock_r) = tokio::sync::mpsc::channel(1);
-    let watch_addr = "127.0.0.1:8001".parse().context(ParseAddress)?;
-    let watch_listener =
-        tokio::net::TcpListener::bind(&watch_addr).context(Bind)?;
-    let watch_server = watch_listener
-        .incoming()
-        .map_err(|e| {
-            eprintln!("accept failed: {}", e);
-        })
-        .for_each(move |sock| {
-            watch_sock_w.try_send(sock).map_err(|e| {
-                eprintln!("sending socket to manager thread failed: {}", e);
-            })
-        });
-
-    let servers: Vec<
-        Box<dyn futures::future::Future<Item = (), Error = ()> + Send>,
-    > = vec![Box::new(cast_server), Box::new(watch_server)];
 
     tokio::run(futures::future::lazy(move || {
         let connection_handler =
-            ConnectionHandler::new(cast_sock_r, watch_sock_r)
-                .map_err(|e| eprintln!("{}", e));
+            ConnectionHandler::new(sock_r).map_err(|e| eprintln!("{}", e));
         tokio::spawn(connection_handler);
 
-        futures::future::join_all(servers)
-            .map(|_| ())
-            .map_err(|_| ())
+        server.map(|_| ()).map_err(|_| ())
     }));
     Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SockType {
+    Unknown,
     Cast,
     Watch,
 }
@@ -107,6 +85,7 @@ struct SocketMetadata {
     ty: SockType,
     id: String,
     username: Option<String>,
+    term_type: Option<String>,
     saved_data: crate::term::Buffer,
 }
 
@@ -116,6 +95,7 @@ impl SocketMetadata {
             ty,
             id: format!("{}", uuid::Uuid::new_v4()),
             username: None,
+            term_type: None,
             saved_data: crate::term::Buffer::new(),
         }
     }
@@ -154,10 +134,10 @@ enum Socket {
 }
 
 impl Socket {
-    fn new(s: tokio::net::tcp::TcpStream, ty: SockType) -> Self {
+    fn new(s: tokio::net::tcp::TcpStream) -> Self {
         Self::Listening {
             s,
-            meta: SocketMetadata::new(ty),
+            meta: SocketMetadata::new(SockType::Unknown),
         }
     }
 
@@ -178,13 +158,10 @@ struct ConnectionHandler {
 
 impl ConnectionHandler {
     fn new(
-        cast_sock_r: tokio::sync::mpsc::Receiver<tokio::net::tcp::TcpStream>,
-        watch_sock_r: tokio::sync::mpsc::Receiver<tokio::net::tcp::TcpStream>,
+        sock_r: tokio::sync::mpsc::Receiver<tokio::net::tcp::TcpStream>,
     ) -> Self {
-        let sock_stream = cast_sock_r
-            .map(|s| Socket::new(s, SockType::Cast))
-            .select(watch_sock_r.map(|s| Socket::new(s, SockType::Watch)))
-            .context(SocketChannelReceive);
+        let sock_stream =
+            sock_r.map(Socket::new).context(SocketChannelReceive);
         Self {
             sock_stream: Box::new(sock_stream),
 
@@ -355,8 +332,41 @@ impl ConnectionHandler {
         message: crate::protocol::Message,
     ) -> Result<Option<WriteFutureFactory>> {
         match meta.ty {
+            SockType::Unknown => self.handle_login_message(meta, message),
             SockType::Cast => self.handle_cast_message(meta, message),
             SockType::Watch => self.handle_watch_message(meta, message),
+        }
+    }
+
+    fn handle_login_message(
+        &self,
+        meta: &mut SocketMetadata,
+        message: crate::protocol::Message,
+    ) -> Result<Option<WriteFutureFactory>> {
+        match message {
+            crate::protocol::Message::StartCasting {
+                username,
+                term_type,
+                ..
+            } => {
+                println!("got a cast connection from {}", username);
+                meta.ty = SockType::Cast;
+                meta.username = Some(username);
+                meta.term_type = Some(term_type);
+                Ok(None)
+            }
+            crate::protocol::Message::StartWatching {
+                username,
+                term_type,
+                ..
+            } => {
+                println!("got a watch connection from {}", username);
+                meta.ty = SockType::Watch;
+                meta.username = Some(username);
+                meta.term_type = Some(term_type);
+                Ok(None)
+            }
+            m => Err(Error::UnexpectedMessage { message: m }),
         }
     }
 
@@ -404,11 +414,6 @@ impl ConnectionHandler {
         message: crate::protocol::Message,
     ) -> Result<Option<WriteFutureFactory>> {
         match message {
-            crate::protocol::Message::StartWatching { username } => {
-                println!("got a watch connection from {}", username);
-                meta.username = Some(username);
-                Ok(None)
-            }
             crate::protocol::Message::ListSessions => {
                 let mut ids = vec![];
                 for sock in self.socks.iter() {

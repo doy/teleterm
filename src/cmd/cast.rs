@@ -204,13 +204,10 @@ impl CastSession {
                     self.last_server_time = std::time::Instant::now();
                     let term =
                         std::env::var("TERM").unwrap_or("".to_string());
-                    let fut = crate::protocol::Message::start_casting(
-                        crate::protocol::ConnType::Cast,
-                        "doy",
-                        &term,
-                    )
-                    .write_async(ws)
-                    .context(Write);
+                    let fut =
+                        crate::protocol::Message::start_casting("doy", &term)
+                            .write_async(ws)
+                            .context(Write);
                     self.rsock = ReadSocket::Connected(rs);
                     self.wsock = WriteSocket::LoggingIn(Box::new(fut));
                     Ok(true)

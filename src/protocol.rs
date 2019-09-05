@@ -46,21 +46,16 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub const PROTO_VERSION: u32 = 1;
 
 #[derive(Debug)]
-pub enum ConnType {
-    Cast,
-    Watch,
-}
-
-#[derive(Debug)]
 pub enum Message {
     StartCasting {
         proto_version: u32,
-        conn_type: ConnType,
         username: String,
         term_type: String,
     },
     StartWatching {
+        proto_version: u32,
         username: String,
+        term_type: String,
     },
     Heartbeat,
     TerminalOutput {
@@ -76,22 +71,19 @@ pub enum Message {
 }
 
 impl Message {
-    pub fn start_casting(
-        conn_type: ConnType,
-        username: &str,
-        term_type: &str,
-    ) -> Message {
+    pub fn start_casting(username: &str, term_type: &str) -> Message {
         Message::StartCasting {
             proto_version: PROTO_VERSION,
-            conn_type,
             username: username.to_string(),
             term_type: term_type.to_string(),
         }
     }
 
-    pub fn start_watching(username: &str) -> Message {
+    pub fn start_watching(username: &str, term_type: &str) -> Message {
         Message::StartWatching {
+            proto_version: PROTO_VERSION,
             username: username.to_string(),
+            term_type: term_type.to_string(),
         }
     }
 
@@ -216,19 +208,12 @@ impl From<&Message> for Packet {
         match msg {
             Message::StartCasting {
                 proto_version,
-                conn_type,
                 username,
                 term_type,
             } => {
                 let mut data = vec![];
 
                 data.extend_from_slice(&proto_version.to_le_bytes());
-
-                let conn_type_int: u32 = match conn_type {
-                    ConnType::Cast => 0,
-                    ConnType::Watch => 1,
-                };
-                data.extend_from_slice(&conn_type_int.to_le_bytes());
 
                 let len: u32 = username.len().try_into().unwrap();
                 data.extend_from_slice(&len.to_le_bytes());
@@ -240,10 +225,25 @@ impl From<&Message> for Packet {
 
                 Packet { ty: 0, data }
             }
-            Message::StartWatching { username } => Packet {
-                ty: 1,
-                data: username.as_bytes().to_vec(),
-            },
+            Message::StartWatching {
+                proto_version,
+                username,
+                term_type,
+            } => {
+                let mut data = vec![];
+
+                data.extend_from_slice(&proto_version.to_le_bytes());
+
+                let len: u32 = username.len().try_into().unwrap();
+                data.extend_from_slice(&len.to_le_bytes());
+                data.extend_from_slice(username.as_bytes());
+
+                let len: u32 = term_type.len().try_into().unwrap();
+                data.extend_from_slice(&len.to_le_bytes());
+                data.extend_from_slice(term_type.as_bytes());
+
+                Packet { ty: 1, data }
+            }
             Message::Heartbeat => Packet {
                 ty: 2,
                 data: vec![],
@@ -290,18 +290,37 @@ impl std::convert::TryFrom<Packet> for Message {
                 data = rest;
 
                 let (buf, rest) = data.split_at(std::mem::size_of::<u32>());
-                let conn_type_int = u32::from_le_bytes(
+                let len = u32::from_le_bytes(
                     buf.try_into().context(ParseMessageLen)?,
                 );
-                let conn_type = match conn_type_int {
-                    0 => ConnType::Cast,
-                    1 => ConnType::Watch,
-                    _ => {
-                        return Err(Error::InvalidConnType {
-                            ty: conn_type_int,
-                        })
-                    }
-                };
+                data = rest;
+                let (buf, rest) = data.split_at(len.try_into().unwrap());
+                let username = String::from_utf8(buf.to_vec())
+                    .context(ParseStartWatchingMessage)?;
+                data = rest;
+
+                let (buf, rest) = data.split_at(std::mem::size_of::<u32>());
+                let len = u32::from_le_bytes(
+                    buf.try_into().context(ParseMessageLen)?,
+                );
+                data = rest;
+                let (buf, _) = data.split_at(len.try_into().unwrap());
+                let term_type = String::from_utf8(buf.to_vec())
+                    .context(ParseStartWatchingMessage)?;
+
+                Ok(Message::StartCasting {
+                    proto_version,
+                    username,
+                    term_type,
+                })
+            }
+            1 => {
+                let mut data: &[u8] = packet.data.as_ref();
+
+                let (buf, rest) = data.split_at(std::mem::size_of::<u32>());
+                let proto_version = u32::from_le_bytes(
+                    buf.try_into().context(ParseMessageLen)?,
+                );
                 data = rest;
 
                 let (buf, rest) = data.split_at(std::mem::size_of::<u32>());
@@ -323,17 +342,12 @@ impl std::convert::TryFrom<Packet> for Message {
                 let term_type = String::from_utf8(buf.to_vec())
                     .context(ParseStartWatchingMessage)?;
 
-                Ok(Message::StartCasting {
+                Ok(Message::StartWatching {
                     proto_version,
-                    conn_type,
                     username,
                     term_type,
                 })
             }
-            1 => Ok(Message::StartWatching {
-                username: String::from_utf8(packet.data)
-                    .context(ParseStartWatchingMessage)?,
-            }),
             2 => Ok(Message::Heartbeat),
             3 => Ok(Message::TerminalOutput { data: packet.data }),
             4 => Ok(Message::ListSessions),

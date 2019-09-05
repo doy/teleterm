@@ -404,6 +404,7 @@ impl CastSession {
                 }
                 Ok(futures::Async::NotReady) => Ok(false),
                 Err(e) => {
+                    self.reconnect();
                     self.needs_send_heartbeat = true;
                     Err(e)
                 }

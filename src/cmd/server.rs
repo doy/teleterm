@@ -26,9 +26,6 @@ pub enum Error {
     ))]
     SocketChannelClosed,
 
-    #[snafu(display("failed to poll for readability: {}", source))]
-    PollReadReady { source: tokio::io::Error },
-
     #[snafu(display("failed to read message: {}", source))]
     ReadMessage { source: crate::protocol::Error },
 

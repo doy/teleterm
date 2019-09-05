@@ -163,6 +163,7 @@ impl CastSession {
                 if since_last_server > std::time::Duration::from_secs(10) {
                     self.rsock = ReadSocket::NotConnected;
                     self.wsock = WriteSocket::NotConnected;
+                    self.sent_remote = 0;
                     return Ok(true);
                 }
             }

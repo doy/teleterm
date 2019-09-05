@@ -107,7 +107,7 @@ struct SocketMetadata {
     ty: SockType,
     id: String,
     username: Option<String>,
-    saved_data: Vec<u8>,
+    saved_data: crate::term::Buffer,
 }
 
 impl SocketMetadata {
@@ -116,7 +116,7 @@ impl SocketMetadata {
             ty,
             id: format!("{}", uuid::Uuid::new_v4()),
             username: None,
-            saved_data: vec![],
+            saved_data: crate::term::Buffer::new(),
         }
     }
 }
@@ -383,8 +383,7 @@ impl ConnectionHandler {
             }
             crate::protocol::Message::TerminalOutput { data } => {
                 println!("got {} bytes of cast data", data.len());
-                meta.saved_data.extend_from_slice(&data);
-                // XXX truncate data before most recent screen clear
+                meta.saved_data.append(data);
                 for sock in self.socks.iter() {
                     if sock.meta().ty == SockType::Watch {
                         // XXX test if it's watching the correct session

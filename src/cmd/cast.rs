@@ -202,9 +202,15 @@ impl CastSession {
                 Ok(futures::Async::Ready(s)) => {
                     let (rs, ws) = s.split();
                     self.last_server_time = std::time::Instant::now();
-                    let fut = crate::protocol::Message::start_casting("doy")
-                        .write_async(ws)
-                        .context(Write);
+                    let term =
+                        std::env::var("TERM").unwrap_or("".to_string());
+                    let fut = crate::protocol::Message::start_casting(
+                        crate::protocol::ConnType::Cast,
+                        "doy",
+                        &term,
+                    )
+                    .write_async(ws)
+                    .context(Write);
                     self.rsock = ReadSocket::Connected(rs);
                     self.wsock = WriteSocket::LoggingIn(Box::new(fut));
                     Ok(true)

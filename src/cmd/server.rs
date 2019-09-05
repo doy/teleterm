@@ -366,7 +366,7 @@ impl ConnectionHandler {
         message: crate::protocol::Message,
     ) -> Result<Option<WriteFutureFactory>> {
         match message {
-            crate::protocol::Message::StartCasting { username } => {
+            crate::protocol::Message::StartCasting { username, .. } => {
                 println!("got a cast connection from {}", username);
                 meta.username = Some(username);
                 Ok(None)

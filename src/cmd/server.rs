@@ -79,13 +79,13 @@ enum SockType {
 }
 
 enum ReadSocket {
-    Connected(tokio::io::ReadHalf<tokio::net::tcp::TcpStream>),
+    Connected(crate::protocol::FramedReader),
     Reading(
         Box<
             dyn futures::future::Future<
                     Item = (
                         crate::protocol::Message,
-                        tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
+                        crate::protocol::FramedReader,
                     ),
                     Error = Error,
                 > + Send,
@@ -94,11 +94,11 @@ enum ReadSocket {
 }
 
 enum WriteSocket {
-    Connected(tokio::io::WriteHalf<tokio::net::tcp::TcpStream>),
+    Connected(crate::protocol::FramedWriter),
     Writing(
         Box<
             dyn futures::future::Future<
-                    Item = tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
+                    Item = crate::protocol::FramedWriter,
                     Error = Error,
                 > + Send,
         >,
@@ -122,8 +122,12 @@ impl Connection {
     fn new(s: tokio::net::tcp::TcpStream) -> Self {
         let (rs, ws) = s.split();
         Self {
-            rsock: Some(ReadSocket::Connected(rs)),
-            wsock: Some(WriteSocket::Connected(ws)),
+            rsock: Some(ReadSocket::Connected(
+                crate::protocol::FramedReader::new(rs),
+            )),
+            wsock: Some(WriteSocket::Connected(
+                crate::protocol::FramedWriter::new(ws),
+            )),
 
             ty: SockType::Unknown,
             id: format!("{}", uuid::Uuid::new_v4()),
@@ -201,20 +205,25 @@ impl ConnectionHandler {
                         i += 1;
                     }
                     Err(e) => {
-                        if let Error::ReadMessage {
-                            source:
+                        if let Error::ReadMessage { ref source } = e {
+                            match source {
                                 crate::protocol::Error::ReadAsync {
                                     source: ref tokio_err,
-                                },
-                        } = e
-                        {
-                            if tokio_err.kind()
-                                == tokio::io::ErrorKind::UnexpectedEof
-                            {
-                                println!("disconnect");
-                                self.connections.swap_remove(i);
-                            } else {
-                                return Err(e);
+                                } => {
+                                    if tokio_err.kind()
+                                        == tokio::io::ErrorKind::UnexpectedEof
+                                    {
+                                        println!("disconnect");
+                                        self.connections.swap_remove(i);
+                                    } else {
+                                        return Err(e);
+                                    }
+                                }
+                                crate::protocol::Error::EOF => {
+                                    println!("disconnect");
+                                    self.connections.swap_remove(i);
+                                }
+                                _ => return Err(e),
                             }
                         } else {
                             return Err(e);
@@ -262,20 +271,25 @@ impl ConnectionHandler {
                         i += 1;
                     }
                     Err(e) => {
-                        if let Error::ReadMessage {
-                            source:
+                        if let Error::WriteMessage { ref source } = e {
+                            match source {
                                 crate::protocol::Error::WriteAsync {
                                     source: ref tokio_err,
-                                },
-                        } = e
-                        {
-                            if tokio_err.kind()
-                                == tokio::io::ErrorKind::UnexpectedEof
-                            {
-                                println!("disconnect");
-                                self.connections.swap_remove(i);
-                            } else {
-                                return Err(e);
+                                } => {
+                                    if tokio_err.kind()
+                                        == tokio::io::ErrorKind::UnexpectedEof
+                                    {
+                                        println!("disconnect");
+                                        self.connections.swap_remove(i);
+                                    } else {
+                                        return Err(e);
+                                    }
+                                }
+                                crate::protocol::Error::EOF => {
+                                    println!("disconnect");
+                                    self.connections.swap_remove(i);
+                                }
+                                _ => return Err(e),
                             }
                         } else {
                             return Err(e);

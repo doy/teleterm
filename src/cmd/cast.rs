@@ -66,13 +66,13 @@ fn run_impl() -> Result<()> {
 
 enum ReadSocket {
     NotConnected,
-    Connected(tokio::io::ReadHalf<tokio::net::tcp::TcpStream>),
+    Connected(crate::protocol::FramedReader),
     ReadingMessage(
         Box<
             dyn futures::future::Future<
                     Item = (
                         crate::protocol::Message,
-                        tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
+                        crate::protocol::FramedReader,
                     ),
                     Error = Error,
                 > + Send,
@@ -93,16 +93,16 @@ enum WriteSocket {
     LoggingIn(
         Box<
             dyn futures::future::Future<
-                    Item = tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
+                    Item = crate::protocol::FramedWriter,
                     Error = Error,
                 > + Send,
         >,
     ),
-    Connected(tokio::io::WriteHalf<tokio::net::tcp::TcpStream>),
+    Connected(crate::protocol::FramedWriter),
     SendingOutput(
         Box<
             dyn futures::future::Future<
-                    Item = tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
+                    Item = crate::protocol::FramedWriter,
                     Error = Error,
                 > + Send,
         >,
@@ -111,7 +111,7 @@ enum WriteSocket {
     SendingHeartbeat(
         Box<
             dyn futures::future::Future<
-                    Item = tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
+                    Item = crate::protocol::FramedWriter,
                     Error = Error,
                 > + Send,
         >,
@@ -202,13 +202,17 @@ impl CastSession {
                 Ok(futures::Async::Ready(s)) => {
                     let (rs, ws) = s.split();
                     self.last_server_time = std::time::Instant::now();
-                    let term =
-                        std::env::var("TERM").unwrap_or("".to_string());
+                    let term = std::env::var("TERM")
+                        .unwrap_or_else(|_| "".to_string());
                     let fut =
                         crate::protocol::Message::start_casting("doy", &term)
-                            .write_async(ws)
+                            .write_async(crate::protocol::FramedWriter::new(
+                                ws,
+                            ))
                             .context(Write);
-                    self.rsock = ReadSocket::Connected(rs);
+                    self.rsock = ReadSocket::Connected(
+                        crate::protocol::FramedReader::new(rs),
+                    );
                     self.wsock = WriteSocket::LoggingIn(Box::new(fut));
                     Ok(true)
                 }

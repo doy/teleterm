@@ -1,3 +1,4 @@
+mod client;
 mod cmd;
 mod process;
 mod protocol;

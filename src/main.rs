@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 mod client;
 mod cmd;
 mod process;

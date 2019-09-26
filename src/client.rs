@@ -112,6 +112,17 @@ pub struct Client {
 }
 
 impl Client {
+    // XXX rustfmt does a terrible job here
+    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
+        &'a mut Self,
+    )
+        -> Result<Poll>] = &[
+        &Self::poll_reconnect_server,
+        &Self::poll_read_server,
+        &Self::poll_write_server,
+        &Self::poll_heartbeat,
+    ];
+
     pub fn new(heartbeat_duration: std::time::Duration) -> Self {
         let heartbeat_timer =
             tokio::timer::Interval::new_interval(heartbeat_duration);
@@ -311,40 +322,26 @@ impl futures::stream::Stream for Client {
 
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
         loop {
-            let mut not_ready = 0;
-            let mut did_work = 0;
+            let mut not_ready = false;
+            let mut did_work = false;
 
-            match self.poll_reconnect_server()? {
-                Poll::Event(e) => return Ok(futures::Async::Ready(Some(e))),
-                Poll::NotReady => not_ready += 1,
-                Poll::NothingToDo => {}
-                Poll::DidWork => did_work += 1,
-            }
-            match self.poll_read_server()? {
-                Poll::Event(e) => return Ok(futures::Async::Ready(Some(e))),
-                Poll::NotReady => not_ready += 1,
-                Poll::NothingToDo => {}
-                Poll::DidWork => did_work += 1,
-            }
-            match self.poll_write_server()? {
-                Poll::Event(e) => return Ok(futures::Async::Ready(Some(e))),
-                Poll::NotReady => not_ready += 1,
-                Poll::NothingToDo => {}
-                Poll::DidWork => did_work += 1,
-            }
-            match self.poll_heartbeat()? {
-                Poll::Event(e) => return Ok(futures::Async::Ready(Some(e))),
-                Poll::NotReady => not_ready += 1,
-                Poll::NothingToDo => {}
-                Poll::DidWork => did_work += 1,
+            for f in Self::POLL_FNS {
+                match f(self)? {
+                    Poll::Event(e) => {
+                        return Ok(futures::Async::Ready(Some(e)))
+                    }
+                    Poll::NotReady => not_ready = true,
+                    Poll::NothingToDo => {}
+                    Poll::DidWork => did_work = true,
+                }
             }
 
             if self.done {
                 return Ok(futures::Async::Ready(None));
             }
 
-            if did_work == 0 {
-                if not_ready > 0 {
+            if !did_work {
+                if not_ready {
                     return Ok(futures::Async::NotReady);
                 } else {
                     unreachable!()

@@ -5,6 +5,7 @@ mod cmd;
 mod component_future;
 mod process;
 mod protocol;
+mod server;
 mod term;
 mod util;
 

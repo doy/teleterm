@@ -26,9 +26,6 @@ pub enum Error {
 
     #[snafu(display("failed to write message to server: {}", source))]
     WriteServer { source: crate::protocol::Error },
-
-    #[snafu(display("unexpected message: {:?}", message))]
-    UnexpectedMessage { message: crate::protocol::Message },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

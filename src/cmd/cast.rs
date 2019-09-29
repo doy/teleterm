@@ -36,10 +36,16 @@ pub fn run<'a>(_matches: &clap::ArgMatches<'a>) -> super::Result<()> {
 
 fn run_impl() -> Result<()> {
     tokio::run(
-        CastSession::new("zsh", &[], std::time::Duration::from_secs(5))?
-            .map_err(|e| {
-                eprintln!("{}", e);
-            }),
+        CastSession::new(
+            "zsh",
+            &[],
+            "127.0.0.1:8000",
+            "doy",
+            std::time::Duration::from_secs(5),
+        )?
+        .map_err(|e| {
+            eprintln!("{}", e);
+        }),
     );
 
     Ok(())
@@ -72,9 +78,16 @@ impl CastSession {
     fn new(
         cmd: &str,
         args: &[String],
+        address: &str,
+        username: &str,
         heartbeat_duration: std::time::Duration,
     ) -> Result<Self> {
-        let client = crate::client::Client::new(heartbeat_duration);
+        let client = crate::client::Client::new(
+            address,
+            username,
+            crate::client::ClientType::Casting,
+            heartbeat_duration,
+        );
         let process =
             crate::process::Process::new(cmd, args).context(Spawn)?;
         Ok(Self {

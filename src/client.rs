@@ -80,8 +80,17 @@ pub enum Event {
     Reconnect,
 }
 
+pub enum ClientType {
+    Casting,
+    Watching,
+}
+
 pub struct Client {
+    address: String,
+    username: String,
+    ty: ClientType,
     heartbeat_duration: std::time::Duration,
+
     heartbeat_timer: tokio::timer::Interval,
     reconnect_timer: Option<tokio::timer::Delay>,
     last_server_time: std::time::Instant,
@@ -105,10 +114,18 @@ impl Client {
         &Self::poll_heartbeat,
     ];
 
-    pub fn new(heartbeat_duration: std::time::Duration) -> Self {
+    pub fn new(
+        address: &str,
+        username: &str,
+        ty: ClientType,
+        heartbeat_duration: std::time::Duration,
+    ) -> Self {
         let heartbeat_timer =
             tokio::timer::Interval::new_interval(heartbeat_duration);
         Self {
+            address: address.to_string(),
+            username: username.to_string(),
+            ty,
             heartbeat_duration,
 
             heartbeat_timer,
@@ -164,7 +181,8 @@ impl Client {
 
                 self.wsock = WriteSocket::Connecting(Box::new(
                     tokio::net::tcp::TcpStream::connect(
-                        &"127.0.0.1:8000"
+                        &self
+                            .address
                             .parse::<std::net::SocketAddr>()
                             .context(ParseAddr)?,
                     )
@@ -179,13 +197,23 @@ impl Client {
                     self.last_server_time = std::time::Instant::now();
                     let term = std::env::var("TERM")
                         .unwrap_or_else(|_| "".to_string());
-                    // XXX
-                    let fut =
-                        crate::protocol::Message::start_casting("doy", &term)
-                            .write_async(crate::protocol::FramedWriter::new(
-                                ws,
-                            ))
-                            .context(Write);
+                    let msg = match self.ty {
+                        ClientType::Casting => {
+                            crate::protocol::Message::start_casting(
+                                &self.username,
+                                &term,
+                            )
+                        }
+                        ClientType::Watching => {
+                            crate::protocol::Message::start_watching(
+                                &self.username,
+                                &term,
+                            )
+                        }
+                    };
+                    let fut = msg
+                        .write_async(crate::protocol::FramedWriter::new(ws))
+                        .context(Write);
                     self.rsock = ReadSocket::Connected(
                         crate::protocol::FramedReader::new(rs),
                     );

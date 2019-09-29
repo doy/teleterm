@@ -104,7 +104,6 @@ impl CastSession {
                 crate::process::CommandEvent::CommandStart(..) => {}
                 crate::process::CommandEvent::CommandExit(..) => {
                     self.done = true;
-                    self.client.done();
                 }
                 crate::process::CommandEvent::Output(output) => {
                     self.record_bytes(output);

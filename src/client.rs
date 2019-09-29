@@ -107,8 +107,6 @@ pub struct Client {
     wsock: WriteSocket,
 
     to_send: std::collections::VecDeque<crate::protocol::Message>,
-
-    done: bool,
 }
 
 impl Client {
@@ -137,17 +135,11 @@ impl Client {
             wsock: WriteSocket::NotConnected,
 
             to_send: std::collections::VecDeque::new(),
-
-            done: false,
         }
     }
 
     pub fn send_message(&mut self, msg: crate::protocol::Message) {
         self.to_send.push_back(msg);
-    }
-
-    pub fn done(&mut self) {
-        self.done = true;
     }
 
     fn reconnect(&mut self) {
@@ -334,10 +326,6 @@ impl futures::stream::Stream for Client {
                     Poll::NothingToDo => {}
                     Poll::DidWork => did_work = true,
                 }
-            }
-
-            if self.done {
-                return Ok(futures::Async::Ready(None));
             }
 
             if !did_work {

@@ -20,6 +20,9 @@ pub enum Error {
     #[snafu(display("communication with server failed: {}", source))]
     Client { source: crate::client::Error },
 
+    #[snafu(display("sending message to channel failed: {}", source))]
+    SendChannel { source: crate::client::Error },
+
     #[snafu(display("unexpected message: {:?}", message))]
     UnexpectedMessage { message: crate::protocol::Message },
 }
@@ -210,7 +213,8 @@ impl CastSession {
 
         let buf = &self.buffer.contents()[self.sent_remote..];
         self.client
-            .send_message(crate::protocol::Message::terminal_output(&buf));
+            .send_message(crate::protocol::Message::terminal_output(&buf))
+            .context(SendChannel)?;
         self.sent_remote = self.buffer.len();
 
         Ok(crate::component_future::Poll::DidWork)

@@ -1,4 +1,5 @@
 use futures::future::Future as _;
+use futures::sink::Sink as _;
 use futures::stream::Stream as _;
 use snafu::futures01::FutureExt as _;
 use snafu::ResultExt as _;
@@ -26,6 +27,16 @@ pub enum Error {
 
     #[snafu(display("failed to write message to server: {}", source))]
     WriteServer { source: crate::protocol::Error },
+
+    #[snafu(display("failed to write message to channel: {}", source))]
+    WriteChannel {
+        source: tokio::sync::mpsc::error::UnboundedSendError,
+    },
+
+    #[snafu(display("failed to read message from channel: {}", source))]
+    ReadChannel {
+        source: tokio::sync::mpsc::error::UnboundedRecvError,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -98,7 +109,10 @@ pub struct Client {
     rsock: ReadSocket,
     wsock: WriteSocket,
 
-    to_send: std::collections::VecDeque<crate::protocol::Message>,
+    rchan: tokio::sync::mpsc::UnboundedReceiver<crate::protocol::Message>,
+    wchan: futures::sink::Wait<
+        tokio::sync::mpsc::UnboundedSender<crate::protocol::Message>,
+    >,
 }
 
 impl Client {
@@ -122,6 +136,7 @@ impl Client {
     ) -> Self {
         let heartbeat_timer =
             tokio::timer::Interval::new_interval(heartbeat_duration);
+        let (wchan, rchan) = tokio::sync::mpsc::unbounded_channel();
         Self {
             address: address.to_string(),
             username: username.to_string(),
@@ -135,12 +150,27 @@ impl Client {
             rsock: ReadSocket::NotConnected,
             wsock: WriteSocket::NotConnected,
 
-            to_send: std::collections::VecDeque::new(),
+            rchan,
+            // should be safe because an unbounded channel should never block.
+            // also, we should never be in a situation where reading from the
+            // channel isn't ~instantaneous, since the read side should just
+            // immediately read the message off the channel and update the
+            // in-memory structure
+            wchan: wchan.wait(),
         }
     }
 
-    pub fn send_message(&mut self, msg: crate::protocol::Message) {
-        self.to_send.push_back(msg);
+    pub fn send_message(
+        &mut self,
+        msg: crate::protocol::Message,
+    ) -> Result<()> {
+        self.wchan.send(msg).context(WriteChannel)
+    }
+
+    fn clear_message_channel(&mut self) {
+        let (wchan, rchan) = tokio::sync::mpsc::unbounded_channel();
+        self.rchan = rchan;
+        self.wchan = wchan.wait();
     }
 
     fn reconnect(&mut self) {
@@ -188,7 +218,7 @@ impl Client {
                     )
                     .context(Connect),
                 ));
-                self.to_send.clear();
+                self.clear_message_channel();
                 Ok(crate::component_future::Poll::Event(Event::Reconnect))
             }
             WriteSocket::Connecting(ref mut fut) => match fut.poll() {
@@ -308,23 +338,24 @@ impl Client {
                 Ok(crate::component_future::Poll::NothingToDo)
             }
             WriteSocket::Connected(..) => {
-                if self.to_send.is_empty() {
-                    return Ok(crate::component_future::Poll::NothingToDo);
-                }
-                let mut tmp = WriteSocket::NotConnected;
-                std::mem::swap(&mut self.wsock, &mut tmp);
-                if let WriteSocket::Connected(s) = tmp {
-                    if let Some(msg) = self.to_send.pop_front() {
-                        let fut = msg.write_async(s).context(WriteServer);
-                        self.wsock =
-                            WriteSocket::WritingMessage(Box::new(fut));
-                    } else {
-                        unreachable!()
+                match self.rchan.poll().context(ReadChannel)? {
+                    futures::Async::Ready(Some(msg)) => {
+                        let mut tmp = WriteSocket::NotConnected;
+                        std::mem::swap(&mut self.wsock, &mut tmp);
+                        if let WriteSocket::Connected(s) = tmp {
+                            let fut = msg.write_async(s).context(WriteServer);
+                            self.wsock =
+                                WriteSocket::WritingMessage(Box::new(fut));
+                        } else {
+                            unreachable!()
+                        }
+                        Ok(crate::component_future::Poll::DidWork)
                     }
-                } else {
-                    unreachable!()
+                    futures::Async::Ready(None) => unreachable!(),
+                    futures::Async::NotReady => {
+                        Ok(crate::component_future::Poll::NotReady)
+                    }
                 }
-                Ok(crate::component_future::Poll::DidWork)
             }
             WriteSocket::WritingMessage(ref mut fut) => match fut.poll()? {
                 futures::Async::Ready(s) => {
@@ -343,7 +374,7 @@ impl Client {
     ) -> Result<crate::component_future::Poll<Event>> {
         match self.heartbeat_timer.poll().context(Timer)? {
             futures::Async::Ready(..) => {
-                self.send_message(crate::protocol::Message::heartbeat());
+                self.send_message(crate::protocol::Message::heartbeat())?;
                 Ok(crate::component_future::Poll::DidWork)
             }
             futures::Async::NotReady => {

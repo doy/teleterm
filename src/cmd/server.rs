@@ -148,6 +148,16 @@ struct ConnectionHandler {
 }
 
 impl ConnectionHandler {
+    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
+        &'a mut Self,
+    ) -> Result<
+        crate::component_future::Poll<()>,
+    >] = &[
+        &Self::poll_new_connections,
+        &Self::poll_read,
+        &Self::poll_write,
+    ];
+
     fn new(
         sock_r: tokio::sync::mpsc::Receiver<tokio::net::tcp::TcpStream>,
     ) -> Self {
@@ -159,22 +169,27 @@ impl ConnectionHandler {
         }
     }
 
-    fn poll_new_connections(&mut self) -> Result<bool> {
+    fn poll_new_connections(
+        &mut self,
+    ) -> Result<crate::component_future::Poll<()>> {
         match self.sock_stream.poll() {
             Ok(futures::Async::Ready(Some(conn))) => {
                 self.connections.push(conn);
-                Ok(true)
+                Ok(crate::component_future::Poll::DidWork)
             }
             Ok(futures::Async::Ready(None)) => {
                 Err(Error::SocketChannelClosed)
             }
-            Ok(futures::Async::NotReady) => Ok(false),
+            Ok(futures::Async::NotReady) => {
+                Ok(crate::component_future::Poll::NotReady)
+            }
             Err(e) => Err(e),
         }
     }
 
-    fn poll_read(&mut self) -> Result<bool> {
+    fn poll_read(&mut self) -> Result<crate::component_future::Poll<()>> {
         let mut did_work = false;
+        let mut not_ready = false;
 
         let mut i = 0;
         while i < self.connections.len() {
@@ -203,6 +218,7 @@ impl ConnectionHandler {
                     }
                     Ok(futures::Async::NotReady) => {
                         i += 1;
+                        not_ready = true;
                     }
                     Err(e) => {
                         if let Error::ReadMessage { ref source } = e {
@@ -234,11 +250,18 @@ impl ConnectionHandler {
             }
         }
 
-        Ok(did_work)
+        if did_work {
+            Ok(crate::component_future::Poll::DidWork)
+        } else if not_ready {
+            Ok(crate::component_future::Poll::NotReady)
+        } else {
+            Ok(crate::component_future::Poll::NothingToDo)
+        }
     }
 
-    fn poll_write(&mut self) -> Result<bool> {
+    fn poll_write(&mut self) -> Result<crate::component_future::Poll<()>> {
         let mut did_work = false;
+        let mut not_ready = false;
 
         let mut i = 0;
         while i < self.connections.len() {
@@ -269,6 +292,7 @@ impl ConnectionHandler {
                     }
                     Ok(futures::Async::NotReady) => {
                         i += 1;
+                        not_ready = true;
                     }
                     Err(e) => {
                         if let Error::WriteMessage { ref source } = e {
@@ -300,7 +324,13 @@ impl ConnectionHandler {
             }
         }
 
-        Ok(did_work)
+        if did_work {
+            Ok(crate::component_future::Poll::DidWork)
+        } else if not_ready {
+            Ok(crate::component_future::Poll::NotReady)
+        } else {
+            Ok(crate::component_future::Poll::NothingToDo)
+        }
     }
 
     fn handle_message(
@@ -416,18 +446,6 @@ impl futures::future::Future for ConnectionHandler {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-        loop {
-            let mut did_work = false;
-
-            did_work |= self.poll_new_connections()?;
-            did_work |= self.poll_read()?;
-            did_work |= self.poll_write()?;
-
-            if !did_work {
-                break;
-            }
-        }
-
-        Ok(futures::Async::NotReady)
+        crate::component_future::poll_component_future(self, Self::POLL_FNS)
     }
 }

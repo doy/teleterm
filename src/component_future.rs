@@ -14,6 +14,39 @@ pub enum Poll<T> {
     Done,
 }
 
+pub fn poll_component_future<T, Item, Error>(
+    future: &mut T,
+    poll_fns: &'static [&'static dyn for<'a> Fn(
+        &'a mut T,
+    ) -> Result<
+        Poll<Item>,
+        Error,
+    >],
+) -> futures::Poll<Item, Error> {
+    loop {
+        let mut not_ready = false;
+        let mut did_work = false;
+
+        for f in poll_fns {
+            match f(future)? {
+                Poll::Event(e) => return Ok(futures::Async::Ready(e)),
+                Poll::NotReady => not_ready = true,
+                Poll::NothingToDo => {}
+                Poll::DidWork => did_work = true,
+                Poll::Done => unreachable!(),
+            }
+        }
+
+        if !did_work {
+            if not_ready {
+                return Ok(futures::Async::NotReady);
+            } else {
+                unreachable!()
+            }
+        }
+    }
+}
+
 pub fn poll_component_stream<T, Item, Error>(
     stream: &mut T,
     poll_fns: &'static [&'static dyn for<'a> Fn(

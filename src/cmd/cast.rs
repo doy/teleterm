@@ -101,11 +101,11 @@ impl CastSession {
     fn poll_read_process(&mut self) -> Result<bool> {
         match self.process.poll().context(Process)? {
             futures::Async::Ready(Some(e)) => match e {
-                crate::process::CommandEvent::CommandStart(..) => {}
-                crate::process::CommandEvent::CommandExit(..) => {
+                crate::process::Event::CommandStart(..) => {}
+                crate::process::Event::CommandExit(..) => {
                     self.done = true;
                 }
-                crate::process::CommandEvent::Output(output) => {
+                crate::process::Event::Output(output) => {
                     self.record_bytes(output);
                 }
             },

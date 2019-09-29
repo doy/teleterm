@@ -41,7 +41,7 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub enum CommandEvent {
+pub enum Event {
     CommandStart(String, Vec<String>),
     Output(Vec<u8>),
     CommandExit(std::process::ExitStatus),
@@ -58,7 +58,7 @@ pub struct Process {
     args: Vec<String>,
     buf: Vec<u8>,
     started: bool,
-    exit_done: bool,
+    exited: bool,
     manage_screen: bool,
     raw_screen: Option<crossterm::RawScreen>,
 }
@@ -81,6 +81,21 @@ impl<'a, T: tokio_pty_process::PtyMaster> futures::future::Future
 }
 
 impl Process {
+    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
+        &'a mut Self,
+    ) -> Result<
+        crate::component_future::Poll<Event>,
+    >] = &[
+        // order is important here - checking command_exit first so that we
+        // don't try to read from a process that has already exited, which
+        // causes an error
+        &Self::poll_command_start,
+        &Self::poll_command_exit,
+        &Self::poll_read_stdin,
+        &Self::poll_write_stdin,
+        &Self::poll_read_stdout,
+    ];
+
     pub fn new(cmd: &str, args: &[String]) -> Result<Self> {
         let pty =
             tokio_pty_process::AsyncPtyMaster::open().context(OpenPty)?;
@@ -112,7 +127,7 @@ impl Process {
             args: args.to_vec(),
             buf: vec![0; 4096],
             started: false,
-            exit_done: false,
+            exited: false,
             manage_screen: true,
             raw_screen: None,
         })
@@ -126,17 +141,25 @@ impl Process {
 
     fn poll_command_start(
         &mut self,
-    ) -> futures::Poll<Option<CommandEvent>, Error> {
+    ) -> Result<crate::component_future::Poll<Event>> {
+        if self.started {
+            return Ok(crate::component_future::Poll::NothingToDo);
+        }
+
         self.started = true;
-        Ok(futures::Async::Ready(Some(CommandEvent::CommandStart(
+        Ok(crate::component_future::Poll::Event(Event::CommandStart(
             self.cmd.clone(),
             self.args.clone(),
-        ))))
+        )))
     }
 
     fn poll_read_stdin(
         &mut self,
-    ) -> Option<futures::Poll<Option<CommandEvent>, Error>> {
+    ) -> Result<crate::component_future::Poll<Event>> {
+        if self.exited {
+            return Ok(crate::component_future::Poll::NothingToDo);
+        }
+
         // XXX this is why i had to do the EventedFd thing - poll_read on its
         // own will block reading from stdin, so i need a way to explicitly
         // check readiness before doing the read
@@ -150,9 +173,9 @@ impl Process {
                         }
                     }
                     Ok(futures::Async::NotReady) => {
-                        return Some(Ok(futures::Async::NotReady));
+                        return Ok(crate::component_future::Poll::NotReady);
                     }
-                    Err(e) => return Some(Err(e).context(ReadFromTerminal)),
+                    Err(e) => return Err(e).context(ReadFromTerminal),
                 }
                 // XXX i'm pretty sure this is wrong (if the single poll_read
                 // call didn't return all waiting data, clearing read ready
@@ -164,21 +187,25 @@ impl Process {
                     .clear_read_ready(ready)
                     .context(PtyClearReadReady)
                 {
-                    return Some(Err(e));
+                    return Err(e);
                 }
 
-                None
+                Ok(crate::component_future::Poll::DidWork)
             }
             Ok(futures::Async::NotReady) => {
-                Some(Ok(futures::Async::NotReady))
+                Ok(crate::component_future::Poll::NotReady)
             }
-            Err(e) => Some(Err(e).context(ReadFromTerminal)),
+            Err(e) => Err(e).context(ReadFromTerminal),
         }
     }
 
     fn poll_write_stdin(
         &mut self,
-    ) -> Option<futures::Poll<Option<CommandEvent>, Error>> {
+    ) -> Result<crate::component_future::Poll<Event>> {
+        if self.exited || self.input_buf.is_empty() {
+            return Ok(crate::component_future::Poll::NothingToDo);
+        }
+
         let (a, b) = self.input_buf.as_slices();
         let buf = if a.is_empty() { b } else { a };
         match self.pty.poll_write(buf) {
@@ -186,18 +213,22 @@ impl Process {
                 for _ in 0..n {
                     self.input_buf.pop_front();
                 }
-                None
+                Ok(crate::component_future::Poll::DidWork)
             }
             Ok(futures::Async::NotReady) => {
-                Some(Ok(futures::Async::NotReady))
+                Ok(crate::component_future::Poll::NotReady)
             }
-            Err(e) => Some(Err(e).context(WriteToPty)),
+            Err(e) => Err(e).context(WriteToPty),
         }
     }
 
     fn poll_read_stdout(
         &mut self,
-    ) -> futures::Poll<Option<CommandEvent>, Error> {
+    ) -> Result<crate::component_future::Poll<Event>> {
+        if self.exited {
+            return Ok(crate::component_future::Poll::NothingToDo);
+        }
+
         match self.pty.poll_read(&mut self.buf) {
             Ok(futures::Async::Ready(n)) => {
                 let bytes = self.buf[..n].to_vec();
@@ -213,24 +244,32 @@ impl Process {
                         }
                         acc
                     });
-                Ok(futures::Async::Ready(Some(CommandEvent::Output(bytes))))
+                Ok(crate::component_future::Poll::Event(Event::Output(bytes)))
             }
-            Ok(futures::Async::NotReady) => Ok(futures::Async::NotReady),
+            Ok(futures::Async::NotReady) => {
+                Ok(crate::component_future::Poll::NotReady)
+            }
             Err(e) => Err(e).context(ReadFromPty),
         }
     }
 
     fn poll_command_exit(
         &mut self,
-    ) -> futures::Poll<Option<CommandEvent>, Error> {
+    ) -> Result<crate::component_future::Poll<Event>> {
+        if self.exited {
+            return Ok(crate::component_future::Poll::Done);
+        }
+
         match self.process.poll().context(ProcessExitPoll) {
             Ok(futures::Async::Ready(status)) => {
-                self.exit_done = true;
-                Ok(futures::Async::Ready(Some(CommandEvent::CommandExit(
+                self.exited = true;
+                Ok(crate::component_future::Poll::Event(Event::CommandExit(
                     status,
-                ))))
+                )))
             }
-            Ok(futures::Async::NotReady) => Ok(futures::Async::NotReady),
+            Ok(futures::Async::NotReady) => {
+                Ok(crate::component_future::Poll::NotReady)
+            }
             Err(e) => Err(e),
         }
     }
@@ -238,7 +277,7 @@ impl Process {
 
 #[must_use = "streams do nothing unless polled"]
 impl futures::stream::Stream for Process {
-    type Item = CommandEvent;
+    type Item = Event;
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
@@ -248,55 +287,7 @@ impl futures::stream::Stream for Process {
             );
         }
 
-        loop {
-            let mut should_continue = false;
-
-            if !self.started {
-                match self.poll_command_start() {
-                    r @ Ok(futures::Async::Ready(_)) => return r,
-                    e @ Err(_) => return e,
-                    Ok(futures::Async::NotReady) => {}
-                }
-            }
-
-            if !self.exit_done {
-                match self.poll_command_exit() {
-                    r @ Ok(futures::Async::Ready(_)) => return r,
-                    e @ Err(_) => return e,
-                    Ok(futures::Async::NotReady) => {}
-                }
-
-                match self.poll_read_stdin() {
-                    Some(r @ Ok(futures::Async::Ready(_))) => return r,
-                    Some(e @ Err(_)) => return e,
-                    None => should_continue = true,
-                    Some(Ok(futures::Async::NotReady)) => {}
-                }
-
-                if !self.input_buf.is_empty() {
-                    match self.poll_write_stdin() {
-                        Some(r @ Ok(futures::Async::Ready(_))) => return r,
-                        Some(e @ Err(_)) => return e,
-                        None => should_continue = true,
-                        Some(Ok(futures::Async::NotReady)) => {}
-                    }
-                }
-
-                match self.poll_read_stdout() {
-                    r @ Ok(futures::Async::Ready(_)) => return r,
-                    e @ Err(_) => return e,
-                    Ok(futures::Async::NotReady) => {}
-                }
-            }
-
-            if should_continue {
-                continue;
-            } else if self.exit_done {
-                return Ok(futures::Async::Ready(None));
-            } else {
-                return Ok(futures::Async::NotReady);
-            }
-        }
+        crate::component_future::poll_component_stream(self, Self::POLL_FNS)
     }
 }
 

@@ -99,14 +99,14 @@ impl Connection {
     }
 }
 
-pub struct ConnectionHandler {
+pub struct Server {
     sock_stream: Box<
         dyn futures::stream::Stream<Item = Connection, Error = Error> + Send,
     >,
     connections: Vec<Connection>,
 }
 
-impl ConnectionHandler {
+impl Server {
     const POLL_FNS: &'static [&'static dyn for<'a> Fn(
         &'a mut Self,
     ) -> Result<
@@ -401,7 +401,7 @@ impl ConnectionHandler {
 }
 
 #[must_use = "futures do nothing unless polled"]
-impl futures::future::Future for ConnectionHandler {
+impl futures::future::Future for Server {
     type Item = ();
     type Error = Error;
 

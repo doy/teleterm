@@ -25,7 +25,7 @@ fn run_impl() -> Result<()> {
     let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(1);
     let addr = "127.0.0.1:8000".parse().context(ParseAddress)?;
     let listener = tokio::net::TcpListener::bind(&addr).context(Bind)?;
-    let server = listener
+    let acceptor = listener
         .incoming()
         .map_err(|e| {
             eprintln!("accept failed: {}", e);
@@ -37,12 +37,11 @@ fn run_impl() -> Result<()> {
         });
 
     tokio::run(futures::future::lazy(move || {
-        let connection_handler =
-            crate::server::ConnectionHandler::new(sock_r)
-                .map_err(|e| eprintln!("{}", e));
-        tokio::spawn(connection_handler);
+        let server = crate::server::Server::new(sock_r)
+            .map_err(|e| eprintln!("{}", e));
+        tokio::spawn(server);
 
-        server.map(|_| ()).map_err(|_| ())
+        acceptor.map(|_| ()).map_err(|_| ())
     }));
     Ok(())
 }

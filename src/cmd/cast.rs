@@ -57,6 +57,18 @@ struct CastSession {
 }
 
 impl CastSession {
+    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
+        &'a mut Self,
+    ) -> Result<
+        crate::component_future::Poll<()>,
+    >] = &[
+        &Self::poll_read_client,
+        &Self::poll_read_process,
+        &Self::poll_write_terminal,
+        &Self::poll_flush_terminal,
+        &Self::poll_write_server,
+    ];
+
     fn new(
         cmd: &str,
         args: &[String],
@@ -77,51 +89,64 @@ impl CastSession {
         })
     }
 
-    fn poll_read_client(&mut self) -> Result<bool> {
+    fn poll_read_client(
+        &mut self,
+    ) -> Result<crate::component_future::Poll<()>> {
         match self.client.poll().context(Client)? {
             futures::Async::Ready(Some(e)) => match e {
                 crate::client::Event::Reconnect => {
                     self.sent_remote = 0;
-                    Ok(true)
+                    Ok(crate::component_future::Poll::DidWork)
                 }
                 crate::client::Event::ServerMessage(msg) => {
                     Err(Error::UnexpectedMessage { message: msg })
                 }
             },
             futures::Async::Ready(None) => {
-                if !self.done {
-                    unreachable!()
-                }
-                Ok(true)
+                // the client should never exit on its own
+                unreachable!()
             }
-            futures::Async::NotReady => Ok(false),
+            futures::Async::NotReady => {
+                Ok(crate::component_future::Poll::NotReady)
+            }
         }
     }
 
-    fn poll_read_process(&mut self) -> Result<bool> {
+    fn poll_read_process(
+        &mut self,
+    ) -> Result<crate::component_future::Poll<()>> {
         match self.process.poll().context(Process)? {
-            futures::Async::Ready(Some(e)) => match e {
-                crate::process::Event::CommandStart(..) => {}
-                crate::process::Event::CommandExit(..) => {
-                    self.done = true;
+            futures::Async::Ready(Some(e)) => {
+                match e {
+                    crate::process::Event::CommandStart(..) => {}
+                    crate::process::Event::CommandExit(..) => {
+                        self.done = true;
+                    }
+                    crate::process::Event::Output(output) => {
+                        self.record_bytes(output);
+                    }
                 }
-                crate::process::Event::Output(output) => {
-                    self.record_bytes(output);
-                }
-            },
+                Ok(crate::component_future::Poll::DidWork)
+            }
             futures::Async::Ready(None) => {
                 if !self.done {
                     unreachable!()
                 }
+                // don't return final event here - wait until we are done
+                // sending all data to the server (see poll_write_server)
+                Ok(crate::component_future::Poll::NothingToDo)
             }
-            futures::Async::NotReady => return Ok(false),
+            futures::Async::NotReady => {
+                Ok(crate::component_future::Poll::NotReady)
+            }
         }
-        Ok(true)
     }
 
-    fn poll_write_terminal(&mut self) -> Result<bool> {
+    fn poll_write_terminal(
+        &mut self,
+    ) -> Result<crate::component_future::Poll<()>> {
         if self.sent_local == self.buffer.len() {
-            return Ok(false);
+            return Ok(crate::component_future::Poll::NothingToDo);
         }
 
         match self
@@ -132,29 +157,42 @@ impl CastSession {
             futures::Async::Ready(n) => {
                 self.sent_local += n;
                 self.needs_flush = true;
-                Ok(true)
+                Ok(crate::component_future::Poll::DidWork)
             }
-            futures::Async::NotReady => Ok(false),
+            futures::Async::NotReady => {
+                Ok(crate::component_future::Poll::NotReady)
+            }
         }
     }
 
-    fn poll_flush_terminal(&mut self) -> Result<bool> {
+    fn poll_flush_terminal(
+        &mut self,
+    ) -> Result<crate::component_future::Poll<()>> {
         if !self.needs_flush {
-            return Ok(false);
+            return Ok(crate::component_future::Poll::NothingToDo);
         }
 
         match self.stdout.poll_flush().context(FlushTerminal)? {
             futures::Async::Ready(()) => {
                 self.needs_flush = false;
-                Ok(true)
+                Ok(crate::component_future::Poll::DidWork)
             }
-            futures::Async::NotReady => Ok(false),
+            futures::Async::NotReady => {
+                Ok(crate::component_future::Poll::NotReady)
+            }
         }
     }
 
-    fn poll_write_server(&mut self) -> Result<bool> {
+    fn poll_write_server(
+        &mut self,
+    ) -> Result<crate::component_future::Poll<()>> {
         if self.sent_remote == self.buffer.len() {
-            return Ok(false);
+            // ship all data to the server before actually ending
+            if self.done {
+                return Ok(crate::component_future::Poll::Event(()));
+            } else {
+                return Ok(crate::component_future::Poll::NothingToDo);
+            }
         }
 
         let buf = &self.buffer.contents()[self.sent_remote..];
@@ -162,7 +200,7 @@ impl CastSession {
             .send_message(crate::protocol::Message::terminal_output(&buf));
         self.sent_remote = self.buffer.len();
 
-        Ok(true)
+        Ok(crate::component_future::Poll::DidWork)
     }
 
     fn record_bytes(&mut self, buf: Vec<u8>) {
@@ -178,24 +216,6 @@ impl futures::future::Future for CastSession {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-        loop {
-            let mut did_work = false;
-
-            did_work |= self.poll_read_client()?;
-            did_work |= self.poll_read_process()?;
-            did_work |= self.poll_write_terminal()?;
-            did_work |= self.poll_flush_terminal()?;
-            did_work |= self.poll_write_server()?;
-
-            if self.done {
-                return Ok(futures::Async::Ready(()));
-            }
-
-            if !did_work {
-                break;
-            }
-        }
-
-        Ok(futures::Async::NotReady)
+        crate::component_future::poll_component_future(self, Self::POLL_FNS)
     }
 }

@@ -400,6 +400,7 @@ impl ConnectionHandler {
     }
 }
 
+#[must_use = "futures do nothing unless polled"]
 impl futures::future::Future for ConnectionHandler {
     type Item = ();
     type Error = Error;

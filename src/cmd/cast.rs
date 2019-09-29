@@ -228,6 +228,7 @@ impl CastSession {
     }
 }
 
+#[must_use = "futures do nothing unless polled"]
 impl futures::future::Future for CastSession {
     type Item = ();
     type Error = Error;

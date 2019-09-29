@@ -83,12 +83,6 @@ struct WatchSession {
 }
 
 impl WatchSession {
-    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
-        &'a mut Self,
-    ) -> Result<
-        crate::component_future::Poll<()>,
-    >] = &[&Self::poll_do_something];
-
     fn new(
         id: &str,
         address: &str,
@@ -106,6 +100,14 @@ impl WatchSession {
             client,
         })
     }
+}
+
+impl WatchSession {
+    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
+        &'a mut Self,
+    ) -> Result<
+        crate::component_future::Poll<()>,
+    >] = &[&Self::poll_do_something];
 
     fn poll_do_something(
         &mut self,

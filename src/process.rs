@@ -47,22 +47,6 @@ pub enum Event {
     CommandExit(std::process::ExitStatus),
 }
 
-pub struct Process {
-    pty: tokio_pty_process::AsyncPtyMaster,
-    process: tokio_pty_process::Child,
-    // TODO: tokio::io::Stdin is broken
-    // input: tokio::io::Stdin,
-    input: tokio::reactor::PollEvented2<EventedStdin>,
-    input_buf: std::collections::VecDeque<u8>,
-    cmd: String,
-    args: Vec<String>,
-    buf: Vec<u8>,
-    started: bool,
-    exited: bool,
-    manage_screen: bool,
-    raw_screen: Option<crossterm::RawScreen>,
-}
-
 struct Resizer<'a, T> {
     rows: u16,
     cols: u16,
@@ -80,22 +64,23 @@ impl<'a, T: tokio_pty_process::PtyMaster> futures::future::Future
     }
 }
 
-impl Process {
-    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
-        &'a mut Self,
-    ) -> Result<
-        crate::component_future::Poll<Event>,
-    >] = &[
-        // order is important here - checking command_exit first so that we
-        // don't try to read from a process that has already exited, which
-        // causes an error
-        &Self::poll_command_start,
-        &Self::poll_command_exit,
-        &Self::poll_read_stdin,
-        &Self::poll_write_stdin,
-        &Self::poll_read_stdout,
-    ];
+pub struct Process {
+    pty: tokio_pty_process::AsyncPtyMaster,
+    process: tokio_pty_process::Child,
+    // TODO: tokio::io::Stdin is broken
+    // input: tokio::io::Stdin,
+    input: tokio::reactor::PollEvented2<EventedStdin>,
+    input_buf: std::collections::VecDeque<u8>,
+    cmd: String,
+    args: Vec<String>,
+    buf: Vec<u8>,
+    started: bool,
+    exited: bool,
+    manage_screen: bool,
+    raw_screen: Option<crossterm::RawScreen>,
+}
 
+impl Process {
     pub fn new(cmd: &str, args: &[String]) -> Result<Self> {
         let pty =
             tokio_pty_process::AsyncPtyMaster::open().context(OpenPty)?;
@@ -138,6 +123,23 @@ impl Process {
         self.manage_screen = raw;
         self
     }
+}
+
+impl Process {
+    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
+        &'a mut Self,
+    ) -> Result<
+        crate::component_future::Poll<Event>,
+    >] = &[
+        // order is important here - checking command_exit first so that we
+        // don't try to read from a process that has already exited, which
+        // causes an error
+        &Self::poll_command_start,
+        &Self::poll_command_exit,
+        &Self::poll_read_stdin,
+        &Self::poll_write_stdin,
+        &Self::poll_read_stdout,
+    ];
 
     fn poll_command_start(
         &mut self,

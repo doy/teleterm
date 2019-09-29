@@ -63,18 +63,6 @@ struct CastSession {
 }
 
 impl CastSession {
-    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
-        &'a mut Self,
-    ) -> Result<
-        crate::component_future::Poll<()>,
-    >] = &[
-        &Self::poll_read_client,
-        &Self::poll_read_process,
-        &Self::poll_write_terminal,
-        &Self::poll_flush_terminal,
-        &Self::poll_write_server,
-    ];
-
     fn new(
         cmd: &str,
         args: &[String],
@@ -101,6 +89,27 @@ impl CastSession {
             done: false,
         })
     }
+
+    fn record_bytes(&mut self, buf: Vec<u8>) {
+        if self.buffer.append(buf) {
+            self.sent_local = 0;
+            self.sent_remote = 0;
+        }
+    }
+}
+
+impl CastSession {
+    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
+        &'a mut Self,
+    ) -> Result<
+        crate::component_future::Poll<()>,
+    >] = &[
+        &Self::poll_read_client,
+        &Self::poll_read_process,
+        &Self::poll_write_terminal,
+        &Self::poll_flush_terminal,
+        &Self::poll_write_server,
+    ];
 
     fn poll_read_client(
         &mut self,
@@ -214,13 +223,6 @@ impl CastSession {
         self.sent_remote = self.buffer.len();
 
         Ok(crate::component_future::Poll::DidWork)
-    }
-
-    fn record_bytes(&mut self, buf: Vec<u8>) {
-        if self.buffer.append(buf) {
-            self.sent_local = 0;
-            self.sent_remote = 0;
-        }
     }
 }
 

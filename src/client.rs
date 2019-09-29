@@ -97,18 +97,6 @@ pub struct Client {
 }
 
 impl Client {
-    // XXX rustfmt does a terrible job here
-    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
-        &'a mut Self,
-    ) -> Result<
-        crate::component_future::Poll<Event>,
-    >] = &[
-        &Self::poll_reconnect_server,
-        &Self::poll_read_server,
-        &Self::poll_write_server,
-        &Self::poll_heartbeat,
-    ];
-
     pub fn new(
         address: &str,
         username: &str,
@@ -142,6 +130,20 @@ impl Client {
         self.rsock = ReadSocket::NotConnected;
         self.wsock = WriteSocket::NotConnected;
     }
+}
+
+impl Client {
+    // XXX rustfmt does a terrible job here
+    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
+        &'a mut Self,
+    ) -> Result<
+        crate::component_future::Poll<Event>,
+    >] = &[
+        &Self::poll_reconnect_server,
+        &Self::poll_read_server,
+        &Self::poll_write_server,
+        &Self::poll_heartbeat,
+    ];
 
     fn poll_reconnect_server(
         &mut self,

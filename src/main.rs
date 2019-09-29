@@ -2,6 +2,7 @@
 
 mod client;
 mod cmd;
+mod component_future;
 mod process;
 mod protocol;
 mod term;

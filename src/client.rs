@@ -83,20 +83,6 @@ pub enum Event {
     Reconnect,
 }
 
-pub enum Poll {
-    // something happened that we want to report
-    Event(Event),
-    // underlying future/stream returned NotReady, so it's safe for us to also
-    // return NotReady
-    NotReady,
-    // didn't do any work, so we want to return NotReady assuming at least one
-    // other poll method returned NotReady (if every poll method returns
-    // NothingToDo, something is broken)
-    NothingToDo,
-    // did some work, so we want to loop
-    DidWork,
-}
-
 pub struct Client {
     heartbeat_duration: std::time::Duration,
     heartbeat_timer: tokio::timer::Interval,
@@ -113,8 +99,9 @@ impl Client {
     // XXX rustfmt does a terrible job here
     const POLL_FNS: &'static [&'static dyn for<'a> Fn(
         &'a mut Self,
-    )
-        -> Result<Poll>] = &[
+    ) -> Result<
+        crate::component_future::Poll<Event>,
+    >] = &[
         &Self::poll_reconnect_server,
         &Self::poll_read_server,
         &Self::poll_write_server,
@@ -147,7 +134,9 @@ impl Client {
         self.wsock = WriteSocket::NotConnected;
     }
 
-    fn poll_reconnect_server(&mut self) -> Result<Poll> {
+    fn poll_reconnect_server(
+        &mut self,
+    ) -> Result<crate::component_future::Poll<Event>> {
         match self.wsock {
             WriteSocket::NotConnected => {}
             WriteSocket::Connecting(..) => {}
@@ -156,7 +145,7 @@ impl Client {
                     .duration_since(self.last_server_time);
                 if since_last_server > self.heartbeat_duration * 2 {
                     self.reconnect();
-                    return Ok(Poll::DidWork);
+                    return Ok(crate::component_future::Poll::DidWork);
                 }
             }
         }
@@ -169,7 +158,9 @@ impl Client {
                             self.reconnect_timer = None;
                         }
                         futures::Async::NotReady => {
-                            return Ok(Poll::NotReady);
+                            return Ok(
+                                crate::component_future::Poll::NotReady,
+                            );
                         }
                     }
                 }
@@ -183,7 +174,7 @@ impl Client {
                     .context(Connect),
                 ));
                 self.to_send.clear();
-                Ok(Poll::Event(Event::Reconnect))
+                Ok(crate::component_future::Poll::Event(Event::Reconnect))
             }
             WriteSocket::Connecting(ref mut fut) => match fut.poll() {
                 Ok(futures::Async::Ready(s)) => {
@@ -202,34 +193,46 @@ impl Client {
                         crate::protocol::FramedReader::new(rs),
                     );
                     self.wsock = WriteSocket::LoggingIn(Box::new(fut));
-                    Ok(Poll::DidWork)
+                    Ok(crate::component_future::Poll::DidWork)
                 }
-                Ok(futures::Async::NotReady) => Ok(Poll::NotReady),
+                Ok(futures::Async::NotReady) => {
+                    Ok(crate::component_future::Poll::NotReady)
+                }
                 Err(..) => {
                     self.wsock = WriteSocket::NotConnected;
                     self.reconnect_timer = Some(tokio::timer::Delay::new(
                         std::time::Instant::now()
                             + std::time::Duration::from_secs(1),
                     ));
-                    Ok(Poll::DidWork)
+                    Ok(crate::component_future::Poll::DidWork)
                 }
             },
             WriteSocket::LoggingIn(ref mut fut) => match fut.poll()? {
                 futures::Async::Ready(s) => {
                     self.last_server_time = std::time::Instant::now();
                     self.wsock = WriteSocket::Connected(s);
-                    Ok(Poll::DidWork)
+                    Ok(crate::component_future::Poll::DidWork)
                 }
-                futures::Async::NotReady => Ok(Poll::NotReady),
+                futures::Async::NotReady => {
+                    Ok(crate::component_future::Poll::NotReady)
+                }
             },
-            WriteSocket::Connected(..) => Ok(Poll::NothingToDo),
-            WriteSocket::WritingMessage(..) => Ok(Poll::NothingToDo),
+            WriteSocket::Connected(..) => {
+                Ok(crate::component_future::Poll::NothingToDo)
+            }
+            WriteSocket::WritingMessage(..) => {
+                Ok(crate::component_future::Poll::NothingToDo)
+            }
         }
     }
 
-    fn poll_read_server(&mut self) -> Result<Poll> {
+    fn poll_read_server(
+        &mut self,
+    ) -> Result<crate::component_future::Poll<Event>> {
         match &mut self.rsock {
-            ReadSocket::NotConnected => Ok(Poll::NothingToDo),
+            ReadSocket::NotConnected => {
+                Ok(crate::component_future::Poll::NothingToDo)
+            }
             ReadSocket::Connected(..) => {
                 let mut tmp = ReadSocket::NotConnected;
                 std::mem::swap(&mut self.rsock, &mut tmp);
@@ -240,7 +243,7 @@ impl Client {
                 } else {
                     unreachable!()
                 }
-                Ok(Poll::DidWork)
+                Ok(crate::component_future::Poll::DidWork)
             }
             ReadSocket::ReadingMessage(ref mut fut) => match fut.poll() {
                 Ok(futures::Async::Ready((msg, s))) => {
@@ -248,28 +251,40 @@ impl Client {
                     self.rsock = ReadSocket::Connected(s);
                     match msg {
                         crate::protocol::Message::Heartbeat => {
-                            Ok(Poll::DidWork)
+                            Ok(crate::component_future::Poll::DidWork)
                         }
-                        _ => Ok(Poll::Event(Event::ServerMessage(msg))),
+                        _ => Ok(crate::component_future::Poll::Event(
+                            Event::ServerMessage(msg),
+                        )),
                     }
                 }
-                Ok(futures::Async::NotReady) => Ok(Poll::NotReady),
+                Ok(futures::Async::NotReady) => {
+                    Ok(crate::component_future::Poll::NotReady)
+                }
                 Err(..) => {
                     self.reconnect();
-                    Ok(Poll::DidWork)
+                    Ok(crate::component_future::Poll::DidWork)
                 }
             },
         }
     }
 
-    fn poll_write_server(&mut self) -> Result<Poll> {
+    fn poll_write_server(
+        &mut self,
+    ) -> Result<crate::component_future::Poll<Event>> {
         match &mut self.wsock {
-            WriteSocket::NotConnected => Ok(Poll::NothingToDo),
-            WriteSocket::Connecting(..) => Ok(Poll::NothingToDo),
-            WriteSocket::LoggingIn(..) => Ok(Poll::NothingToDo),
+            WriteSocket::NotConnected => {
+                Ok(crate::component_future::Poll::NothingToDo)
+            }
+            WriteSocket::Connecting(..) => {
+                Ok(crate::component_future::Poll::NothingToDo)
+            }
+            WriteSocket::LoggingIn(..) => {
+                Ok(crate::component_future::Poll::NothingToDo)
+            }
             WriteSocket::Connected(..) => {
                 if self.to_send.is_empty() {
-                    return Ok(Poll::NothingToDo);
+                    return Ok(crate::component_future::Poll::NothingToDo);
                 }
                 let mut tmp = WriteSocket::NotConnected;
                 std::mem::swap(&mut self.wsock, &mut tmp);
@@ -284,25 +299,31 @@ impl Client {
                 } else {
                     unreachable!()
                 }
-                Ok(Poll::DidWork)
+                Ok(crate::component_future::Poll::DidWork)
             }
             WriteSocket::WritingMessage(ref mut fut) => match fut.poll()? {
                 futures::Async::Ready(s) => {
                     self.wsock = WriteSocket::Connected(s);
-                    Ok(Poll::DidWork)
+                    Ok(crate::component_future::Poll::DidWork)
                 }
-                futures::Async::NotReady => Ok(Poll::NotReady),
+                futures::Async::NotReady => {
+                    Ok(crate::component_future::Poll::NotReady)
+                }
             },
         }
     }
 
-    fn poll_heartbeat(&mut self) -> Result<Poll> {
+    fn poll_heartbeat(
+        &mut self,
+    ) -> Result<crate::component_future::Poll<Event>> {
         match self.heartbeat_timer.poll().context(Timer)? {
             futures::Async::Ready(..) => {
                 self.send_message(crate::protocol::Message::heartbeat());
-                Ok(Poll::DidWork)
+                Ok(crate::component_future::Poll::DidWork)
             }
-            futures::Async::NotReady => Ok(Poll::NotReady),
+            futures::Async::NotReady => {
+                Ok(crate::component_future::Poll::NotReady)
+            }
         }
     }
 }
@@ -313,28 +334,6 @@ impl futures::stream::Stream for Client {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
-        loop {
-            let mut not_ready = false;
-            let mut did_work = false;
-
-            for f in Self::POLL_FNS {
-                match f(self)? {
-                    Poll::Event(e) => {
-                        return Ok(futures::Async::Ready(Some(e)))
-                    }
-                    Poll::NotReady => not_ready = true,
-                    Poll::NothingToDo => {}
-                    Poll::DidWork => did_work = true,
-                }
-            }
-
-            if !did_work {
-                if not_ready {
-                    return Ok(futures::Async::NotReady);
-                } else {
-                    unreachable!()
-                }
-            }
-        }
+        crate::component_future::poll_component_stream(self, Self::POLL_FNS)
     }
 }

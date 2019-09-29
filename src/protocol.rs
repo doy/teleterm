@@ -101,42 +101,42 @@ pub enum Message {
 }
 
 impl Message {
-    pub fn start_casting(username: &str, term_type: &str) -> Message {
-        Message::StartCasting {
+    pub fn start_casting(username: &str, term_type: &str) -> Self {
+        Self::StartCasting {
             proto_version: PROTO_VERSION,
             username: username.to_string(),
             term_type: term_type.to_string(),
         }
     }
 
-    pub fn start_watching(username: &str, term_type: &str) -> Message {
-        Message::StartWatching {
+    pub fn start_watching(username: &str, term_type: &str) -> Self {
+        Self::StartWatching {
             proto_version: PROTO_VERSION,
             username: username.to_string(),
             term_type: term_type.to_string(),
         }
     }
 
-    pub fn heartbeat() -> Message {
-        Message::Heartbeat
+    pub fn heartbeat() -> Self {
+        Self::Heartbeat
     }
 
-    pub fn terminal_output(data: &[u8]) -> Message {
-        Message::TerminalOutput {
+    pub fn terminal_output(data: &[u8]) -> Self {
+        Self::TerminalOutput {
             data: data.to_vec(),
         }
     }
 
-    pub fn list_sessions() -> Message {
-        Message::ListSessions
+    pub fn list_sessions() -> Self {
+        Self::ListSessions
     }
 
-    pub fn sessions(ids: &[String]) -> Message {
-        Message::Sessions { ids: ids.to_vec() }
+    pub fn sessions(ids: &[String]) -> Self {
+        Self::Sessions { ids: ids.to_vec() }
     }
 
-    pub fn watch_session(id: &str) -> Message {
-        Message::WatchSession { id: id.to_string() }
+    pub fn watch_session(id: &str) -> Self {
+        Self::WatchSession { id: id.to_string() }
     }
 
     pub fn read<R: std::io::Read>(r: R) -> Result<Self> {
@@ -172,16 +172,16 @@ struct Packet {
 
 impl Packet {
     fn read<R: std::io::Read>(mut r: R) -> Result<Self> {
-        let mut len_buf = [0u8; std::mem::size_of::<u32>()];
+        let mut len_buf = [0_u8; std::mem::size_of::<u32>()];
         r.read_exact(&mut len_buf).context(Read)?;
         let len = u32::from_be_bytes(len_buf.try_into().unwrap());
 
-        let mut data = vec![0u8; len.try_into().unwrap()];
+        let mut data = vec![0_u8; len.try_into().unwrap()];
         r.read_exact(&mut data).context(Read)?;
         let (ty_buf, rest) = data.split_at(std::mem::size_of::<u32>());
         let ty = u32::from_be_bytes(ty_buf.try_into().unwrap());
 
-        Ok(Packet {
+        Ok(Self {
             ty,
             data: rest.to_vec(),
         })
@@ -202,7 +202,7 @@ impl Packet {
                     buf.split_at(std::mem::size_of::<u32>());
                 let ty = u32::from_be_bytes(ty_buf.try_into().unwrap());
                 let data = data_buf.to_vec();
-                (Packet { ty, data }, FramedReader(r))
+                (Self { ty, data }, FramedReader(r))
             })
     }
 
@@ -254,7 +254,7 @@ impl From<&Message> for Packet {
         fn write_strvec(val: &[String], data: &mut Vec<u8>) {
             write_u32(u32_from_usize(val.len()), data);
             for s in val {
-                write_str(&s, data);
+                write_str(s, data);
             }
         }
 
@@ -270,7 +270,7 @@ impl From<&Message> for Packet {
                 write_str(username, &mut data);
                 write_str(term_type, &mut data);
 
-                Packet { ty: 0, data }
+                Self { ty: 0, data }
             }
             Message::StartWatching {
                 proto_version,
@@ -283,9 +283,9 @@ impl From<&Message> for Packet {
                 write_str(username, &mut data);
                 write_str(term_type, &mut data);
 
-                Packet { ty: 1, data }
+                Self { ty: 1, data }
             }
-            Message::Heartbeat => Packet {
+            Message::Heartbeat => Self {
                 ty: 2,
                 data: vec![],
             },
@@ -294,12 +294,12 @@ impl From<&Message> for Packet {
 
                 write_bytes(output, &mut data);
 
-                Packet {
+                Self {
                     ty: 3,
                     data: data.to_vec(),
                 }
             }
-            Message::ListSessions => Packet {
+            Message::ListSessions => Self {
                 ty: 4,
                 data: vec![],
             },
@@ -308,14 +308,14 @@ impl From<&Message> for Packet {
 
                 write_strvec(ids, &mut data);
 
-                Packet { ty: 5, data }
+                Self { ty: 5, data }
             }
             Message::WatchSession { id } => {
                 let mut data = vec![];
 
                 write_str(id, &mut data);
 
-                Packet { ty: 6, data }
+                Self { ty: 6, data }
             }
         }
     }
@@ -360,7 +360,7 @@ impl std::convert::TryFrom<Packet> for Message {
                 let (term_type, data) = read_str(data)?;
 
                 (
-                    Message::StartCasting {
+                    Self::StartCasting {
                         proto_version,
                         username,
                         term_type,
@@ -374,7 +374,7 @@ impl std::convert::TryFrom<Packet> for Message {
                 let (term_type, data) = read_str(data)?;
 
                 (
-                    Message::StartWatching {
+                    Self::StartWatching {
                         proto_version,
                         username,
                         term_type,
@@ -382,21 +382,21 @@ impl std::convert::TryFrom<Packet> for Message {
                     data,
                 )
             }
-            2 => (Message::Heartbeat, data),
+            2 => (Self::Heartbeat, data),
             3 => {
                 let (output, data) = read_bytes(data)?;
 
-                (Message::TerminalOutput { data: output }, data)
+                (Self::TerminalOutput { data: output }, data)
             }
-            4 => (Message::ListSessions, data),
+            4 => (Self::ListSessions, data),
             5 => {
                 let (ids, data) = read_strvec(data)?;
 
-                (Message::Sessions { ids }, data)
+                (Self::Sessions { ids }, data)
             }
             6 => {
                 let (id, data) = read_str(data)?;
-                (Message::WatchSession { id }, data)
+                (Self::WatchSession { id }, data)
             }
             _ => return Err(Error::InvalidMessageType { ty: packet.ty }),
         };

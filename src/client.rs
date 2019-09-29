@@ -91,7 +91,7 @@ pub enum Event {
     Reconnect,
 }
 
-pub enum ClientType {
+pub enum Type {
     Casting,
     Watching,
 }
@@ -99,7 +99,7 @@ pub enum ClientType {
 pub struct Client {
     address: String,
     username: String,
-    ty: ClientType,
+    ty: Type,
     heartbeat_duration: std::time::Duration,
 
     heartbeat_timer: tokio::timer::Interval,
@@ -131,7 +131,7 @@ impl Client {
     pub fn new(
         address: &str,
         username: &str,
-        ty: ClientType,
+        ty: Type,
         heartbeat_duration: std::time::Duration,
     ) -> Self {
         let heartbeat_timer =
@@ -182,8 +182,7 @@ impl Client {
         &mut self,
     ) -> Result<crate::component_future::Poll<Event>> {
         match self.wsock {
-            WriteSocket::NotConnected => {}
-            WriteSocket::Connecting(..) => {}
+            WriteSocket::NotConnected | WriteSocket::Connecting(..) => {}
             _ => {
                 let since_last_server = std::time::Instant::now()
                     .duration_since(self.last_server_time);
@@ -228,13 +227,13 @@ impl Client {
                     let term = std::env::var("TERM")
                         .unwrap_or_else(|_| "".to_string());
                     let msg = match self.ty {
-                        ClientType::Casting => {
+                        Type::Casting => {
                             crate::protocol::Message::start_casting(
                                 &self.username,
                                 &term,
                             )
                         }
-                        ClientType::Watching => {
+                        Type::Watching => {
                             crate::protocol::Message::start_watching(
                                 &self.username,
                                 &term,
@@ -272,10 +271,7 @@ impl Client {
                     Ok(crate::component_future::Poll::NotReady)
                 }
             },
-            WriteSocket::Connected(..) => {
-                Ok(crate::component_future::Poll::NothingToDo)
-            }
-            WriteSocket::WritingMessage(..) => {
+            WriteSocket::Connected(..) | WriteSocket::WritingMessage(..) => {
                 Ok(crate::component_future::Poll::NothingToDo)
             }
         }
@@ -328,13 +324,9 @@ impl Client {
         &mut self,
     ) -> Result<crate::component_future::Poll<Event>> {
         match &mut self.wsock {
-            WriteSocket::NotConnected => {
-                Ok(crate::component_future::Poll::NothingToDo)
-            }
-            WriteSocket::Connecting(..) => {
-                Ok(crate::component_future::Poll::NothingToDo)
-            }
-            WriteSocket::LoggingIn(..) => {
+            WriteSocket::NotConnected
+            | WriteSocket::Connecting(..)
+            | WriteSocket::LoggingIn(..) => {
                 Ok(crate::component_future::Poll::NothingToDo)
             }
             WriteSocket::Connected(..) => {
@@ -390,6 +382,6 @@ impl futures::stream::Stream for Client {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
-        crate::component_future::poll_component_stream(self, Self::POLL_FNS)
+        crate::component_future::poll_stream(self, Self::POLL_FNS)
     }
 }

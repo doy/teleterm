@@ -356,7 +356,7 @@ impl ConnectionHandler {
             crate::protocol::Message::TerminalOutput { data } => {
                 println!("got {} bytes of cast data", data.len());
                 conn.saved_data.append(data);
-                for conn in self.connections.iter() {
+                for conn in &self.connections {
                     if conn.ty == SockType::Watch {
                         // XXX test if it's watching the correct session
                         // XXX async-send a TerminalOutput message back
@@ -406,6 +406,6 @@ impl futures::future::Future for ConnectionHandler {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-        crate::component_future::poll_component_future(self, Self::POLL_FNS)
+        crate::component_future::poll_future(self, Self::POLL_FNS)
     }
 }

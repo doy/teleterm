@@ -5,7 +5,7 @@ pub struct Buffer(Vec<u8>);
 
 impl Buffer {
     pub fn new() -> Self {
-        Default::default()
+        Self::default()
     }
 
     pub fn append(&mut self, mut buf: Vec<u8>) -> bool {

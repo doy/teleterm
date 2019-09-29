@@ -64,10 +64,10 @@ pub fn parse<'a>() -> Result<clap::ArgMatches<'a>> {
     app.get_matches_safe().context(Parse)
 }
 
-pub fn run(matches: clap::ArgMatches<'_>) -> Result<()> {
+pub fn run(matches: &clap::ArgMatches<'_>) -> Result<()> {
     for cmd in COMMANDS {
         if let Some(submatches) = matches.subcommand_matches(cmd.name) {
-            return (cmd.run)(&submatches);
+            return (cmd.run)(submatches);
         }
     }
     unreachable!()

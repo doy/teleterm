@@ -88,7 +88,7 @@ impl CastSession {
         let client = crate::client::Client::new(
             address,
             username,
-            crate::client::ClientType::Casting,
+            crate::client::Type::Casting,
             heartbeat_duration,
         );
         let process =
@@ -213,7 +213,7 @@ impl CastSession {
 
         let buf = &self.buffer.contents()[self.sent_remote..];
         self.client
-            .send_message(crate::protocol::Message::terminal_output(&buf))
+            .send_message(crate::protocol::Message::terminal_output(buf))
             .context(SendChannel)?;
         self.sent_remote = self.buffer.len();
 
@@ -234,6 +234,6 @@ impl futures::future::Future for CastSession {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-        crate::component_future::poll_component_future(self, Self::POLL_FNS)
+        crate::component_future::poll_future(self, Self::POLL_FNS)
     }
 }

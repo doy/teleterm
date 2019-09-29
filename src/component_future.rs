@@ -14,7 +14,7 @@ pub enum Poll<T> {
     Done,
 }
 
-pub fn poll_component_future<T, Item, Error>(
+pub fn poll_future<T, Item, Error>(
     future: &mut T,
     poll_fns: &'static [&'static dyn for<'a> Fn(
         &'a mut T,
@@ -47,7 +47,7 @@ pub fn poll_component_future<T, Item, Error>(
     }
 }
 
-pub fn poll_component_stream<T, Item, Error>(
+pub fn poll_stream<T, Item, Error>(
     stream: &mut T,
     poll_fns: &'static [&'static dyn for<'a> Fn(
         &'a mut T,

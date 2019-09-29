@@ -1,3 +1,8 @@
+#![warn(clippy::pedantic)]
+#![warn(clippy::nursery)]
+#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::similar_names)]
+#![allow(clippy::single_match_else)]
 #![allow(clippy::type_complexity)]
 
 mod client;
@@ -10,7 +15,7 @@ mod term;
 mod util;
 
 fn main() {
-    match crate::cmd::parse().and_then(crate::cmd::run) {
+    match crate::cmd::parse().and_then(|m| crate::cmd::run(&m)) {
         Ok(_) => {}
         Err(err) => {
             eprintln!("{}", err);

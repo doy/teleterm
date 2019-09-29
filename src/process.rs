@@ -287,7 +287,7 @@ impl futures::stream::Stream for Process {
             );
         }
 
-        crate::component_future::poll_component_stream(self, Self::POLL_FNS)
+        crate::component_future::poll_stream(self, Self::POLL_FNS)
     }
 }
 

@@ -30,13 +30,6 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SockType {
-    Unknown,
-    Cast,
-    Watch,
-}
-
 enum ReadSocket {
     Connected(crate::protocol::FramedReader),
     Reading(
@@ -68,7 +61,7 @@ struct Connection {
     rsock: Option<ReadSocket>,
     wsock: Option<WriteSocket>,
 
-    ty: SockType,
+    ty: Option<crate::common::ConnectionType>,
     id: String,
     username: Option<String>,
     term_type: Option<String>,
@@ -88,7 +81,7 @@ impl Connection {
                 crate::protocol::FramedWriter::new(ws),
             )),
 
-            ty: SockType::Unknown,
+            ty: None,
             id: format!("{}", uuid::Uuid::new_v4()),
             username: None,
             term_type: None,
@@ -298,9 +291,13 @@ impl Server {
         message: crate::protocol::Message,
     ) -> Result<()> {
         match self.connections[i].ty {
-            SockType::Unknown => self.handle_login_message(i, message),
-            SockType::Cast => self.handle_cast_message(i, message),
-            SockType::Watch => self.handle_watch_message(i, message),
+            None => self.handle_login_message(i, message),
+            Some(crate::common::ConnectionType::Casting) => {
+                self.handle_cast_message(i, message)
+            }
+            Some(crate::common::ConnectionType::Watching) => {
+                self.handle_watch_message(i, message)
+            }
         }
     }
 
@@ -317,7 +314,7 @@ impl Server {
                 ..
             } => {
                 println!("got a cast connection from {}", username);
-                conn.ty = SockType::Cast;
+                conn.ty = Some(crate::common::ConnectionType::Casting);
                 conn.username = Some(username);
                 conn.term_type = Some(term_type);
                 Ok(())
@@ -328,7 +325,7 @@ impl Server {
                 ..
             } => {
                 println!("got a watch connection from {}", username);
-                conn.ty = SockType::Watch;
+                conn.ty = Some(crate::common::ConnectionType::Watching);
                 conn.username = Some(username);
                 conn.term_type = Some(term_type);
                 Ok(())
@@ -357,7 +354,9 @@ impl Server {
                 println!("got {} bytes of cast data", data.len());
                 conn.saved_data.append(data);
                 for conn in &self.connections {
-                    if conn.ty == SockType::Watch {
+                    if conn.ty
+                        == Some(crate::common::ConnectionType::Watching)
+                    {
                         // XXX test if it's watching the correct session
                         // XXX async-send a TerminalOutput message back
                         // (probably need another vec of in-progress async
@@ -378,9 +377,9 @@ impl Server {
         match message {
             crate::protocol::Message::ListSessions => {
                 let mut ids = vec![];
-                for caster in
-                    self.connections.iter().filter(|c| c.ty == SockType::Cast)
-                {
+                for caster in self.connections.iter().filter(|c| {
+                    c.ty == Some(crate::common::ConnectionType::Casting)
+                }) {
                     ids.push(caster.id.clone());
                 }
                 let conn = &mut self.connections[i];

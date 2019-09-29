@@ -85,7 +85,7 @@ impl CastSession {
         let client = crate::client::Client::new(
             address,
             username,
-            crate::client::Type::Casting,
+            crate::common::ConnectionType::Casting,
             heartbeat_duration,
         );
         let process =

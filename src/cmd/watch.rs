@@ -98,7 +98,7 @@ impl WatchSession {
         let client = crate::client::Client::new(
             address,
             username,
-            crate::client::Type::Watching,
+            crate::common::ConnectionType::Watching,
             heartbeat_duration,
         );
         Ok(Self {

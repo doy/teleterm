@@ -80,15 +80,10 @@ pub enum Event {
     Reconnect,
 }
 
-pub enum Type {
-    Casting,
-    Watching,
-}
-
 pub struct Client {
     address: String,
     username: String,
-    ty: Type,
+    ty: crate::common::ConnectionType,
     heartbeat_duration: std::time::Duration,
 
     heartbeat_timer: tokio::timer::Interval,
@@ -117,7 +112,7 @@ impl Client {
     pub fn new(
         address: &str,
         username: &str,
-        ty: Type,
+        ty: crate::common::ConnectionType,
         heartbeat_duration: std::time::Duration,
     ) -> Self {
         let heartbeat_timer =
@@ -197,13 +192,13 @@ impl Client {
                     let term = std::env::var("TERM")
                         .unwrap_or_else(|_| "".to_string());
                     let msg = match self.ty {
-                        Type::Casting => {
+                        crate::common::ConnectionType::Casting => {
                             crate::protocol::Message::start_casting(
                                 &self.username,
                                 &term,
                             )
                         }
-                        Type::Watching => {
+                        crate::common::ConnectionType::Watching => {
                             crate::protocol::Message::start_watching(
                                 &self.username,
                                 &term,

@@ -1,5 +1,7 @@
 use futures::future::Future as _;
+use futures::stream::Stream as _;
 use snafu::ResultExt as _;
+use std::io::Write as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
@@ -11,6 +13,12 @@ pub enum Error {
 
     #[snafu(display("failed to write message: {}", source))]
     Write { source: crate::protocol::Error },
+
+    #[snafu(display("failed to write to terminal: {}", source))]
+    WriteTerminal { source: std::io::Error },
+
+    #[snafu(display("communication with server failed: {}", source))]
+    Client { source: crate::client::Error },
 
     #[snafu(display(
         "failed to read message: unexpected message received: {:?}",
@@ -106,12 +114,38 @@ impl WatchSession {
         &'a mut Self,
     ) -> Result<
         crate::component_future::Poll<()>,
-    >] = &[&Self::poll_do_something];
+    >] = &[&Self::poll_read_client];
 
-    fn poll_do_something(
+    fn poll_read_client(
         &mut self,
     ) -> Result<crate::component_future::Poll<()>> {
-        Ok(crate::component_future::Poll::NothingToDo)
+        match self.client.poll().context(Client)? {
+            futures::Async::Ready(Some(e)) => match e {
+                crate::client::Event::Reconnect => {
+                    Ok(crate::component_future::Poll::DidWork)
+                }
+                crate::client::Event::ServerMessage(msg) => match msg {
+                    crate::protocol::Message::TerminalOutput { data } => {
+                        // TODO async
+                        let stderr = std::io::stderr();
+                        let mut stderr = stderr.lock();
+                        stderr.write(&data).context(WriteTerminal)?;
+                        Ok(crate::component_future::Poll::DidWork)
+                    }
+                    crate::protocol::Message::Disconnected => {
+                        Ok(crate::component_future::Poll::Event(()))
+                    }
+                    msg => Err(Error::UnexpectedMessage { message: msg }),
+                },
+            },
+            futures::Async::Ready(None) => {
+                // the client should never exit on its own
+                unreachable!()
+            }
+            futures::Async::NotReady => {
+                Ok(crate::component_future::Poll::NotReady)
+            }
+        }
     }
 }
 

@@ -310,7 +310,7 @@ impl Client {
                 let mut tmp = WriteSocket::NotConnected;
                 std::mem::swap(&mut self.wsock, &mut tmp);
                 if let WriteSocket::Connected(s) = tmp {
-                    if let Some(msg) = self.to_send.pop_back() {
+                    if let Some(msg) = self.to_send.pop_front() {
                         let fut = msg.write_async(s).context(WriteServer);
                         self.wsock =
                             WriteSocket::WritingMessage(Box::new(fut));

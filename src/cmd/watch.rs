@@ -12,8 +12,11 @@ pub enum Error {
     #[snafu(display("failed to write message: {}", source))]
     Write { source: crate::protocol::Error },
 
-    #[snafu(display("failed to read message: unexpected message received"))]
-    UnexpectedMessage,
+    #[snafu(display(
+        "failed to read message: unexpected message received: {:?}",
+        message
+    ))]
+    UnexpectedMessage { message: crate::protocol::Message },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -54,7 +57,7 @@ fn list() -> Result<()> {
             }
         }
         _ => {
-            return Err(Error::UnexpectedMessage);
+            return Err(Error::UnexpectedMessage { message: res });
         }
     }
 

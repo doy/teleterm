@@ -98,6 +98,15 @@ impl Connection {
             closed: false,
         }
     }
+
+    fn close(&mut self, res: Result<()>) {
+        let msg = match res {
+            Ok(()) => crate::protocol::Message::disconnected(),
+            Err(e) => crate::protocol::Message::error(&format!("{}", e)),
+        };
+        self.to_send.push_back(msg);
+        self.closed = true;
+    }
 }
 
 pub struct Server {
@@ -273,14 +282,10 @@ impl Server {
                 &conn.ty
             {
                 if id == &disconnect_id {
-                    conn.to_send
-                        .push_back(crate::protocol::Message::disconnected());
-                    conn.closed = true;
+                    conn.close(Ok(()));
                 }
             }
         }
-
-        self.connections.swap_remove(i);
     }
 
     fn poll_read_connection(
@@ -306,7 +311,10 @@ impl Server {
             Some(ReadSocket::Reading(fut)) => {
                 match fut.poll() {
                     Ok(futures::Async::Ready((msg, s))) => {
-                        self.handle_message(i, msg)?;
+                        let res = self.handle_message(i, msg);
+                        if res.is_err() {
+                            self.connections[i].close(res);
+                        }
                         self.connections[i].rsock =
                             Some(ReadSocket::Connected(s));
                         Ok(crate::component_future::Poll::DidWork)
@@ -444,6 +452,7 @@ impl Server {
             match self.poll_read_connection(i) {
                 Ok(crate::component_future::Poll::Event(())) => {
                     self.handle_disconnect(i);
+                    self.connections.swap_remove(i);
                     continue;
                 }
                 Ok(crate::component_future::Poll::DidWork) => {
@@ -480,6 +489,7 @@ impl Server {
             match self.poll_write_connection(i) {
                 Ok(crate::component_future::Poll::Event(())) => {
                     self.handle_disconnect(i);
+                    self.connections.swap_remove(i);
                     continue;
                 }
                 Ok(crate::component_future::Poll::DidWork) => {

@@ -64,6 +64,9 @@ fn list() -> Result<()> {
                 println!("{}", id);
             }
         }
+        crate::protocol::Message::Error { msg } => {
+            eprintln!("server error: {}", msg);
+        }
         _ => {
             return Err(Error::UnexpectedMessage { message: res });
         }
@@ -133,6 +136,10 @@ impl WatchSession {
                         Ok(crate::component_future::Poll::DidWork)
                     }
                     crate::protocol::Message::Disconnected => {
+                        Ok(crate::component_future::Poll::Event(()))
+                    }
+                    crate::protocol::Message::Error { msg } => {
+                        eprintln!("server error: {}", msg);
                         Ok(crate::component_future::Poll::Event(()))
                     }
                     msg => Err(Error::UnexpectedMessage { message: msg }),

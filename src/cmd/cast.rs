@@ -44,7 +44,7 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
         vec![]
     };
     run_impl(
-        matches.value_of("address").unwrap_or("127.0.0.1:8000"),
+        matches.value_of("address").unwrap_or("127.0.0.1:4144"),
         &matches.value_of("command").map_or_else(
             || {
                 std::env::var("SHELL")

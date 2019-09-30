@@ -28,18 +28,41 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Stream your terminal")
+        .arg(
+            clap::Arg::with_name("address")
+                .long("address")
+                .takes_value(true),
+        )
+        .arg(clap::Arg::with_name("command").index(1))
+        .arg(clap::Arg::with_name("args").index(2).multiple(true))
 }
 
-pub fn run<'a>(_matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    run_impl().context(super::Cast)
+pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
+    let args: Vec<_> = if let Some(args) = matches.values_of("args") {
+        args.map(std::string::ToString::to_string).collect()
+    } else {
+        vec![]
+    };
+    run_impl(
+        matches.value_of("address").unwrap_or("127.0.0.1:8000"),
+        &matches.value_of("command").map_or_else(
+            || {
+                std::env::var("SHELL")
+                    .unwrap_or_else(|_| "/bin/bash".to_string())
+            },
+            std::string::ToString::to_string,
+        ),
+        &args,
+    )
+    .context(super::Cast)
 }
 
-fn run_impl() -> Result<()> {
+fn run_impl(address: &str, command: &str, args: &[String]) -> Result<()> {
     tokio::run(
         CastSession::new(
-            "zsh",
-            &[],
-            "127.0.0.1:8000",
+            command,
+            args,
+            address,
             "doy",
             std::time::Duration::from_secs(5),
         )?

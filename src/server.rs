@@ -168,6 +168,7 @@ impl Server {
             m => Err(Error::UnauthenticatedMessage { message: m }),
         }
     }
+
     fn handle_cast_message(
         &mut self,
         i: usize,

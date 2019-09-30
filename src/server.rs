@@ -29,6 +29,9 @@ pub enum Error {
 
     #[snafu(display("unauthenticated message: {:?}", message))]
     UnauthenticatedMessage { message: crate::protocol::Message },
+
+    #[snafu(display("invalid watch id: {}", id))]
+    InvalidWatchId { id: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -223,9 +226,23 @@ impl Server {
                 Ok(())
             }
             crate::protocol::Message::StartWatching { id } => {
-                let conn = &mut self.connections[i];
-                conn.ty = Some(crate::common::ConnectionType::Watching(id));
-                Ok(())
+                let mut data = None;
+                for conn in &self.connections {
+                    if conn.id == id {
+                        data = Some(conn.saved_data.contents().to_vec());
+                    }
+                }
+                if let Some(data) = data {
+                    let conn = &mut self.connections[i];
+                    conn.ty =
+                        Some(crate::common::ConnectionType::Watching(id));
+                    conn.to_send.push_back(
+                        crate::protocol::Message::terminal_output(&data),
+                    );
+                    Ok(())
+                } else {
+                    Err(Error::InvalidWatchId { id })
+                }
             }
             m => Err(Error::UnexpectedMessage { message: m }),
         }

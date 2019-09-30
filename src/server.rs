@@ -176,14 +176,18 @@ impl Server {
             crate::protocol::Message::TerminalOutput { data } => {
                 println!("got {} bytes of cast data", data.len());
                 conn.saved_data.append(&data);
-                for conn in &self.connections {
-                    if let Some(crate::common::ConnectionType::Watching(..)) =
-                        conn.ty
+                let cast_id = conn.id.clone();
+                for watch_conn in &mut self.connections {
+                    if let Some(crate::common::ConnectionType::Watching(id)) =
+                        &watch_conn.ty
                     {
-                        // XXX test if it's watching the correct session
-                        // XXX async-send a TerminalOutput message back
-                        // (probably need another vec of in-progress async
-                        // sends)
+                        if &cast_id == id {
+                            watch_conn.to_send.push_back(
+                                crate::protocol::Message::terminal_output(
+                                    &data,
+                                ),
+                            );
+                        }
                     }
                 }
                 Ok(())

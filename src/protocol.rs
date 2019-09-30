@@ -98,6 +98,7 @@ pub enum Message {
     WatchSession {
         id: String,
     },
+    Disconnected,
 }
 
 impl Message {
@@ -137,6 +138,10 @@ impl Message {
 
     pub fn watch_session(id: &str) -> Self {
         Self::WatchSession { id: id.to_string() }
+    }
+
+    pub fn disconnected() -> Self {
+        Self::Disconnected
     }
 
     pub fn read<R: std::io::Read>(r: R) -> Result<Self> {
@@ -317,6 +322,10 @@ impl From<&Message> for Packet {
 
                 Self { ty: 6, data }
             }
+            Message::Disconnected => Self {
+                ty: 7,
+                data: vec![],
+            },
         }
     }
 }
@@ -398,6 +407,7 @@ impl std::convert::TryFrom<Packet> for Message {
                 let (id, data) = read_str(data)?;
                 (Self::WatchSession { id }, data)
             }
+            7 => (Self::Disconnected, data),
             _ => return Err(Error::InvalidMessageType { ty: packet.ty }),
         };
 

@@ -22,7 +22,7 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 }
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    run_impl(matches.value_of("address").unwrap_or("127.0.0.1:4144"))
+    run_impl(matches.value_of("address").unwrap_or("0.0.0.0:4144"))
         .context(super::Server)
 }
 

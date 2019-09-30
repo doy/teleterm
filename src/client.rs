@@ -93,6 +93,7 @@ pub struct Client {
     rsock: ReadSocket,
     wsock: WriteSocket,
 
+    on_connect: Vec<crate::protocol::Message>,
     to_send: std::collections::VecDeque<crate::protocol::Message>,
 }
 
@@ -101,6 +102,7 @@ impl Client {
         address: &str,
         username: &str,
         ty: crate::common::ConnectionType,
+        on_connect: &[crate::protocol::Message],
         heartbeat_duration: std::time::Duration,
     ) -> Self {
         let heartbeat_timer =
@@ -118,6 +120,7 @@ impl Client {
             rsock: ReadSocket::NotConnected,
             wsock: WriteSocket::NotConnected,
 
+            on_connect: on_connect.to_vec(),
             to_send: std::collections::VecDeque::new(),
         }
     }
@@ -185,6 +188,9 @@ impl Client {
                     .context(Connect),
                 ));
                 self.to_send.clear();
+                let mut on_connect =
+                    self.on_connect.iter().cloned().collect();
+                self.to_send.append(&mut on_connect);
                 Ok(crate::component_future::Poll::Event(Event::Reconnect))
             }
             WriteSocket::Connecting(ref mut fut) => match fut.poll() {

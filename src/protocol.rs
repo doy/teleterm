@@ -75,7 +75,7 @@ impl FramedWriter {
 
 pub const PROTO_VERSION: u32 = 1;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Message {
     StartCasting {
         proto_version: u32,

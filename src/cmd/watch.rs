@@ -81,7 +81,6 @@ fn watch(id: &str) -> Result<()> {
 }
 
 struct WatchSession {
-    id: String,
     client: crate::client::Client,
 }
 
@@ -96,12 +95,10 @@ impl WatchSession {
             address,
             username,
             crate::common::ConnectionType::Watching,
+            &[crate::protocol::Message::watch_session(id)],
             heartbeat_duration,
         );
-        Ok(Self {
-            id: id.to_string(),
-            client,
-        })
+        Ok(Self { client })
     }
 }
 

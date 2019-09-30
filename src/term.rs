@@ -8,17 +8,17 @@ impl Buffer {
         Self::default()
     }
 
-    pub fn append(&mut self, mut buf: Vec<u8>) -> bool {
+    pub fn append(&mut self, mut buf: &[u8]) -> bool {
         let mut cleared = false;
         for reset in RESET {
             if let Some(i) = twoway::find_bytes(&buf, reset) {
                 cleared = true;
                 self.0.clear();
-                buf = buf.split_off(i);
+                buf = &buf[i..];
             }
         }
 
-        self.0.append(&mut buf);
+        self.0.extend_from_slice(buf);
 
         cleared
     }

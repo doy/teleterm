@@ -90,7 +90,7 @@ impl CastSession {
         })
     }
 
-    fn record_bytes(&mut self, buf: Vec<u8>) {
+    fn record_bytes(&mut self, buf: &[u8]) {
         if self.buffer.append(buf) {
             self.sent_local = 0;
             self.sent_remote = 0;
@@ -145,7 +145,7 @@ impl CastSession {
                         self.done = true;
                     }
                     crate::process::Event::Output(output) => {
-                        self.record_bytes(output);
+                        self.record_bytes(&output);
                     }
                 }
                 Ok(crate::component_future::Poll::DidWork)

@@ -178,7 +178,7 @@ impl Server {
             }
             crate::protocol::Message::TerminalOutput { data } => {
                 println!("got {} bytes of cast data", data.len());
-                conn.saved_data.append(data);
+                conn.saved_data.append(&data);
                 for conn in &self.connections {
                     if conn.ty
                         == Some(crate::common::ConnectionType::Watching)

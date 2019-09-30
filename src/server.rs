@@ -201,7 +201,17 @@ impl Server {
         i: usize,
         message: crate::protocol::Message,
     ) -> Result<()> {
+        let conn = &mut self.connections[i];
         match message {
+            crate::protocol::Message::Heartbeat => {
+                println!(
+                    "got a heartbeat from {}",
+                    conn.username.as_ref().unwrap()
+                );
+                conn.to_send
+                    .push_back(crate::protocol::Message::heartbeat());
+                Ok(())
+            }
             m => Err(Error::UnexpectedMessage { message: m }),
         }
     }

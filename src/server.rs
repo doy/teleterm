@@ -380,17 +380,22 @@ impl Server {
 
         let mut i = 0;
         while i < self.connections.len() {
-            match self.poll_read_connection(i)? {
-                crate::component_future::Poll::Event(()) => {
+            match self.poll_read_connection(i) {
+                Ok(crate::component_future::Poll::Event(())) => {
                     println!("disconnect");
                     self.connections.swap_remove(i);
                     continue;
                 }
-                crate::component_future::Poll::DidWork => {
+                Ok(crate::component_future::Poll::DidWork) => {
                     did_work = true;
                 }
-                crate::component_future::Poll::NotReady => {
+                Ok(crate::component_future::Poll::NotReady) => {
                     not_ready = true;
+                }
+                Err(e) => {
+                    println!("error reading from active connection: {}", e);
+                    self.connections.swap_remove(i);
+                    continue;
                 }
                 _ => {}
             }
@@ -412,17 +417,22 @@ impl Server {
 
         let mut i = 0;
         while i < self.connections.len() {
-            match self.poll_write_connection(i)? {
-                crate::component_future::Poll::Event(()) => {
+            match self.poll_write_connection(i) {
+                Ok(crate::component_future::Poll::Event(())) => {
                     println!("disconnect");
                     self.connections.swap_remove(i);
                     continue;
                 }
-                crate::component_future::Poll::DidWork => {
+                Ok(crate::component_future::Poll::DidWork) => {
                     did_work = true;
                 }
-                crate::component_future::Poll::NotReady => {
+                Ok(crate::component_future::Poll::NotReady) => {
                     not_ready = true;
+                }
+                Err(e) => {
+                    println!("error writing to active connection: {}", e);
+                    self.connections.swap_remove(i);
+                    continue;
                 }
                 _ => {}
             }

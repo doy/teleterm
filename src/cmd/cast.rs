@@ -111,6 +111,8 @@ impl CastSession {
         &Self::poll_write_server,
     ];
 
+    // this should never return Err, because we don't want server
+    // communication issues to ever interrupt a running process
     fn poll_read_client(
         &mut self,
     ) -> Result<crate::component_future::Poll<()>> {
@@ -120,8 +122,12 @@ impl CastSession {
                     self.sent_remote = 0;
                     Ok(crate::component_future::Poll::DidWork)
                 }
-                crate::client::Event::ServerMessage(msg) => {
-                    Err(Error::UnexpectedMessage { message: msg })
+                crate::client::Event::ServerMessage(..) => {
+                    // we don't expect to ever see a server message once we
+                    // start casting, so if one comes through, assume
+                    // something is messed up and try again
+                    self.client.reconnect();
+                    Ok(crate::component_future::Poll::DidWork)
                 }
             },
             Ok(futures::Async::Ready(None)) => {

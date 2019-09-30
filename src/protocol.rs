@@ -77,15 +77,14 @@ pub const PROTO_VERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    StartCasting {
+    Login {
         proto_version: u32,
         username: String,
         term_type: String,
     },
+    StartCasting,
     StartWatching {
-        proto_version: u32,
-        username: String,
-        term_type: String,
+        id: String,
     },
     Heartbeat,
     TerminalOutput {
@@ -95,9 +94,6 @@ pub enum Message {
     Sessions {
         ids: Vec<String>,
     },
-    WatchSession {
-        id: String,
-    },
     Disconnected,
     Error {
         msg: String,
@@ -105,20 +101,19 @@ pub enum Message {
 }
 
 impl Message {
-    pub fn start_casting(username: &str, term_type: &str) -> Self {
-        Self::StartCasting {
+    pub fn login(username: &str, term_type: &str) -> Self {
+        Self::Login {
             proto_version: PROTO_VERSION,
             username: username.to_string(),
             term_type: term_type.to_string(),
         }
     }
+    pub fn start_casting() -> Self {
+        Self::StartCasting
+    }
 
-    pub fn start_watching(username: &str, term_type: &str) -> Self {
-        Self::StartWatching {
-            proto_version: PROTO_VERSION,
-            username: username.to_string(),
-            term_type: term_type.to_string(),
-        }
+    pub fn start_watching(id: &str) -> Self {
+        Self::StartWatching { id: id.to_string() }
     }
 
     pub fn heartbeat() -> Self {
@@ -137,10 +132,6 @@ impl Message {
 
     pub fn sessions(ids: &[String]) -> Self {
         Self::Sessions { ids: ids.to_vec() }
-    }
-
-    pub fn watch_session(id: &str) -> Self {
-        Self::WatchSession { id: id.to_string() }
     }
 
     pub fn disconnected() -> Self {
@@ -273,7 +264,7 @@ impl From<&Message> for Packet {
         }
 
         match msg {
-            Message::StartCasting {
+            Message::Login {
                 proto_version,
                 username,
                 term_type,
@@ -286,21 +277,19 @@ impl From<&Message> for Packet {
 
                 Self { ty: 0, data }
             }
-            Message::StartWatching {
-                proto_version,
-                username,
-                term_type,
-            } => {
+            Message::StartCasting => Self {
+                ty: 1,
+                data: vec![],
+            },
+            Message::StartWatching { id } => {
                 let mut data = vec![];
 
-                write_u32(*proto_version, &mut data);
-                write_str(username, &mut data);
-                write_str(term_type, &mut data);
+                write_str(id, &mut data);
 
-                Self { ty: 1, data }
+                Self { ty: 2, data }
             }
             Message::Heartbeat => Self {
-                ty: 2,
+                ty: 3,
                 data: vec![],
             },
             Message::TerminalOutput { data: output } => {
@@ -309,25 +298,18 @@ impl From<&Message> for Packet {
                 write_bytes(output, &mut data);
 
                 Self {
-                    ty: 3,
+                    ty: 4,
                     data: data.to_vec(),
                 }
             }
             Message::ListSessions => Self {
-                ty: 4,
+                ty: 5,
                 data: vec![],
             },
             Message::Sessions { ids } => {
                 let mut data = vec![];
 
                 write_strvec(ids, &mut data);
-
-                Self { ty: 5, data }
-            }
-            Message::WatchSession { id } => {
-                let mut data = vec![];
-
-                write_str(id, &mut data);
 
                 Self { ty: 6, data }
             }
@@ -385,7 +367,7 @@ impl std::convert::TryFrom<Packet> for Message {
                 let (term_type, data) = read_str(data)?;
 
                 (
-                    Self::StartCasting {
+                    Self::Login {
                         proto_version,
                         username,
                         term_type,
@@ -393,35 +375,23 @@ impl std::convert::TryFrom<Packet> for Message {
                     data,
                 )
             }
-            1 => {
-                let (proto_version, data) = read_u32(data)?;
-                let (username, data) = read_str(data)?;
-                let (term_type, data) = read_str(data)?;
+            1 => (Self::StartCasting, data),
+            2 => {
+                let (id, data) = read_str(data)?;
 
-                (
-                    Self::StartWatching {
-                        proto_version,
-                        username,
-                        term_type,
-                    },
-                    data,
-                )
+                (Self::StartWatching { id }, data)
             }
-            2 => (Self::Heartbeat, data),
-            3 => {
+            3 => (Self::Heartbeat, data),
+            4 => {
                 let (output, data) = read_bytes(data)?;
 
                 (Self::TerminalOutput { data: output }, data)
             }
-            4 => (Self::ListSessions, data),
-            5 => {
+            5 => (Self::ListSessions, data),
+            6 => {
                 let (ids, data) = read_strvec(data)?;
 
                 (Self::Sessions { ids }, data)
-            }
-            6 => {
-                let (id, data) = read_str(data)?;
-                (Self::WatchSession { id }, data)
             }
             7 => (Self::Disconnected, data),
             8 => {

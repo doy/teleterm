@@ -56,14 +56,6 @@ enum WriteSocket {
                 > + Send,
         >,
     ),
-    LoggingIn(
-        Box<
-            dyn futures::future::Future<
-                    Item = crate::protocol::FramedWriter,
-                    Error = Error,
-                > + Send,
-        >,
-    ),
     Connected(crate::protocol::FramedWriter),
     WritingMessage(
         Box<
@@ -93,7 +85,6 @@ pub struct Client {
     rsock: ReadSocket,
     wsock: WriteSocket,
 
-    on_connect: Vec<crate::protocol::Message>,
     to_send: std::collections::VecDeque<crate::protocol::Message>,
 }
 
@@ -102,7 +93,6 @@ impl Client {
         address: &str,
         username: &str,
         ty: crate::common::ConnectionType,
-        on_connect: &[crate::protocol::Message],
         heartbeat_duration: std::time::Duration,
     ) -> Self {
         let heartbeat_timer =
@@ -120,7 +110,6 @@ impl Client {
             rsock: ReadSocket::NotConnected,
             wsock: WriteSocket::NotConnected,
 
-            on_connect: on_connect.to_vec(),
             to_send: std::collections::VecDeque::new(),
         }
     }
@@ -187,39 +176,37 @@ impl Client {
                     )
                     .context(Connect),
                 ));
+
                 self.to_send.clear();
-                let mut on_connect =
-                    self.on_connect.iter().cloned().collect();
-                self.to_send.append(&mut on_connect);
+
+                let term =
+                    std::env::var("TERM").unwrap_or_else(|_| "".to_string());
+                let msg =
+                    crate::protocol::Message::login(&self.username, &term);
+                self.to_send.push_back(msg);
+
+                let msg = match &self.ty {
+                    crate::common::ConnectionType::Casting => {
+                        crate::protocol::Message::start_casting()
+                    }
+                    crate::common::ConnectionType::Watching(id) => {
+                        crate::protocol::Message::start_watching(id)
+                    }
+                };
+                self.to_send.push_back(msg);
+
                 Ok(crate::component_future::Poll::Event(Event::Reconnect))
             }
             WriteSocket::Connecting(ref mut fut) => match fut.poll() {
                 Ok(futures::Async::Ready(s)) => {
                     let (rs, ws) = s.split();
                     self.last_server_time = std::time::Instant::now();
-                    let term = std::env::var("TERM")
-                        .unwrap_or_else(|_| "".to_string());
-                    let msg = match self.ty {
-                        crate::common::ConnectionType::Casting => {
-                            crate::protocol::Message::start_casting(
-                                &self.username,
-                                &term,
-                            )
-                        }
-                        crate::common::ConnectionType::Watching => {
-                            crate::protocol::Message::start_watching(
-                                &self.username,
-                                &term,
-                            )
-                        }
-                    };
-                    let fut = msg
-                        .write_async(crate::protocol::FramedWriter::new(ws))
-                        .context(Write);
                     self.rsock = ReadSocket::Connected(
                         crate::protocol::FramedReader::new(rs),
                     );
-                    self.wsock = WriteSocket::LoggingIn(Box::new(fut));
+                    self.wsock = WriteSocket::Connected(
+                        crate::protocol::FramedWriter::new(ws),
+                    );
                     Ok(crate::component_future::Poll::DidWork)
                 }
                 Ok(futures::Async::NotReady) => {
@@ -232,16 +219,6 @@ impl Client {
                             + std::time::Duration::from_secs(1),
                     ));
                     Ok(crate::component_future::Poll::DidWork)
-                }
-            },
-            WriteSocket::LoggingIn(ref mut fut) => match fut.poll()? {
-                futures::Async::Ready(s) => {
-                    self.last_server_time = std::time::Instant::now();
-                    self.wsock = WriteSocket::Connected(s);
-                    Ok(crate::component_future::Poll::DidWork)
-                }
-                futures::Async::NotReady => {
-                    Ok(crate::component_future::Poll::NotReady)
                 }
             },
             WriteSocket::Connected(..) | WriteSocket::WritingMessage(..) => {
@@ -297,9 +274,7 @@ impl Client {
         &mut self,
     ) -> Result<crate::component_future::Poll<Event>> {
         match &mut self.wsock {
-            WriteSocket::NotConnected
-            | WriteSocket::Connecting(..)
-            | WriteSocket::LoggingIn(..) => {
+            WriteSocket::NotConnected | WriteSocket::Connecting(..) => {
                 Ok(crate::component_future::Poll::NothingToDo)
             }
             WriteSocket::Connected(..) => {

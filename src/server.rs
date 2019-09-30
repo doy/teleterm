@@ -26,6 +26,9 @@ pub enum Error {
 
     #[snafu(display("unexpected message: {:?}", message))]
     UnexpectedMessage { message: crate::protocol::Message },
+
+    #[snafu(display("unauthenticated message: {:?}", message))]
+    UnauthenticatedMessage { message: crate::protocol::Message },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -116,13 +119,17 @@ impl Server {
         i: usize,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        match self.connections[i].ty {
-            None => self.handle_login_message(i, message),
-            Some(crate::common::ConnectionType::Casting) => {
-                self.handle_cast_message(i, message)
-            }
-            Some(crate::common::ConnectionType::Watching) => {
-                self.handle_watch_message(i, message)
+        if self.connections[i].username.is_none() {
+            self.handle_login_message(i, message)
+        } else {
+            match self.connections[i].ty {
+                Some(crate::common::ConnectionType::Casting) => {
+                    self.handle_cast_message(i, message)
+                }
+                Some(crate::common::ConnectionType::Watching(..)) => {
+                    self.handle_watch_message(i, message)
+                }
+                None => self.handle_other_message(i, message),
             }
         }
     }
@@ -132,34 +139,21 @@ impl Server {
         i: usize,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let conn = &mut self.connections[i];
         match message {
-            crate::protocol::Message::StartCasting {
+            crate::protocol::Message::Login {
                 username,
                 term_type,
                 ..
             } => {
-                println!("got a cast connection from {}", username);
-                conn.ty = Some(crate::common::ConnectionType::Casting);
+                println!("got a connection from {}", username);
+                let conn = &mut self.connections[i];
                 conn.username = Some(username);
                 conn.term_type = Some(term_type);
                 Ok(())
             }
-            crate::protocol::Message::StartWatching {
-                username,
-                term_type,
-                ..
-            } => {
-                println!("got a watch connection from {}", username);
-                conn.ty = Some(crate::common::ConnectionType::Watching);
-                conn.username = Some(username);
-                conn.term_type = Some(term_type);
-                Ok(())
-            }
-            m => Err(Error::UnexpectedMessage { message: m }),
+            m => Err(Error::UnauthenticatedMessage { message: m }),
         }
     }
-
     fn handle_cast_message(
         &mut self,
         i: usize,
@@ -180,8 +174,8 @@ impl Server {
                 println!("got {} bytes of cast data", data.len());
                 conn.saved_data.append(&data);
                 for conn in &self.connections {
-                    if conn.ty
-                        == Some(crate::common::ConnectionType::Watching)
+                    if let Some(crate::common::ConnectionType::Watching(..)) =
+                        conn.ty
                     {
                         // XXX test if it's watching the correct session
                         // XXX async-send a TerminalOutput message back
@@ -201,6 +195,16 @@ impl Server {
         message: crate::protocol::Message,
     ) -> Result<()> {
         match message {
+            m => Err(Error::UnexpectedMessage { message: m }),
+        }
+    }
+
+    fn handle_other_message(
+        &mut self,
+        i: usize,
+        message: crate::protocol::Message,
+    ) -> Result<()> {
+        match message {
             crate::protocol::Message::ListSessions => {
                 let mut ids = vec![];
                 for caster in self.connections.iter().filter(|c| {
@@ -213,11 +217,14 @@ impl Server {
                     .push_back(crate::protocol::Message::sessions(&ids));
                 Ok(())
             }
-            crate::protocol::Message::WatchSession { id } => {
-                let _id = id;
-                // XXX start by sending a TerminalOutput message containing
-                // the saved_data for the given session, then register for
-                // further updates
+            crate::protocol::Message::StartCasting => {
+                let conn = &mut self.connections[i];
+                conn.ty = Some(crate::common::ConnectionType::Casting);
+                Ok(())
+            }
+            crate::protocol::Message::StartWatching { id } => {
+                let conn = &mut self.connections[i];
+                conn.ty = Some(crate::common::ConnectionType::Watching(id));
                 Ok(())
             }
             m => Err(Error::UnexpectedMessage { message: m }),

@@ -42,7 +42,7 @@ fn list() -> Result<()> {
     let sock =
         std::net::TcpStream::connect("127.0.0.1:8000").context(Connect)?;
     let term = std::env::var("TERM").unwrap_or_else(|_| "".to_string());
-    let msg = crate::protocol::Message::start_watching("doy", &term);
+    let msg = crate::protocol::Message::login("doy", &term);
     msg.write(&sock).context(Write)?;
 
     let msg = crate::protocol::Message::list_sessions();
@@ -94,8 +94,7 @@ impl WatchSession {
         let client = crate::client::Client::new(
             address,
             username,
-            crate::common::ConnectionType::Watching,
-            &[crate::protocol::Message::watch_session(id)],
+            crate::common::ConnectionType::Watching(id.to_string()),
             heartbeat_duration,
         );
         Ok(Self { client })

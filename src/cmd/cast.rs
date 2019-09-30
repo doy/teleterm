@@ -74,7 +74,6 @@ impl CastSession {
             address,
             username,
             crate::common::ConnectionType::Casting,
-            &[],
             heartbeat_duration,
         );
         let process =

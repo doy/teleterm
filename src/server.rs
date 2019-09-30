@@ -223,6 +223,126 @@ impl Server {
             m => Err(Error::UnexpectedMessage { message: m }),
         }
     }
+
+    fn poll_read_connection(
+        &mut self,
+        i: usize,
+    ) -> Result<crate::component_future::Poll<()>> {
+        match &mut self.connections[i].rsock {
+            Some(ReadSocket::Connected(..)) => {
+                if let Some(ReadSocket::Connected(s)) =
+                    self.connections[i].rsock.take()
+                {
+                    let fut = Box::new(
+                        crate::protocol::Message::read_async(s)
+                            .context(ReadMessage),
+                    );
+                    self.connections[i].rsock =
+                        Some(ReadSocket::Reading(fut));
+                } else {
+                    unreachable!()
+                }
+                Ok(crate::component_future::Poll::DidWork)
+            }
+            Some(ReadSocket::Reading(fut)) => {
+                match fut.poll() {
+                    Ok(futures::Async::Ready((msg, s))) => {
+                        self.handle_message(i, msg)?;
+                        self.connections[i].rsock =
+                            Some(ReadSocket::Connected(s));
+                        Ok(crate::component_future::Poll::DidWork)
+                    }
+                    Ok(futures::Async::NotReady) => {
+                        Ok(crate::component_future::Poll::NotReady)
+                    }
+                    Err(e) => {
+                        if let Error::ReadMessage { ref source } = e {
+                            match source {
+                                crate::protocol::Error::ReadAsync {
+                                    source: ref tokio_err,
+                                } => {
+                                    if tokio_err.kind()
+                                        == tokio::io::ErrorKind::UnexpectedEof
+                                    {
+                                        Ok(crate::component_future::Poll::Event(()))
+                                    } else {
+                                        Err(e)
+                                    }
+                                }
+                                crate::protocol::Error::EOF => Ok(
+                                    crate::component_future::Poll::Event(()),
+                                ),
+                                _ => Err(e),
+                            }
+                        } else {
+                            Err(e)
+                        }
+                    }
+                }
+            }
+            _ => Ok(crate::component_future::Poll::NothingToDo),
+        }
+    }
+
+    fn poll_write_connection(
+        &mut self,
+        i: usize,
+    ) -> Result<crate::component_future::Poll<()>> {
+        match &mut self.connections[i].wsock {
+            Some(WriteSocket::Connected(..)) => {
+                if let Some(msg) = self.connections[i].to_send.pop_front() {
+                    if let Some(WriteSocket::Connected(s)) =
+                        self.connections[i].wsock.take()
+                    {
+                        let fut = msg.write_async(s).context(WriteMessage);
+                        self.connections[i].wsock =
+                            Some(WriteSocket::Writing(Box::new(fut)));
+                    } else {
+                        unreachable!()
+                    }
+                    Ok(crate::component_future::Poll::DidWork)
+                } else {
+                    Ok(crate::component_future::Poll::NothingToDo)
+                }
+            }
+            Some(WriteSocket::Writing(fut)) => {
+                match fut.poll() {
+                    Ok(futures::Async::Ready(s)) => {
+                        self.connections[i].wsock =
+                            Some(WriteSocket::Connected(s));
+                        Ok(crate::component_future::Poll::DidWork)
+                    }
+                    Ok(futures::Async::NotReady) => {
+                        Ok(crate::component_future::Poll::NotReady)
+                    }
+                    Err(e) => {
+                        if let Error::WriteMessage { ref source } = e {
+                            match source {
+                                crate::protocol::Error::WriteAsync {
+                                    source: ref tokio_err,
+                                } => {
+                                    if tokio_err.kind()
+                                        == tokio::io::ErrorKind::UnexpectedEof
+                                    {
+                                        Ok(crate::component_future::Poll::Event(()))
+                                    } else {
+                                        Err(e)
+                                    }
+                                }
+                                crate::protocol::Error::EOF => Ok(
+                                    crate::component_future::Poll::Event(()),
+                                ),
+                                _ => Err(e),
+                            }
+                        } else {
+                            Err(e)
+                        }
+                    }
+                }
+            }
+            _ => Ok(crate::component_future::Poll::NothingToDo),
+        }
+    }
 }
 
 impl Server {
@@ -260,61 +380,21 @@ impl Server {
 
         let mut i = 0;
         while i < self.connections.len() {
-            match &mut self.connections[i].rsock {
-                Some(ReadSocket::Connected(..)) => {
-                    if let Some(ReadSocket::Connected(s)) =
-                        self.connections[i].rsock.take()
-                    {
-                        let fut = Box::new(
-                            crate::protocol::Message::read_async(s)
-                                .context(ReadMessage),
-                        );
-                        self.connections[i].rsock =
-                            Some(ReadSocket::Reading(fut));
-                    } else {
-                        unreachable!()
-                    }
+            match self.poll_read_connection(i)? {
+                crate::component_future::Poll::Event(()) => {
+                    println!("disconnect");
+                    self.connections.swap_remove(i);
+                    continue;
+                }
+                crate::component_future::Poll::DidWork => {
                     did_work = true;
                 }
-                Some(ReadSocket::Reading(fut)) => match fut.poll() {
-                    Ok(futures::Async::Ready((msg, s))) => {
-                        self.handle_message(i, msg)?;
-                        self.connections[i].rsock =
-                            Some(ReadSocket::Connected(s));
-                        did_work = true;
-                    }
-                    Ok(futures::Async::NotReady) => {
-                        i += 1;
-                        not_ready = true;
-                    }
-                    Err(e) => {
-                        if let Error::ReadMessage { ref source } = e {
-                            match source {
-                                crate::protocol::Error::ReadAsync {
-                                    source: ref tokio_err,
-                                } => {
-                                    if tokio_err.kind()
-                                        == tokio::io::ErrorKind::UnexpectedEof
-                                    {
-                                        println!("disconnect");
-                                        self.connections.swap_remove(i);
-                                    } else {
-                                        return Err(e);
-                                    }
-                                }
-                                crate::protocol::Error::EOF => {
-                                    println!("disconnect");
-                                    self.connections.swap_remove(i);
-                                }
-                                _ => return Err(e),
-                            }
-                        } else {
-                            return Err(e);
-                        }
-                    }
-                },
-                _ => i += 1,
+                crate::component_future::Poll::NotReady => {
+                    not_ready = true;
+                }
+                _ => {}
             }
+            i += 1;
         }
 
         if did_work {
@@ -332,63 +412,21 @@ impl Server {
 
         let mut i = 0;
         while i < self.connections.len() {
-            match &mut self.connections[i].wsock {
-                Some(WriteSocket::Connected(..)) => {
-                    if let Some(msg) = self.connections[i].to_send.pop_front()
-                    {
-                        if let Some(WriteSocket::Connected(s)) =
-                            self.connections[i].wsock.take()
-                        {
-                            let fut =
-                                msg.write_async(s).context(WriteMessage);
-                            self.connections[i].wsock =
-                                Some(WriteSocket::Writing(Box::new(fut)));
-                        } else {
-                            unreachable!()
-                        }
-                        did_work = true;
-                    } else {
-                        i += 1;
-                    }
+            match self.poll_write_connection(i)? {
+                crate::component_future::Poll::Event(()) => {
+                    println!("disconnect");
+                    self.connections.swap_remove(i);
+                    continue;
                 }
-                Some(WriteSocket::Writing(fut)) => match fut.poll() {
-                    Ok(futures::Async::Ready(s)) => {
-                        self.connections[i].wsock =
-                            Some(WriteSocket::Connected(s));
-                        did_work = true;
-                    }
-                    Ok(futures::Async::NotReady) => {
-                        i += 1;
-                        not_ready = true;
-                    }
-                    Err(e) => {
-                        if let Error::WriteMessage { ref source } = e {
-                            match source {
-                                crate::protocol::Error::WriteAsync {
-                                    source: ref tokio_err,
-                                } => {
-                                    if tokio_err.kind()
-                                        == tokio::io::ErrorKind::UnexpectedEof
-                                    {
-                                        println!("disconnect");
-                                        self.connections.swap_remove(i);
-                                    } else {
-                                        return Err(e);
-                                    }
-                                }
-                                crate::protocol::Error::EOF => {
-                                    println!("disconnect");
-                                    self.connections.swap_remove(i);
-                                }
-                                _ => return Err(e),
-                            }
-                        } else {
-                            return Err(e);
-                        }
-                    }
-                },
-                _ => i += 1,
+                crate::component_future::Poll::DidWork => {
+                    did_work = true;
+                }
+                crate::component_future::Poll::NotReady => {
+                    not_ready = true;
+                }
+                _ => {}
             }
+            i += 1;
         }
 
         if did_work {

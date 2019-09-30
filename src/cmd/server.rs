@@ -14,16 +14,21 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
-    app.about("Run a termcast server")
+    app.about("Run a termcast server").arg(
+        clap::Arg::with_name("address")
+            .long("address")
+            .takes_value(true),
+    )
 }
 
-pub fn run<'a>(_matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    run_impl().context(super::Server)
+pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
+    run_impl(matches.value_of("address").unwrap_or("127.0.0.1:8000"))
+        .context(super::Server)
 }
 
-fn run_impl() -> Result<()> {
+fn run_impl(address: &str) -> Result<()> {
     let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(1);
-    let addr = "127.0.0.1:8000".parse().context(ParseAddress)?;
+    let addr = address.parse().context(ParseAddress)?;
     let listener = tokio::net::TcpListener::bind(&addr).context(Bind)?;
     let acceptor = listener
         .incoming()

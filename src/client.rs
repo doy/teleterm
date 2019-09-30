@@ -118,7 +118,7 @@ impl Client {
         self.to_send.push_back(msg);
     }
 
-    fn reconnect(&mut self) {
+    pub fn reconnect(&mut self) {
         self.rsock = ReadSocket::NotConnected;
         self.wsock = WriteSocket::NotConnected;
     }

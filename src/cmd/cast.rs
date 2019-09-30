@@ -114,8 +114,8 @@ impl CastSession {
     fn poll_read_client(
         &mut self,
     ) -> Result<crate::component_future::Poll<()>> {
-        match self.client.poll().context(Client)? {
-            futures::Async::Ready(Some(e)) => match e {
+        match self.client.poll().context(Client) {
+            Ok(futures::Async::Ready(Some(e))) => match e {
                 crate::client::Event::Reconnect => {
                     self.sent_remote = 0;
                     Ok(crate::component_future::Poll::DidWork)
@@ -124,12 +124,16 @@ impl CastSession {
                     Err(Error::UnexpectedMessage { message: msg })
                 }
             },
-            futures::Async::Ready(None) => {
+            Ok(futures::Async::Ready(None)) => {
                 // the client should never exit on its own
                 unreachable!()
             }
-            futures::Async::NotReady => {
+            Ok(futures::Async::NotReady) => {
                 Ok(crate::component_future::Poll::NotReady)
+            }
+            Err(..) => {
+                self.client.reconnect();
+                Ok(crate::component_future::Poll::DidWork)
             }
         }
     }

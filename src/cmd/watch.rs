@@ -31,24 +31,32 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Watch termcast streams")
+        .arg(
+            clap::Arg::with_name("address")
+                .long("address")
+                .takes_value(true),
+        )
         .arg(clap::Arg::with_name("id"))
 }
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    run_impl(matches.value_of("id")).context(super::Watch)
+    run_impl(
+        matches.value_of("address").unwrap_or("127.0.0.1:8000"),
+        matches.value_of("id"),
+    )
+    .context(super::Watch)
 }
 
-fn run_impl(id: Option<&str>) -> Result<()> {
+fn run_impl(address: &str, id: Option<&str>) -> Result<()> {
     if let Some(id) = id {
-        watch(id)
+        watch(address, id)
     } else {
-        list()
+        list(address)
     }
 }
 
-fn list() -> Result<()> {
-    let sock =
-        std::net::TcpStream::connect("127.0.0.1:8000").context(Connect)?;
+fn list(address: &str) -> Result<()> {
+    let sock = std::net::TcpStream::connect(address).context(Connect)?;
     let term = std::env::var("TERM").unwrap_or_else(|_| "".to_string());
     let msg = crate::protocol::Message::login("doy", &term);
     msg.write(&sock).context(Write)?;
@@ -75,11 +83,11 @@ fn list() -> Result<()> {
     Ok(())
 }
 
-fn watch(id: &str) -> Result<()> {
+fn watch(address: &str, id: &str) -> Result<()> {
     tokio::run(
         WatchSession::new(
             id,
-            "127.0.0.1:8000",
+            address,
             "doy",
             std::time::Duration::from_secs(5),
         )?

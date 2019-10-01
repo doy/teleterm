@@ -109,7 +109,7 @@ pub struct Server {
     sock_stream: Box<
         dyn futures::stream::Stream<Item = Connection, Error = Error> + Send,
     >,
-    connections: Vec<Connection>,
+    connections: std::collections::HashMap<String, Connection>,
 }
 
 impl Server {
@@ -120,33 +120,33 @@ impl Server {
             sock_r.map(Connection::new).context(SocketChannelReceive);
         Self {
             sock_stream: Box::new(sock_stream),
-            connections: vec![],
+            connections: std::collections::HashMap::new(),
         }
     }
 
     fn handle_message(
         &mut self,
-        i: usize,
+        conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        if self.connections[i].session.metadata.is_none() {
-            self.handle_login_message(i, message)
+        if conn.session.metadata.is_none() {
+            self.handle_login_message(conn, message)
         } else {
-            match self.connections[i].ty {
+            match conn.ty {
                 Some(crate::common::ConnectionType::Casting) => {
-                    self.handle_cast_message(i, message)
+                    self.handle_cast_message(conn, message)
                 }
                 Some(crate::common::ConnectionType::Watching(..)) => {
-                    self.handle_watch_message(i, message)
+                    self.handle_watch_message(conn, message)
                 }
-                None => self.handle_other_message(i, message),
+                None => self.handle_other_message(conn, message),
             }
         }
     }
 
     fn handle_login_message(
         &mut self,
-        i: usize,
+        conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
         match message {
@@ -156,7 +156,6 @@ impl Server {
                 ..
             } => {
                 println!("got a connection from {}", username);
-                let conn = &mut self.connections[i];
                 conn.session.connect(&username, &term_type);
                 Ok(())
             }
@@ -166,10 +165,9 @@ impl Server {
 
     fn handle_cast_message(
         &mut self,
-        i: usize,
+        conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let conn = &mut self.connections[i];
         let session = &conn.session;
         // we test for metadata being Some before calling handle_cast_message
         let metadata = session.metadata.as_ref().unwrap();
@@ -184,7 +182,7 @@ impl Server {
                 println!("got {} bytes of cast data", data.len());
                 conn.saved_data.append(&data);
                 let cast_id = session.id.clone();
-                for watch_conn in &mut self.connections {
+                for watch_conn in self.connections.values_mut() {
                     if let Some(crate::common::ConnectionType::Watching(id)) =
                         &watch_conn.ty
                     {
@@ -205,10 +203,9 @@ impl Server {
 
     fn handle_watch_message(
         &mut self,
-        i: usize,
+        conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let conn = &mut self.connections[i];
         let session = &conn.session;
         // we test for session being Some before calling handle_watch_message
         let metadata = session.metadata.as_ref().unwrap();
@@ -225,38 +222,35 @@ impl Server {
 
     fn handle_other_message(
         &mut self,
-        i: usize,
+        conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
         match message {
             crate::protocol::Message::ListSessions => {
                 let mut sessions = vec![];
-                for caster in self.connections.iter().filter(|c| {
+                for caster in self.connections.values().filter(|c| {
                     c.ty == Some(crate::common::ConnectionType::Casting)
                 }) {
                     if caster.session.metadata.is_some() {
                         sessions.push(caster.session.clone());
                     }
                 }
-                let conn = &mut self.connections[i];
                 conn.to_send
                     .push_back(crate::protocol::Message::sessions(&sessions));
                 Ok(())
             }
             crate::protocol::Message::StartCasting => {
-                let conn = &mut self.connections[i];
                 conn.ty = Some(crate::common::ConnectionType::Casting);
                 Ok(())
             }
             crate::protocol::Message::StartWatching { id } => {
                 let mut data = None;
-                for conn in &self.connections {
-                    if conn.session.id == id {
-                        data = Some(conn.saved_data.contents().to_vec());
+                for cast_conn in self.connections.values() {
+                    if cast_conn.session.id == id {
+                        data = Some(cast_conn.saved_data.contents().to_vec());
                     }
                 }
                 if let Some(data) = data {
-                    let conn = &mut self.connections[i];
                     conn.ty =
                         Some(crate::common::ConnectionType::Watching(id));
                     conn.to_send.push_back(
@@ -271,16 +265,16 @@ impl Server {
         }
     }
 
-    fn handle_disconnect(&mut self, i: usize) {
+    fn handle_disconnect(&mut self, conn: &mut Connection) {
         println!("disconnect");
 
-        let disconnect_id = self.connections[i].session.id.clone();
-        for conn in &mut self.connections {
+        let disconnect_id = conn.session.id.clone();
+        for watch_conn in self.connections.values_mut() {
             if let Some(crate::common::ConnectionType::Watching(id)) =
-                &conn.ty
+                &watch_conn.ty
             {
                 if id == &disconnect_id {
-                    conn.close(Ok(()));
+                    watch_conn.close(Ok(()));
                 }
             }
         }
@@ -288,19 +282,16 @@ impl Server {
 
     fn poll_read_connection(
         &mut self,
-        i: usize,
+        conn: &mut Connection,
     ) -> Result<crate::component_future::Poll<()>> {
-        match &mut self.connections[i].rsock {
+        match &mut conn.rsock {
             Some(ReadSocket::Connected(..)) => {
-                if let Some(ReadSocket::Connected(s)) =
-                    self.connections[i].rsock.take()
-                {
+                if let Some(ReadSocket::Connected(s)) = conn.rsock.take() {
                     let fut = Box::new(
                         crate::protocol::Message::read_async(s)
                             .context(ReadMessage),
                     );
-                    self.connections[i].rsock =
-                        Some(ReadSocket::Reading(fut));
+                    conn.rsock = Some(ReadSocket::Reading(fut));
                 } else {
                     unreachable!()
                 }
@@ -309,12 +300,11 @@ impl Server {
             Some(ReadSocket::Reading(fut)) => {
                 match fut.poll() {
                     Ok(futures::Async::Ready((msg, s))) => {
-                        let res = self.handle_message(i, msg);
+                        let res = self.handle_message(conn, msg);
                         if res.is_err() {
-                            self.connections[i].close(res);
+                            conn.close(res);
                         }
-                        self.connections[i].rsock =
-                            Some(ReadSocket::Connected(s));
+                        conn.rsock = Some(ReadSocket::Connected(s));
                         Ok(crate::component_future::Poll::DidWork)
                     }
                     Ok(futures::Async::NotReady) => {
@@ -351,22 +341,21 @@ impl Server {
 
     fn poll_write_connection(
         &mut self,
-        i: usize,
+        conn: &mut Connection,
     ) -> Result<crate::component_future::Poll<()>> {
-        match &mut self.connections[i].wsock {
+        match &mut conn.wsock {
             Some(WriteSocket::Connected(..)) => {
-                if let Some(msg) = self.connections[i].to_send.pop_front() {
-                    if let Some(WriteSocket::Connected(s)) =
-                        self.connections[i].wsock.take()
+                if let Some(msg) = conn.to_send.pop_front() {
+                    if let Some(WriteSocket::Connected(s)) = conn.wsock.take()
                     {
                         let fut = msg.write_async(s).context(WriteMessage);
-                        self.connections[i].wsock =
+                        conn.wsock =
                             Some(WriteSocket::Writing(Box::new(fut)));
                     } else {
                         unreachable!()
                     }
                     Ok(crate::component_future::Poll::DidWork)
-                } else if self.connections[i].closed {
+                } else if conn.closed {
                     Ok(crate::component_future::Poll::Event(()))
                 } else {
                     Ok(crate::component_future::Poll::NothingToDo)
@@ -375,8 +364,7 @@ impl Server {
             Some(WriteSocket::Writing(fut)) => {
                 match fut.poll() {
                     Ok(futures::Async::Ready(s)) => {
-                        self.connections[i].wsock =
-                            Some(WriteSocket::Connected(s));
+                        conn.wsock = Some(WriteSocket::Connected(s));
                         Ok(crate::component_future::Poll::DidWork)
                     }
                     Ok(futures::Async::NotReady) => {
@@ -428,7 +416,7 @@ impl Server {
     ) -> Result<crate::component_future::Poll<()>> {
         match self.sock_stream.poll() {
             Ok(futures::Async::Ready(Some(conn))) => {
-                self.connections.push(conn);
+                self.connections.insert(conn.session.id.clone(), conn);
                 Ok(crate::component_future::Poll::DidWork)
             }
             Ok(futures::Async::Ready(None)) => {
@@ -445,12 +433,12 @@ impl Server {
         let mut did_work = false;
         let mut not_ready = false;
 
-        let mut i = 0;
-        while i < self.connections.len() {
-            match self.poll_read_connection(i) {
+        let keys: Vec<_> = self.connections.keys().cloned().collect();
+        for key in keys {
+            let mut conn = self.connections.remove(&key).unwrap();
+            match self.poll_read_connection(&mut conn) {
                 Ok(crate::component_future::Poll::Event(())) => {
-                    self.handle_disconnect(i);
-                    self.connections.swap_remove(i);
+                    self.handle_disconnect(&mut conn);
                     continue;
                 }
                 Ok(crate::component_future::Poll::DidWork) => {
@@ -461,12 +449,11 @@ impl Server {
                 }
                 Err(e) => {
                     println!("error reading from active connection: {}", e);
-                    self.connections.swap_remove(i);
                     continue;
                 }
                 _ => {}
             }
-            i += 1;
+            self.connections.insert(key.to_string(), conn);
         }
 
         if did_work {
@@ -482,12 +469,12 @@ impl Server {
         let mut did_work = false;
         let mut not_ready = false;
 
-        let mut i = 0;
-        while i < self.connections.len() {
-            match self.poll_write_connection(i) {
+        let keys: Vec<_> = self.connections.keys().cloned().collect();
+        for key in keys {
+            let mut conn = self.connections.remove(&key).unwrap();
+            match self.poll_write_connection(&mut conn) {
                 Ok(crate::component_future::Poll::Event(())) => {
-                    self.handle_disconnect(i);
-                    self.connections.swap_remove(i);
+                    self.handle_disconnect(&mut conn);
                     continue;
                 }
                 Ok(crate::component_future::Poll::DidWork) => {
@@ -497,13 +484,12 @@ impl Server {
                     not_ready = true;
                 }
                 Err(e) => {
-                    println!("error writing to active connection: {}", e);
-                    self.connections.swap_remove(i);
+                    println!("error reading from active connection: {}", e);
                     continue;
                 }
                 _ => {}
             }
-            i += 1;
+            self.connections.insert(key.to_string(), conn);
         }
 
         if did_work {

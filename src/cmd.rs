@@ -53,8 +53,7 @@ pub fn parse<'a>() -> Result<clap::ArgMatches<'a>> {
         clap::App::new(crate::util::program_name().context(FindProgramName)?)
             .about("Broadcast your terminal for other people to watch")
             .author(clap::crate_authors!())
-            .version(clap::crate_version!())
-            .setting(clap::AppSettings::SubcommandRequired);
+            .version(clap::crate_version!());
 
     for cmd in COMMANDS {
         let subcommand = clap::SubCommand::with_name(cmd.name);
@@ -70,5 +69,5 @@ pub fn run(matches: &clap::ArgMatches<'_>) -> Result<()> {
             return (cmd.run)(submatches);
         }
     }
-    unreachable!()
+    (COMMANDS[0].run)(&clap::ArgMatches::<'_>::default())
 }

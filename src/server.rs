@@ -89,13 +89,19 @@ impl ConnectionState {
         }
     }
 
-    fn login(&self, username: &str, term_type: &str) -> Self {
+    fn login(
+        &self,
+        username: &str,
+        term_type: &str,
+        size: (u32, u32),
+    ) -> Self {
         match self {
             Self::Accepted { id } => Self::LoggedIn {
                 session: crate::common::Session {
                     id: id.clone(),
                     username: username.to_string(),
                     term_type: term_type.to_string(),
+                    size,
                 },
             },
             _ => unreachable!(),
@@ -224,10 +230,11 @@ impl Server {
             crate::protocol::Message::Login {
                 username,
                 term_type,
+                size,
                 ..
             } => {
                 println!("got a connection from {}", username);
-                conn.state = conn.state.login(&username, &term_type);
+                conn.state = conn.state.login(&username, &term_type, size);
                 Ok(())
             }
             m => Err(Error::UnauthenticatedMessage { message: m }),

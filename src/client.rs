@@ -205,8 +205,12 @@ impl Client {
 
                 let term =
                     std::env::var("TERM").unwrap_or_else(|_| "".to_string());
-                let msg =
-                    crate::protocol::Message::login(&self.username, &term);
+                let size = crossterm::terminal().terminal_size();
+                let msg = crate::protocol::Message::login(
+                    &self.username,
+                    &term,
+                    (u32::from(size.0), u32::from(size.1)),
+                );
                 self.to_send.push_back(msg);
 
                 for msg in &self.on_connect {

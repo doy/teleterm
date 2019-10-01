@@ -83,6 +83,7 @@ pub enum Message {
         proto_version: u32,
         username: String,
         term_type: String,
+        size: (u32, u32),
     },
     StartCasting,
     StartWatching {
@@ -113,11 +114,12 @@ const MSG_DISCONNECTED: u32 = 7;
 const MSG_ERROR: u32 = 8;
 
 impl Message {
-    pub fn login(username: &str, term_type: &str) -> Self {
+    pub fn login(username: &str, term_type: &str, size: (u32, u32)) -> Self {
         Self::Login {
             proto_version: PROTO_VERSION,
             username: username.to_string(),
             term_type: term_type.to_string(),
+            size,
         }
     }
     pub fn start_casting() -> Self {
@@ -274,6 +276,8 @@ impl From<&Message> for Packet {
             write_str(&val.id, data);
             write_str(&val.username, data);
             write_str(&val.term_type, data);
+            write_u32(val.size.0, data);
+            write_u32(val.size.1, data);
         }
         fn write_sessions(
             val: &[crate::common::Session],
@@ -290,12 +294,15 @@ impl From<&Message> for Packet {
                 proto_version,
                 username,
                 term_type,
+                size,
             } => {
                 let mut data = vec![];
 
                 write_u32(*proto_version, &mut data);
                 write_str(username, &mut data);
                 write_str(term_type, &mut data);
+                write_u32(size.0, &mut data);
+                write_u32(size.1, &mut data);
 
                 Self {
                     ty: MSG_LOGIN,
@@ -387,14 +394,17 @@ impl std::convert::TryFrom<Packet> for Message {
         ) -> Result<(crate::common::Session, &[u8])> {
             let (id, data) = read_str(data)?;
             let (username, data) = read_str(data)?;
-            let (term_type, rest) = read_str(data)?;
+            let (term_type, data) = read_str(data)?;
+            let (cols, data) = read_u32(data)?;
+            let (rows, data) = read_u32(data)?;
             Ok((
                 crate::common::Session {
                     id,
                     username,
                     term_type,
+                    size: (cols, rows),
                 },
-                rest,
+                data,
             ))
         }
         fn read_sessions(
@@ -416,12 +426,15 @@ impl std::convert::TryFrom<Packet> for Message {
                 let (proto_version, data) = read_u32(data)?;
                 let (username, data) = read_str(data)?;
                 let (term_type, data) = read_str(data)?;
+                let (cols, data) = read_u32(data)?;
+                let (rows, data) = read_u32(data)?;
 
                 (
                     Self::Login {
                         proto_version,
                         username,
                         term_type,
+                        size: (cols, rows),
                     },
                     data,
                 )

@@ -58,7 +58,12 @@ fn run_impl(address: &str, id: Option<&str>) -> Result<()> {
 fn list(address: &str) -> Result<()> {
     let sock = std::net::TcpStream::connect(address).context(Connect)?;
     let term = std::env::var("TERM").unwrap_or_else(|_| "".to_string());
-    let msg = crate::protocol::Message::login("doy", &term);
+    let size = crossterm::terminal().terminal_size();
+    let msg = crate::protocol::Message::login(
+        "doy",
+        &term,
+        (u32::from(size.0), u32::from(size.1)),
+    );
     msg.write(&sock).context(Write)?;
 
     let msg = crate::protocol::Message::list_sessions();
@@ -70,8 +75,12 @@ fn list(address: &str) -> Result<()> {
             println!("available sessions:");
             for session in sessions {
                 println!(
-                    "{}: {}, TERM={}",
-                    session.id, session.username, session.term_type
+                    "{}: {}, {}x{}, TERM={}",
+                    session.id,
+                    session.username,
+                    session.size.0,
+                    session.size.1,
+                    session.term_type
                 );
             }
         }

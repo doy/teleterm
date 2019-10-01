@@ -181,18 +181,19 @@ impl Server {
             crate::protocol::Message::TerminalOutput { data } => {
                 println!("got {} bytes of cast data", data.len());
                 conn.saved_data.append(&data);
-                let cast_id = session.id.clone();
-                for watch_conn in self.connections.values_mut() {
+                for watch_conn in self.watchers_mut() {
                     if let Some(crate::common::ConnectionType::Watching(id)) =
                         &watch_conn.ty
                     {
-                        if &cast_id == id {
+                        if &session.id == id {
                             watch_conn.to_send.push_back(
                                 crate::protocol::Message::terminal_output(
                                     &data,
                                 ),
                             );
                         }
+                    } else {
+                        unreachable!()
                     }
                 }
                 Ok(())
@@ -227,14 +228,12 @@ impl Server {
     ) -> Result<()> {
         match message {
             crate::protocol::Message::ListSessions => {
-                let mut sessions = vec![];
-                for caster in self.connections.values().filter(|c| {
-                    c.ty == Some(crate::common::ConnectionType::Casting)
-                }) {
-                    if caster.session.metadata.is_some() {
-                        sessions.push(caster.session.clone());
-                    }
-                }
+                let sessions: Vec<_> = self
+                    .casters()
+                    .map(|conn| &conn.session)
+                    .filter(|session| session.metadata.is_some())
+                    .cloned()
+                    .collect();
                 conn.to_send
                     .push_back(crate::protocol::Message::sessions(&sessions));
                 Ok(())
@@ -244,13 +243,8 @@ impl Server {
                 Ok(())
             }
             crate::protocol::Message::StartWatching { id } => {
-                let mut data = None;
-                for cast_conn in self.connections.values() {
-                    if cast_conn.session.id == id {
-                        data = Some(cast_conn.saved_data.contents().to_vec());
-                    }
-                }
-                if let Some(data) = data {
+                if let Some(cast_conn) = self.connections.get(&id) {
+                    let data = cast_conn.saved_data.contents().to_vec();
                     conn.ty =
                         Some(crate::common::ConnectionType::Watching(id));
                     conn.to_send.push_back(
@@ -268,14 +262,15 @@ impl Server {
     fn handle_disconnect(&mut self, conn: &mut Connection) {
         println!("disconnect");
 
-        let disconnect_id = conn.session.id.clone();
-        for watch_conn in self.connections.values_mut() {
+        for watch_conn in self.watchers_mut() {
             if let Some(crate::common::ConnectionType::Watching(id)) =
                 &watch_conn.ty
             {
-                if id == &disconnect_id {
+                if id == &conn.session.id {
                     watch_conn.close(Ok(()));
                 }
+            } else {
+                unreachable!()
             }
         }
     }
@@ -397,6 +392,31 @@ impl Server {
             }
             _ => Ok(crate::component_future::Poll::NothingToDo),
         }
+    }
+
+    fn casters(&self) -> impl Iterator<Item = &Connection> {
+        self.connections.values().filter(|conn| {
+            if conn.session.metadata.is_none() {
+                return false;
+            }
+
+            conn.ty == Some(crate::common::ConnectionType::Casting)
+        })
+    }
+
+    fn watchers_mut(&mut self) -> impl Iterator<Item = &mut Connection> {
+        self.connections.values_mut().filter(|conn| {
+            if conn.session.metadata.is_none() {
+                return false;
+            }
+
+            if let Some(crate::common::ConnectionType::Watching(..)) = conn.ty
+            {
+                true
+            } else {
+                false
+            }
+        })
     }
 }
 

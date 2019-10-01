@@ -66,10 +66,13 @@ fn list(address: &str) -> Result<()> {
 
     let res = crate::protocol::Message::read(&sock).context(Read)?;
     match res {
-        crate::protocol::Message::Sessions { ids } => {
+        crate::protocol::Message::Sessions { sessions } => {
             println!("available sessions:");
-            for id in ids {
-                println!("{}", id);
+            for session in sessions {
+                println!(
+                    "{}: {}, TERM={}",
+                    session.id, session.username, session.term_type
+                );
             }
         }
         crate::protocol::Message::Error { msg } => {

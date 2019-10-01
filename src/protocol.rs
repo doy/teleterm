@@ -94,7 +94,7 @@ pub enum Message {
     },
     ListSessions,
     Sessions {
-        ids: Vec<String>,
+        sessions: Vec<crate::common::Session>,
     },
     Disconnected,
     Error {
@@ -142,8 +142,10 @@ impl Message {
         Self::ListSessions
     }
 
-    pub fn sessions(ids: &[String]) -> Self {
-        Self::Sessions { ids: ids.to_vec() }
+    pub fn sessions(sessions: &[crate::common::Session]) -> Self {
+        Self::Sessions {
+            sessions: sessions.to_vec(),
+        }
     }
 
     pub fn disconnected() -> Self {
@@ -268,10 +270,18 @@ impl From<&Message> for Packet {
         fn write_str(val: &str, data: &mut Vec<u8>) {
             write_bytes(val.as_bytes(), data);
         }
-        fn write_strvec(val: &[String], data: &mut Vec<u8>) {
+        fn write_session(val: &crate::common::Session, data: &mut Vec<u8>) {
+            write_str(&val.id, data);
+            write_str(&val.username, data);
+            write_str(&val.term_type, data);
+        }
+        fn write_sessions(
+            val: &[crate::common::Session],
+            data: &mut Vec<u8>,
+        ) {
             write_u32(u32_from_usize(val.len()), data);
             for s in val {
-                write_str(s, data);
+                write_session(s, data);
             }
         }
 
@@ -324,10 +334,10 @@ impl From<&Message> for Packet {
                 ty: MSG_LIST_SESSIONS,
                 data: vec![],
             },
-            Message::Sessions { ids } => {
+            Message::Sessions { sessions } => {
                 let mut data = vec![];
 
-                write_strvec(ids, &mut data);
+                write_sessions(sessions, &mut data);
 
                 Self {
                     ty: MSG_SESSIONS,
@@ -372,11 +382,28 @@ impl std::convert::TryFrom<Packet> for Message {
             let val = String::from_utf8(bytes).context(ParseString)?;
             Ok((val, rest))
         }
-        fn read_strvec(data: &[u8]) -> Result<(Vec<String>, &[u8])> {
+        fn read_session(
+            data: &[u8],
+        ) -> Result<(crate::common::Session, &[u8])> {
+            let (id, data) = read_str(data)?;
+            let (username, data) = read_str(data)?;
+            let (term_type, rest) = read_str(data)?;
+            Ok((
+                crate::common::Session {
+                    id,
+                    username,
+                    term_type,
+                },
+                rest,
+            ))
+        }
+        fn read_sessions(
+            data: &[u8],
+        ) -> Result<(Vec<crate::common::Session>, &[u8])> {
             let mut val = vec![];
             let (len, mut data) = read_u32(data)?;
             for _ in 0..len {
-                let (subval, subdata) = read_str(data)?;
+                let (subval, subdata) = read_session(data)?;
                 val.push(subval);
                 data = subdata;
             }
@@ -413,9 +440,9 @@ impl std::convert::TryFrom<Packet> for Message {
             }
             MSG_LIST_SESSIONS => (Self::ListSessions, data),
             MSG_SESSIONS => {
-                let (ids, data) = read_strvec(data)?;
+                let (sessions, data) = read_sessions(data)?;
 
-                (Self::Sessions { ids }, data)
+                (Self::Sessions { sessions }, data)
             }
             MSG_DISCONNECTED => (Self::Disconnected, data),
             MSG_ERROR => {

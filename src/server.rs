@@ -63,16 +63,72 @@ enum WriteSocket {
     ),
 }
 
+// XXX https://github.com/rust-lang/rust/issues/64362
+#[allow(dead_code)]
+enum ConnectionState {
+    Accepted {
+        id: String,
+    },
+    LoggedIn {
+        session: crate::common::Session,
+    },
+    Casting {
+        session: crate::common::Session,
+        saved_data: crate::term::Buffer,
+    },
+    Watching {
+        session: crate::common::Session,
+        watch_id: String,
+    },
+}
+
+impl ConnectionState {
+    fn new() -> Self {
+        Self::Accepted {
+            id: format!("{}", uuid::Uuid::new_v4()),
+        }
+    }
+
+    fn login(&self, username: &str, term_type: &str) -> Self {
+        match self {
+            Self::Accepted { id } => Self::LoggedIn {
+                session: crate::common::Session {
+                    id: id.clone(),
+                    username: username.to_string(),
+                    term_type: term_type.to_string(),
+                },
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    fn cast(&self) -> Self {
+        match self {
+            Self::LoggedIn { session } => Self::Casting {
+                session: session.clone(),
+                saved_data: crate::term::Buffer::new(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    fn watch(&self, id: &str) -> Self {
+        match self {
+            Self::LoggedIn { session } => Self::Watching {
+                session: session.clone(),
+                watch_id: id.to_string(),
+            },
+            _ => unreachable!(),
+        }
+    }
+}
+
 struct Connection {
     rsock: Option<ReadSocket>,
     wsock: Option<WriteSocket>,
-
-    ty: Option<crate::common::ConnectionType>,
-    session: crate::common::Session,
-    saved_data: crate::term::Buffer,
-
     to_send: std::collections::VecDeque<crate::protocol::Message>,
     closed: bool,
+    state: ConnectionState,
 }
 
 impl Connection {
@@ -85,13 +141,27 @@ impl Connection {
             wsock: Some(WriteSocket::Connected(
                 crate::protocol::FramedWriter::new(ws),
             )),
-
-            ty: None,
-            session: crate::common::Session::new(),
-            saved_data: crate::term::Buffer::new(),
-
             to_send: std::collections::VecDeque::new(),
             closed: false,
+            state: ConnectionState::new(),
+        }
+    }
+
+    fn id(&self) -> &str {
+        match &self.state {
+            ConnectionState::Accepted { id } => id,
+            ConnectionState::LoggedIn { session } => &session.id,
+            ConnectionState::Casting { session, .. } => &session.id,
+            ConnectionState::Watching { session, .. } => &session.id,
+        }
+    }
+
+    fn session(&self) -> Option<&crate::common::Session> {
+        match &self.state {
+            ConnectionState::Accepted { .. } => None,
+            ConnectionState::LoggedIn { session } => Some(session),
+            ConnectionState::Casting { session, .. } => Some(session),
+            ConnectionState::Watching { session, .. } => Some(session),
         }
     }
 
@@ -129,17 +199,18 @@ impl Server {
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        if conn.session.metadata.is_none() {
-            self.handle_login_message(conn, message)
-        } else {
-            match conn.ty {
-                Some(crate::common::ConnectionType::Casting) => {
-                    self.handle_cast_message(conn, message)
-                }
-                Some(crate::common::ConnectionType::Watching(..)) => {
-                    self.handle_watch_message(conn, message)
-                }
-                None => self.handle_other_message(conn, message),
+        match conn.state {
+            ConnectionState::Accepted { .. } => {
+                self.handle_login_message(conn, message)
+            }
+            ConnectionState::LoggedIn { .. } => {
+                self.handle_other_message(conn, message)
+            }
+            ConnectionState::Casting { .. } => {
+                self.handle_cast_message(conn, message)
+            }
+            ConnectionState::Watching { .. } => {
+                self.handle_watch_message(conn, message)
             }
         }
     }
@@ -156,7 +227,7 @@ impl Server {
                 ..
             } => {
                 println!("got a connection from {}", username);
-                conn.session.connect(&username, &term_type);
+                conn.state = conn.state.login(&username, &term_type);
                 Ok(())
             }
             m => Err(Error::UnauthenticatedMessage { message: m }),
@@ -168,32 +239,38 @@ impl Server {
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let session = &conn.session;
-        // we test for metadata being Some before calling handle_cast_message
-        let metadata = session.metadata.as_ref().unwrap();
+        let (session, saved_data) = if let ConnectionState::Casting {
+            session,
+            saved_data,
+        } = &mut conn.state
+        {
+            (session, saved_data)
+        } else {
+            unreachable!()
+        };
+
         match message {
             crate::protocol::Message::Heartbeat => {
-                println!("got a heartbeat from {}", metadata.username);
+                println!("got a heartbeat from {}", session.username);
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
                 Ok(())
             }
             crate::protocol::Message::TerminalOutput { data } => {
                 println!("got {} bytes of cast data", data.len());
-                conn.saved_data.append(&data);
+                saved_data.append(&data);
                 for watch_conn in self.watchers_mut() {
-                    if let Some(crate::common::ConnectionType::Watching(id)) =
-                        &watch_conn.ty
-                    {
-                        if &session.id == id {
-                            watch_conn.to_send.push_back(
-                                crate::protocol::Message::terminal_output(
-                                    &data,
-                                ),
-                            );
+                    match &watch_conn.state {
+                        ConnectionState::Watching { watch_id, .. } => {
+                            if &session.id == watch_id {
+                                watch_conn.to_send.push_back(
+                                    crate::protocol::Message::terminal_output(
+                                        &data,
+                                    ),
+                                );
+                            }
                         }
-                    } else {
-                        unreachable!()
+                        _ => unreachable!(),
                     }
                 }
                 Ok(())
@@ -207,12 +284,15 @@ impl Server {
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let session = &conn.session;
-        // we test for session being Some before calling handle_watch_message
-        let metadata = session.metadata.as_ref().unwrap();
+        let session =
+            if let ConnectionState::Watching { session, .. } = &conn.state {
+                session
+            } else {
+                unreachable!()
+            };
         match message {
             crate::protocol::Message::Heartbeat => {
-                println!("got a heartbeat from {}", metadata.username);
+                println!("got a heartbeat from {}", session.username);
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
                 Ok(())
@@ -230,8 +310,7 @@ impl Server {
             crate::protocol::Message::ListSessions => {
                 let sessions: Vec<_> = self
                     .casters()
-                    .map(|conn| &conn.session)
-                    .filter(|session| session.metadata.is_some())
+                    .flat_map(Connection::session)
                     .cloned()
                     .collect();
                 conn.to_send
@@ -239,14 +318,21 @@ impl Server {
                 Ok(())
             }
             crate::protocol::Message::StartCasting => {
-                conn.ty = Some(crate::common::ConnectionType::Casting);
+                conn.state = conn.state.cast();
                 Ok(())
             }
             crate::protocol::Message::StartWatching { id } => {
                 if let Some(cast_conn) = self.connections.get(&id) {
-                    let data = cast_conn.saved_data.contents().to_vec();
-                    conn.ty =
-                        Some(crate::common::ConnectionType::Watching(id));
+                    conn.state = conn.state.watch(&id);
+                    let data = if let ConnectionState::Casting {
+                        saved_data,
+                        ..
+                    } = &cast_conn.state
+                    {
+                        saved_data.contents().to_vec()
+                    } else {
+                        unreachable!()
+                    };
                     conn.to_send.push_back(
                         crate::protocol::Message::terminal_output(&data),
                     );
@@ -263,10 +349,10 @@ impl Server {
         println!("disconnect");
 
         for watch_conn in self.watchers_mut() {
-            if let Some(crate::common::ConnectionType::Watching(id)) =
-                &watch_conn.ty
+            if let ConnectionState::Watching { watch_id, .. } =
+                &watch_conn.state
             {
-                if id == &conn.session.id {
+                if watch_id == conn.id() {
                     watch_conn.close(Ok(()));
                 }
             } else {
@@ -395,28 +481,19 @@ impl Server {
     }
 
     fn casters(&self) -> impl Iterator<Item = &Connection> {
-        self.connections.values().filter(|conn| {
-            if conn.session.metadata.is_none() {
-                return false;
-            }
-
-            conn.ty == Some(crate::common::ConnectionType::Casting)
+        self.connections.values().filter(|conn| match conn.state {
+            ConnectionState::Casting { .. } => true,
+            _ => false,
         })
     }
 
     fn watchers_mut(&mut self) -> impl Iterator<Item = &mut Connection> {
-        self.connections.values_mut().filter(|conn| {
-            if conn.session.metadata.is_none() {
-                return false;
-            }
-
-            if let Some(crate::common::ConnectionType::Watching(..)) = conn.ty
-            {
-                true
-            } else {
-                false
-            }
-        })
+        self.connections
+            .values_mut()
+            .filter(|conn| match conn.state {
+                ConnectionState::Watching { .. } => true,
+                _ => false,
+            })
     }
 }
 
@@ -436,7 +513,7 @@ impl Server {
     ) -> Result<crate::component_future::Poll<()>> {
         match self.sock_stream.poll() {
             Ok(futures::Async::Ready(Some(conn))) => {
-                self.connections.insert(conn.session.id.clone(), conn);
+                self.connections.insert(conn.id().to_string(), conn);
                 Ok(crate::component_future::Poll::DidWork)
             }
             Ok(futures::Async::Ready(None)) => {

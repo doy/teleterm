@@ -102,6 +102,16 @@ pub enum Message {
     },
 }
 
+const MSG_LOGIN: u32 = 0;
+const MSG_START_CASTING: u32 = 1;
+const MSG_START_WATCHING: u32 = 2;
+const MSG_HEARTBEAT: u32 = 3;
+const MSG_TERMINAL_OUTPUT: u32 = 4;
+const MSG_LIST_SESSIONS: u32 = 5;
+const MSG_SESSIONS: u32 = 6;
+const MSG_DISCONNECTED: u32 = 7;
+const MSG_ERROR: u32 = 8;
+
 impl Message {
     pub fn login(username: &str, term_type: &str) -> Self {
         Self::Login {
@@ -277,10 +287,13 @@ impl From<&Message> for Packet {
                 write_str(username, &mut data);
                 write_str(term_type, &mut data);
 
-                Self { ty: 0, data }
+                Self {
+                    ty: MSG_LOGIN,
+                    data,
+                }
             }
             Message::StartCasting => Self {
-                ty: 1,
+                ty: MSG_START_CASTING,
                 data: vec![],
             },
             Message::StartWatching { id } => {
@@ -288,10 +301,13 @@ impl From<&Message> for Packet {
 
                 write_str(id, &mut data);
 
-                Self { ty: 2, data }
+                Self {
+                    ty: MSG_START_WATCHING,
+                    data,
+                }
             }
             Message::Heartbeat => Self {
-                ty: 3,
+                ty: MSG_HEARTBEAT,
                 data: vec![],
             },
             Message::TerminalOutput { data: output } => {
@@ -300,12 +316,12 @@ impl From<&Message> for Packet {
                 write_bytes(output, &mut data);
 
                 Self {
-                    ty: 4,
+                    ty: MSG_TERMINAL_OUTPUT,
                     data: data.to_vec(),
                 }
             }
             Message::ListSessions => Self {
-                ty: 5,
+                ty: MSG_LIST_SESSIONS,
                 data: vec![],
             },
             Message::Sessions { ids } => {
@@ -313,10 +329,13 @@ impl From<&Message> for Packet {
 
                 write_strvec(ids, &mut data);
 
-                Self { ty: 6, data }
+                Self {
+                    ty: MSG_SESSIONS,
+                    data,
+                }
             }
             Message::Disconnected => Self {
-                ty: 7,
+                ty: MSG_DISCONNECTED,
                 data: vec![],
             },
             Message::Error { msg } => {
@@ -324,7 +343,10 @@ impl From<&Message> for Packet {
 
                 write_str(msg, &mut data);
 
-                Self { ty: 8, data }
+                Self {
+                    ty: MSG_ERROR,
+                    data,
+                }
             }
         }
     }
@@ -363,7 +385,7 @@ impl std::convert::TryFrom<Packet> for Message {
 
         let data: &[u8] = packet.data.as_ref();
         let (msg, rest) = match packet.ty {
-            0 => {
+            MSG_LOGIN => {
                 let (proto_version, data) = read_u32(data)?;
                 let (username, data) = read_str(data)?;
                 let (term_type, data) = read_str(data)?;
@@ -377,26 +399,26 @@ impl std::convert::TryFrom<Packet> for Message {
                     data,
                 )
             }
-            1 => (Self::StartCasting, data),
-            2 => {
+            MSG_START_CASTING => (Self::StartCasting, data),
+            MSG_START_WATCHING => {
                 let (id, data) = read_str(data)?;
 
                 (Self::StartWatching { id }, data)
             }
-            3 => (Self::Heartbeat, data),
-            4 => {
+            MSG_HEARTBEAT => (Self::Heartbeat, data),
+            MSG_TERMINAL_OUTPUT => {
                 let (output, data) = read_bytes(data)?;
 
                 (Self::TerminalOutput { data: output }, data)
             }
-            5 => (Self::ListSessions, data),
-            6 => {
+            MSG_LIST_SESSIONS => (Self::ListSessions, data),
+            MSG_SESSIONS => {
                 let (ids, data) = read_strvec(data)?;
 
                 (Self::Sessions { ids }, data)
             }
-            7 => (Self::Disconnected, data),
-            8 => {
+            MSG_DISCONNECTED => (Self::Disconnected, data),
+            MSG_ERROR => {
                 let (msg, data) = read_str(data)?;
                 (Self::Error { msg }, data)
             }

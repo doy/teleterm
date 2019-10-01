@@ -1,4 +1,9 @@
-const RESET: &[&[u8]] = &[b"\x1b[H\x1b[J", b"\x1b[2J"];
+const RESET: &[&[u8]] = &[
+    b"\x1b[3J\x1b[H\x1b[2J",
+    b"\x1b[H\x1b[J",
+    b"\x1b[H\x1b[2J",
+    b"\x1bc",
+];
 
 #[derive(Debug, Default)]
 pub struct Buffer(Vec<u8>);

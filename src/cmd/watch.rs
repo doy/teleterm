@@ -69,10 +69,12 @@ fn list(address: &str) -> Result<()> {
         crate::protocol::Message::Sessions { sessions } => {
             println!("available sessions:");
             for session in sessions {
-                println!(
-                    "{}: {}, TERM={}",
-                    session.id, session.username, session.term_type
-                );
+                if let Some(metadata) = session.metadata {
+                    println!(
+                        "{}: {}, TERM={}",
+                        session.id, metadata.username, metadata.term_type
+                    );
+                }
             }
         }
         crate::protocol::Message::Error { msg } => {

@@ -68,7 +68,7 @@ struct Connection {
     wsock: Option<WriteSocket>,
 
     ty: Option<crate::common::ConnectionType>,
-    session: Option<crate::common::Session>,
+    session: crate::common::Session,
     saved_data: crate::term::Buffer,
 
     to_send: std::collections::VecDeque<crate::protocol::Message>,
@@ -87,7 +87,7 @@ impl Connection {
             )),
 
             ty: None,
-            session: None,
+            session: crate::common::Session::new(),
             saved_data: crate::term::Buffer::new(),
 
             to_send: std::collections::VecDeque::new(),
@@ -129,7 +129,7 @@ impl Server {
         i: usize,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        if self.connections[i].session.is_none() {
+        if self.connections[i].session.metadata.is_none() {
             self.handle_login_message(i, message)
         } else {
             match self.connections[i].ty {
@@ -157,8 +157,7 @@ impl Server {
             } => {
                 println!("got a connection from {}", username);
                 let conn = &mut self.connections[i];
-                conn.session =
-                    Some(crate::common::Session::new(&username, &term_type));
+                conn.session.connect(&username, &term_type);
                 Ok(())
             }
             m => Err(Error::UnauthenticatedMessage { message: m }),
@@ -171,11 +170,12 @@ impl Server {
         message: crate::protocol::Message,
     ) -> Result<()> {
         let conn = &mut self.connections[i];
-        // we test for session being Some before calling handle_cast_message
-        let session = conn.session.as_ref().unwrap();
+        let session = &conn.session;
+        // we test for metadata being Some before calling handle_cast_message
+        let metadata = session.metadata.as_ref().unwrap();
         match message {
             crate::protocol::Message::Heartbeat => {
-                println!("got a heartbeat from {}", session.username);
+                println!("got a heartbeat from {}", metadata.username);
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
                 Ok(())
@@ -209,11 +209,12 @@ impl Server {
         message: crate::protocol::Message,
     ) -> Result<()> {
         let conn = &mut self.connections[i];
+        let session = &conn.session;
         // we test for session being Some before calling handle_watch_message
-        let session = conn.session.as_ref().unwrap();
+        let metadata = session.metadata.as_ref().unwrap();
         match message {
             crate::protocol::Message::Heartbeat => {
-                println!("got a heartbeat from {}", session.username);
+                println!("got a heartbeat from {}", metadata.username);
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
                 Ok(())
@@ -233,8 +234,8 @@ impl Server {
                 for caster in self.connections.iter().filter(|c| {
                     c.ty == Some(crate::common::ConnectionType::Casting)
                 }) {
-                    if let Some(session) = &caster.session {
-                        sessions.push(session.clone());
+                    if caster.session.metadata.is_some() {
+                        sessions.push(caster.session.clone());
                     }
                 }
                 let conn = &mut self.connections[i];
@@ -250,10 +251,8 @@ impl Server {
             crate::protocol::Message::StartWatching { id } => {
                 let mut data = None;
                 for conn in &self.connections {
-                    if let Some(session) = &conn.session {
-                        if session.id == id {
-                            data = Some(conn.saved_data.contents().to_vec());
-                        }
+                    if conn.session.id == id {
+                        data = Some(conn.saved_data.contents().to_vec());
                     }
                 }
                 if let Some(data) = data {
@@ -275,15 +274,13 @@ impl Server {
     fn handle_disconnect(&mut self, i: usize) {
         println!("disconnect");
 
-        if let Some(session) = &self.connections[i].session {
-            let disconnect_id = session.id.clone();
-            for conn in &mut self.connections {
-                if let Some(crate::common::ConnectionType::Watching(id)) =
-                    &conn.ty
-                {
-                    if id == &disconnect_id {
-                        conn.close(Ok(()));
-                    }
+        let disconnect_id = self.connections[i].session.id.clone();
+        for conn in &mut self.connections {
+            if let Some(crate::common::ConnectionType::Watching(id)) =
+                &conn.ty
+            {
+                if id == &disconnect_id {
+                    conn.close(Ok(()));
                 }
             }
         }

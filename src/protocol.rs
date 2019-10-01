@@ -272,8 +272,13 @@ impl From<&Message> for Packet {
         }
         fn write_session(val: &crate::common::Session, data: &mut Vec<u8>) {
             write_str(&val.id, data);
-            write_str(&val.username, data);
-            write_str(&val.term_type, data);
+            if let Some(metadata) = &val.metadata {
+                write_u32(1, data);
+                write_str(&metadata.username, data);
+                write_str(&metadata.term_type, data);
+            } else {
+                write_u32(0, data);
+            }
         }
         fn write_sessions(
             val: &[crate::common::Session],
@@ -386,16 +391,23 @@ impl std::convert::TryFrom<Packet> for Message {
             data: &[u8],
         ) -> Result<(crate::common::Session, &[u8])> {
             let (id, data) = read_str(data)?;
-            let (username, data) = read_str(data)?;
-            let (term_type, rest) = read_str(data)?;
-            Ok((
-                crate::common::Session {
-                    id,
-                    username,
-                    term_type,
-                },
-                rest,
-            ))
+            let (has_metadata, rest) = read_u32(data)?;
+            if has_metadata == 0 {
+                Ok((crate::common::Session { id, metadata: None }, rest))
+            } else {
+                let (username, rest) = read_str(rest)?;
+                let (term_type, rest) = read_str(rest)?;
+                Ok((
+                    crate::common::Session {
+                        id,
+                        metadata: Some(crate::common::SessionMetadata {
+                            username,
+                            term_type,
+                        }),
+                    },
+                    rest,
+                ))
+            }
         }
         fn read_sessions(
             data: &[u8],

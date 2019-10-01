@@ -25,6 +25,9 @@ pub enum Error {
         message
     ))]
     UnexpectedMessage { message: crate::protocol::Message },
+
+    #[snafu(display("failed to get terminal size: {}", source))]
+    GetTerminalSize { source: crossterm::ErrorKind },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -58,7 +61,7 @@ fn run_impl(address: &str, id: Option<&str>) -> Result<()> {
 fn list(address: &str) -> Result<()> {
     let sock = std::net::TcpStream::connect(address).context(Connect)?;
     let term = std::env::var("TERM").unwrap_or_else(|_| "".to_string());
-    let size = crossterm::terminal().terminal_size();
+    let size = crossterm::terminal().size().context(GetTerminalSize)?;
     let msg = crate::protocol::Message::login(
         "doy",
         &term,

@@ -26,6 +26,9 @@ pub enum Error {
 
     #[snafu(display("failed to write message to server: {}", source))]
     WriteServer { source: crate::protocol::Error },
+
+    #[snafu(display("failed to get terminal size: {}", source))]
+    GetTerminalSize { source: crossterm::ErrorKind },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -205,7 +208,8 @@ impl Client {
 
                 let term =
                     std::env::var("TERM").unwrap_or_else(|_| "".to_string());
-                let size = crossterm::terminal().terminal_size();
+                let size =
+                    crossterm::terminal().size().context(GetTerminalSize)?;
                 let msg = crate::protocol::Message::login(
                     &self.username,
                     &term,

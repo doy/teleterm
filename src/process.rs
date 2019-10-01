@@ -36,7 +36,10 @@ pub enum Error {
         "failed to put the terminal into raw mode: {}",
         source
     ))]
-    IntoRawMode { source: std::io::Error },
+    IntoRawMode { source: crossterm::ErrorKind },
+
+    #[snafu(display("failed to get terminal size: {}", source))]
+    GetTerminalSize { source: crossterm::ErrorKind },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -90,7 +93,8 @@ impl Process {
             .spawn_pty_async(&pty)
             .context(SpawnProcess { cmd })?;
 
-        let (cols, rows) = crossterm::terminal().terminal_size();
+        let (cols, rows) =
+            crossterm::terminal().size().context(GetTerminalSize)?;
         Resizer {
             rows,
             cols,

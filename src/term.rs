@@ -16,7 +16,7 @@ impl Buffer {
     pub fn append(&mut self, mut buf: &[u8]) -> bool {
         let mut cleared = false;
         for reset in RESET {
-            if let Some(i) = twoway::find_bytes(&buf, reset) {
+            if let Some(i) = twoway::find_bytes(buf, reset) {
                 cleared = true;
                 self.0.clear();
                 buf = &buf[i..];

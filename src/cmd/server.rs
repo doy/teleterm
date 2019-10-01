@@ -27,7 +27,7 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
 }
 
 fn run_impl(address: &str) -> Result<()> {
-    let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(1);
+    let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(100);
     let addr = address.parse().context(ParseAddress)?;
     let listener = tokio::net::TcpListener::bind(&addr).context(Bind)?;
     let acceptor = listener

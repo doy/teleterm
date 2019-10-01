@@ -75,6 +75,8 @@ impl FramedWriter {
 
 pub const PROTO_VERSION: u32 = 1;
 
+// XXX https://github.com/rust-lang/rust/issues/64362
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum Message {
     Login {

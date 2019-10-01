@@ -93,10 +93,9 @@ impl CastSession {
         username: &str,
         heartbeat_duration: std::time::Duration,
     ) -> Result<Self> {
-        let client = crate::client::Client::new(
+        let client = crate::client::Client::cast(
             address,
             username,
-            crate::common::ConnectionType::Casting,
             heartbeat_duration,
         );
         let process =

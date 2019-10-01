@@ -75,7 +75,6 @@ pub enum Event {
 pub struct Client {
     address: String,
     username: String,
-    ty: crate::common::ConnectionType,
     heartbeat_duration: std::time::Duration,
 
     heartbeat_timer: tokio::timer::Interval,
@@ -85,14 +84,14 @@ pub struct Client {
     rsock: ReadSocket,
     wsock: WriteSocket,
 
+    on_connect: Vec<crate::protocol::Message>,
     to_send: std::collections::VecDeque<crate::protocol::Message>,
 }
 
 impl Client {
-    pub fn new(
+    pub fn cast(
         address: &str,
         username: &str,
-        ty: crate::common::ConnectionType,
         heartbeat_duration: std::time::Duration,
     ) -> Self {
         let heartbeat_timer =
@@ -100,7 +99,6 @@ impl Client {
         Self {
             address: address.to_string(),
             username: username.to_string(),
-            ty,
             heartbeat_duration,
 
             heartbeat_timer,
@@ -110,6 +108,32 @@ impl Client {
             rsock: ReadSocket::NotConnected,
             wsock: WriteSocket::NotConnected,
 
+            on_connect: vec![crate::protocol::Message::start_casting()],
+            to_send: std::collections::VecDeque::new(),
+        }
+    }
+
+    pub fn watch(
+        address: &str,
+        username: &str,
+        heartbeat_duration: std::time::Duration,
+        id: &str,
+    ) -> Self {
+        let heartbeat_timer =
+            tokio::timer::Interval::new_interval(heartbeat_duration);
+        Self {
+            address: address.to_string(),
+            username: username.to_string(),
+            heartbeat_duration,
+
+            heartbeat_timer,
+            reconnect_timer: None,
+            last_server_time: std::time::Instant::now(),
+
+            rsock: ReadSocket::NotConnected,
+            wsock: WriteSocket::NotConnected,
+
+            on_connect: vec![crate::protocol::Message::start_watching(id)],
             to_send: std::collections::VecDeque::new(),
         }
     }
@@ -185,15 +209,9 @@ impl Client {
                     crate::protocol::Message::login(&self.username, &term);
                 self.to_send.push_back(msg);
 
-                let msg = match &self.ty {
-                    crate::common::ConnectionType::Casting => {
-                        crate::protocol::Message::start_casting()
-                    }
-                    crate::common::ConnectionType::Watching(id) => {
-                        crate::protocol::Message::start_watching(id)
-                    }
-                };
-                self.to_send.push_back(msg);
+                for msg in &self.on_connect {
+                    self.to_send.push_back(msg.clone());
+                }
 
                 Ok(crate::component_future::Poll::Event(Event::Reconnect))
             }

@@ -113,11 +113,11 @@ impl WatchSession {
         username: &str,
         heartbeat_duration: std::time::Duration,
     ) -> Result<Self> {
-        let client = crate::client::Client::new(
+        let client = crate::client::Client::watch(
             address,
             username,
-            crate::common::ConnectionType::Watching(id.to_string()),
             heartbeat_duration,
+            id,
         );
         Ok(Self { client })
     }

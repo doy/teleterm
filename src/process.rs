@@ -93,23 +93,11 @@ impl Process {
             .spawn_pty_async(&pty)
             .context(SpawnProcess { cmd })?;
 
-        let (cols, rows) = crossterm::terminal()
-            .size()
-            .context(crate::error::GetTerminalSize)
-            .context(Common)?;
-        Resizer {
-            rows,
-            cols,
-            pty: &pty,
-        }
-        .wait()
-        .context(ResizePty)?;
-
         // TODO: tokio::io::stdin is broken (it's blocking)
         // let input = tokio::io::stdin();
         let input = tokio::reactor::PollEvented2::new(EventedStdin);
 
-        Ok(Self {
+        let self_ = Self {
             pty,
             process,
             input,
@@ -121,13 +109,34 @@ impl Process {
             exited: false,
             manage_screen: true,
             raw_screen: None,
-        })
+        };
+
+        self_.resize()?;
+
+        Ok(self_)
     }
 
     #[allow(dead_code)]
     pub fn set_raw(mut self, raw: bool) -> Self {
         self.manage_screen = raw;
         self
+    }
+
+    pub fn resize(&self) -> Result<()> {
+        let (cols, rows) = crossterm::terminal()
+            .size()
+            .context(crate::error::GetTerminalSize)
+            .context(Common)?;
+
+        Resizer {
+            rows,
+            cols,
+            pty: &self.pty,
+        }
+        .wait()
+        .context(ResizePty)?;
+
+        Ok(())
     }
 }
 

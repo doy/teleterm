@@ -23,6 +23,9 @@ pub enum Error {
 
     #[snafu(display("SIGWINCH handler failed: {}", source))]
     SigWinchHandler { source: std::io::Error },
+
+    #[snafu(display("failed to resize pty: {}", source))]
+    ResizeTerminal { source: crate::process::Error },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -271,7 +274,7 @@ impl CastSession {
     fn poll_sigwinch(&mut self) -> Result<crate::component_future::Poll<()>> {
         match self.winches.poll()? {
             futures::Async::Ready(Some(_)) => {
-                // TODO
+                self.process.resize().context(ResizeTerminal)?;
                 Ok(crate::component_future::Poll::DidWork)
             }
             futures::Async::Ready(None) => unreachable!(),

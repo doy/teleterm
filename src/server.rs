@@ -187,6 +187,10 @@ impl Connection {
                 ..
             } => (username, term_info),
         };
+
+        // i don't really care if things break for a connection that has been
+        // idle for 136 years
+        #[allow(clippy::cast_possible_truncation)]
         Some(crate::protocol::Session {
             id: self.id.clone(),
             username: username.clone(),

@@ -1,5 +1,6 @@
 use futures::future::Future as _;
 use futures::stream::Stream as _;
+use snafu::futures01::stream::StreamExt as _;
 use snafu::ResultExt as _;
 use tokio::io::AsyncWrite as _;
 
@@ -19,6 +20,9 @@ pub enum Error {
 
     #[snafu(display("communication with server failed: {}", source))]
     Client { source: crate::client::Error },
+
+    #[snafu(display("SIGWINCH handler failed: {}", source))]
+    SigWinchHandler { source: std::io::Error },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -75,6 +79,8 @@ struct CastSession {
     client: crate::client::Client,
     process: crate::process::Process,
     stdout: tokio::io::Stdout,
+    winches:
+        Box<dyn futures::stream::Stream<Item = (), Error = Error> + Send>,
     buffer: crate::term::Buffer,
     sent_local: usize,
     sent_remote: usize,
@@ -97,10 +103,17 @@ impl CastSession {
         );
         let process =
             crate::process::Process::new(cmd, args).context(Spawn)?;
+        let winches = tokio_signal::unix::Signal::new(
+            tokio_signal::unix::libc::SIGWINCH,
+        )
+        .flatten_stream()
+        .map(|_| ())
+        .context(SigWinchHandler);
         Ok(Self {
             client,
             process,
             stdout: tokio::io::stdout(),
+            winches: Box::new(winches),
             buffer: crate::term::Buffer::new(),
             sent_local: 0,
             sent_remote: 0,
@@ -128,6 +141,7 @@ impl CastSession {
         &Self::poll_write_terminal,
         &Self::poll_flush_terminal,
         &Self::poll_write_server,
+        &Self::poll_sigwinch,
     ];
 
     // this should never return Err, because we don't want server
@@ -252,6 +266,19 @@ impl CastSession {
         self.sent_remote = self.buffer.len();
 
         Ok(crate::component_future::Poll::DidWork)
+    }
+
+    fn poll_sigwinch(&mut self) -> Result<crate::component_future::Poll<()>> {
+        match self.winches.poll()? {
+            futures::Async::Ready(Some(_)) => {
+                // TODO
+                Ok(crate::component_future::Poll::DidWork)
+            }
+            futures::Async::Ready(None) => unreachable!(),
+            futures::Async::NotReady => {
+                Ok(crate::component_future::Poll::NotReady)
+            }
+        }
     }
 }
 

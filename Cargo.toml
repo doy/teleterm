@@ -13,6 +13,7 @@ mio = "0.6"
 snafu = { version = "0.5", features = ["futures-01"] }
 tokio = "0.1"
 tokio-pty-process = "0.4"
+tokio-signal = "0.2"
 twoway = "0.2"
 uuid = { version = "0.7", features = ["v4"] }
 

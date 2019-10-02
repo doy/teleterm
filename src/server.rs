@@ -148,6 +148,7 @@ struct Connection {
     to_send: std::collections::VecDeque<crate::protocol::Message>,
     closed: bool,
     state: ConnectionState,
+    last_activity: std::time::Instant,
 }
 
 impl Connection {
@@ -164,6 +165,7 @@ impl Connection {
             to_send: std::collections::VecDeque::new(),
             closed: false,
             state: ConnectionState::new(),
+            last_activity: std::time::Instant::now(),
         }
     }
 
@@ -190,6 +192,9 @@ impl Connection {
             username: username.clone(),
             term_type: term_info.term.clone(),
             size: term_info.size,
+            idle_time: std::time::Instant::now()
+                .duration_since(self.last_activity)
+                .as_secs() as u32,
         })
     }
 
@@ -303,6 +308,7 @@ impl Server {
                         _ => unreachable!(),
                     }
                 }
+                conn.last_activity = std::time::Instant::now();
                 Ok(())
             }
             m => Err(Error::UnexpectedMessage { message: m }),

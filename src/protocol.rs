@@ -39,6 +39,14 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Debug, Clone)]
+pub struct Session {
+    pub id: String,
+    pub username: String,
+    pub term_type: String,
+    pub size: (u32, u32),
+}
+
 pub struct FramedReader(
     tokio::codec::FramedRead<
         tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
@@ -95,7 +103,7 @@ pub enum Message {
     },
     ListSessions,
     Sessions {
-        sessions: Vec<crate::common::Session>,
+        sessions: Vec<Session>,
     },
     Disconnected,
     Error {
@@ -144,7 +152,7 @@ impl Message {
         Self::ListSessions
     }
 
-    pub fn sessions(sessions: &[crate::common::Session]) -> Self {
+    pub fn sessions(sessions: &[Session]) -> Self {
         Self::Sessions {
             sessions: sessions.to_vec(),
         }
@@ -272,17 +280,14 @@ impl From<&Message> for Packet {
         fn write_str(val: &str, data: &mut Vec<u8>) {
             write_bytes(val.as_bytes(), data);
         }
-        fn write_session(val: &crate::common::Session, data: &mut Vec<u8>) {
+        fn write_session(val: &Session, data: &mut Vec<u8>) {
             write_str(&val.id, data);
             write_str(&val.username, data);
             write_str(&val.term_type, data);
             write_u32(val.size.0, data);
             write_u32(val.size.1, data);
         }
-        fn write_sessions(
-            val: &[crate::common::Session],
-            data: &mut Vec<u8>,
-        ) {
+        fn write_sessions(val: &[Session], data: &mut Vec<u8>) {
             write_u32(u32_from_usize(val.len()), data);
             for s in val {
                 write_session(s, data);
@@ -389,16 +394,14 @@ impl std::convert::TryFrom<Packet> for Message {
             let val = String::from_utf8(bytes).context(ParseString)?;
             Ok((val, rest))
         }
-        fn read_session(
-            data: &[u8],
-        ) -> Result<(crate::common::Session, &[u8])> {
+        fn read_session(data: &[u8]) -> Result<(Session, &[u8])> {
             let (id, data) = read_str(data)?;
             let (username, data) = read_str(data)?;
             let (term_type, data) = read_str(data)?;
             let (cols, data) = read_u32(data)?;
             let (rows, data) = read_u32(data)?;
             Ok((
-                crate::common::Session {
+                Session {
                     id,
                     username,
                     term_type,
@@ -407,9 +410,7 @@ impl std::convert::TryFrom<Packet> for Message {
                 data,
             ))
         }
-        fn read_sessions(
-            data: &[u8],
-        ) -> Result<(Vec<crate::common::Session>, &[u8])> {
+        fn read_sessions(data: &[u8]) -> Result<(Vec<Session>, &[u8])> {
             let mut val = vec![];
             let (len, mut data) = read_u32(data)?;
             for _ in 0..len {

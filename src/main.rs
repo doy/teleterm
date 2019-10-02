@@ -8,7 +8,6 @@
 
 mod client;
 mod cmd;
-mod common;
 mod component_future;
 mod process;
 mod protocol;

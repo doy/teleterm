@@ -63,30 +63,35 @@ enum WriteSocket {
     ),
 }
 
+#[derive(Debug, Clone)]
+struct TerminalInfo {
+    term: String,
+    size: (u32, u32),
+}
+
 // XXX https://github.com/rust-lang/rust/issues/64362
 #[allow(dead_code)]
 enum ConnectionState {
-    Accepted {
-        id: String,
-    },
+    Accepted,
     LoggedIn {
-        session: crate::common::Session,
+        username: String,
+        term_info: TerminalInfo,
     },
     Casting {
-        session: crate::common::Session,
+        username: String,
+        term_info: TerminalInfo,
         saved_data: crate::term::Buffer,
     },
     Watching {
-        session: crate::common::Session,
+        username: String,
+        term_info: TerminalInfo,
         watch_id: String,
     },
 }
 
 impl ConnectionState {
     fn new() -> Self {
-        Self::Accepted {
-            id: format!("{}", uuid::Uuid::new_v4()),
-        }
+        Self::Accepted
     }
 
     fn login(
@@ -96,11 +101,10 @@ impl ConnectionState {
         size: (u32, u32),
     ) -> Self {
         match self {
-            Self::Accepted { id } => Self::LoggedIn {
-                session: crate::common::Session {
-                    id: id.clone(),
-                    username: username.to_string(),
-                    term_type: term_type.to_string(),
+            Self::Accepted => Self::LoggedIn {
+                username: username.to_string(),
+                term_info: TerminalInfo {
+                    term: term_type.to_string(),
                     size,
                 },
             },
@@ -110,8 +114,12 @@ impl ConnectionState {
 
     fn cast(&self) -> Self {
         match self {
-            Self::LoggedIn { session } => Self::Casting {
-                session: session.clone(),
+            Self::LoggedIn {
+                username,
+                term_info,
+            } => Self::Casting {
+                username: username.clone(),
+                term_info: term_info.clone(),
                 saved_data: crate::term::Buffer::new(),
             },
             _ => unreachable!(),
@@ -120,8 +128,12 @@ impl ConnectionState {
 
     fn watch(&self, id: &str) -> Self {
         match self {
-            Self::LoggedIn { session } => Self::Watching {
-                session: session.clone(),
+            Self::LoggedIn {
+                username,
+                term_info,
+            } => Self::Watching {
+                username: username.clone(),
+                term_info: term_info.clone(),
                 watch_id: id.to_string(),
             },
             _ => unreachable!(),
@@ -130,6 +142,7 @@ impl ConnectionState {
 }
 
 struct Connection {
+    id: String,
     rsock: Option<ReadSocket>,
     wsock: Option<WriteSocket>,
     to_send: std::collections::VecDeque<crate::protocol::Message>,
@@ -141,6 +154,7 @@ impl Connection {
     fn new(s: tokio::net::tcp::TcpStream) -> Self {
         let (rs, ws) = s.split();
         Self {
+            id: format!("{}", uuid::Uuid::new_v4()),
             rsock: Some(ReadSocket::Connected(
                 crate::protocol::FramedReader::new(rs),
             )),
@@ -153,22 +167,30 @@ impl Connection {
         }
     }
 
-    fn id(&self) -> &str {
-        match &self.state {
-            ConnectionState::Accepted { id } => id,
-            ConnectionState::LoggedIn { session } => &session.id,
-            ConnectionState::Casting { session, .. } => &session.id,
-            ConnectionState::Watching { session, .. } => &session.id,
-        }
-    }
-
-    fn session(&self) -> Option<&crate::common::Session> {
-        match &self.state {
-            ConnectionState::Accepted { .. } => None,
-            ConnectionState::LoggedIn { session } => Some(session),
-            ConnectionState::Casting { session, .. } => Some(session),
-            ConnectionState::Watching { session, .. } => Some(session),
-        }
+    fn session(&self) -> Option<crate::protocol::Session> {
+        let (username, term_info) = match &self.state {
+            ConnectionState::Accepted => return None,
+            ConnectionState::LoggedIn {
+                username,
+                term_info,
+            } => (username, term_info),
+            ConnectionState::Casting {
+                username,
+                term_info,
+                ..
+            } => (username, term_info),
+            ConnectionState::Watching {
+                username,
+                term_info,
+                ..
+            } => (username, term_info),
+        };
+        Some(crate::protocol::Session {
+            id: self.id.clone(),
+            username: username.clone(),
+            term_type: term_info.term.clone(),
+            size: term_info.size,
+        })
     }
 
     fn close(&mut self, res: Result<()>) {
@@ -246,19 +268,20 @@ impl Server {
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let (session, saved_data) = if let ConnectionState::Casting {
-            session,
+        let (username, saved_data) = if let ConnectionState::Casting {
+            username,
             saved_data,
+            ..
         } = &mut conn.state
         {
-            (session, saved_data)
+            (username, saved_data)
         } else {
             unreachable!()
         };
 
         match message {
             crate::protocol::Message::Heartbeat => {
-                println!("got a heartbeat from {}", session.username);
+                println!("got a heartbeat from {}", username);
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
                 Ok(())
@@ -269,7 +292,7 @@ impl Server {
                 for watch_conn in self.watchers_mut() {
                     match &watch_conn.state {
                         ConnectionState::Watching { watch_id, .. } => {
-                            if &session.id == watch_id {
+                            if &conn.id == watch_id {
                                 watch_conn.to_send.push_back(
                                     crate::protocol::Message::terminal_output(
                                         &data,
@@ -291,15 +314,15 @@ impl Server {
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let session =
-            if let ConnectionState::Watching { session, .. } = &conn.state {
-                session
+        let username =
+            if let ConnectionState::Watching { username, .. } = &conn.state {
+                username
             } else {
                 unreachable!()
             };
         match message {
             crate::protocol::Message::Heartbeat => {
-                println!("got a heartbeat from {}", session.username);
+                println!("got a heartbeat from {}", username);
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
                 Ok(())
@@ -315,11 +338,8 @@ impl Server {
     ) -> Result<()> {
         match message {
             crate::protocol::Message::ListSessions => {
-                let sessions: Vec<_> = self
-                    .casters()
-                    .flat_map(Connection::session)
-                    .cloned()
-                    .collect();
+                let sessions: Vec<_> =
+                    self.casters().flat_map(Connection::session).collect();
                 conn.to_send
                     .push_back(crate::protocol::Message::sessions(&sessions));
                 Ok(())
@@ -359,7 +379,7 @@ impl Server {
             if let ConnectionState::Watching { watch_id, .. } =
                 &watch_conn.state
             {
-                if watch_id == conn.id() {
+                if watch_id == &conn.id {
                     watch_conn.close(Ok(()));
                 }
             } else {
@@ -520,7 +540,7 @@ impl Server {
     ) -> Result<crate::component_future::Poll<()>> {
         match self.sock_stream.poll() {
             Ok(futures::Async::Ready(Some(conn))) => {
-                self.connections.insert(conn.id().to_string(), conn);
+                self.connections.insert(conn.id.to_string(), conn);
                 Ok(crate::component_future::Poll::DidWork)
             }
             Ok(futures::Async::Ready(None)) => {

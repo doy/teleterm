@@ -286,22 +286,28 @@ impl Server {
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let (username, saved_data) = if let ConnectionState::Casting {
-            username,
-            saved_data,
-            ..
-        } = &mut conn.state
-        {
-            (username, saved_data)
-        } else {
-            unreachable!()
-        };
+        let (username, term_info, saved_data) =
+            if let ConnectionState::Casting {
+                username,
+                term_info,
+                saved_data,
+                ..
+            } = &mut conn.state
+            {
+                (username, term_info, saved_data)
+            } else {
+                unreachable!()
+            };
 
         match message {
             crate::protocol::Message::Heartbeat => {
                 println!("got a heartbeat from {}", username);
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
+                Ok(())
+            }
+            crate::protocol::Message::Resize { size } => {
+                term_info.size = size;
                 Ok(())
             }
             crate::protocol::Message::TerminalOutput { data } => {
@@ -334,17 +340,25 @@ impl Server {
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let username =
-            if let ConnectionState::Watching { username, .. } = &conn.state {
-                username
-            } else {
-                unreachable!()
-            };
+        let (username, term_info) = if let ConnectionState::Watching {
+            username,
+            term_info,
+            ..
+        } = &mut conn.state
+        {
+            (username, term_info)
+        } else {
+            unreachable!()
+        };
         match message {
             crate::protocol::Message::Heartbeat => {
                 println!("got a heartbeat from {}", username);
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
+                Ok(())
+            }
+            crate::protocol::Message::Resize { size } => {
+                term_info.size = size;
                 Ok(())
             }
             m => Err(crate::error::Error::UnexpectedMessage { message: m })

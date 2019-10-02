@@ -6,6 +6,9 @@ use tokio::io::AsyncWrite as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
+    #[snafu(display("{}", source))]
+    Common { source: crate::error::Error },
+
     #[snafu(display("failed to run process: {}", source))]
     Spawn { source: crate::process::Error },
 
@@ -274,7 +277,15 @@ impl CastSession {
     fn poll_sigwinch(&mut self) -> Result<crate::component_future::Poll<()>> {
         match self.winches.poll()? {
             futures::Async::Ready(Some(_)) => {
-                self.process.resize().context(ResizeTerminal)?;
+                let (cols, rows) = crossterm::terminal()
+                    .size()
+                    .context(crate::error::GetTerminalSize)
+                    .context(Common)?;
+                self.process.resize(rows, cols).context(ResizeTerminal)?;
+                self.client.send_message(crate::protocol::Message::resize((
+                    u32::from(cols),
+                    u32::from(rows),
+                )));
                 Ok(crate::component_future::Poll::DidWork)
             }
             futures::Async::Ready(None) => unreachable!(),

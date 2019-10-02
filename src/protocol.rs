@@ -111,6 +111,9 @@ pub enum Message {
     Error {
         msg: String,
     },
+    Resize {
+        size: (u32, u32),
+    },
 }
 
 const MSG_LOGIN: u32 = 0;
@@ -122,6 +125,7 @@ const MSG_LIST_SESSIONS: u32 = 5;
 const MSG_SESSIONS: u32 = 6;
 const MSG_DISCONNECTED: u32 = 7;
 const MSG_ERROR: u32 = 8;
+const MSG_RESIZE: u32 = 9;
 
 impl Message {
     pub fn login(username: &str, term_type: &str, size: (u32, u32)) -> Self {
@@ -132,6 +136,7 @@ impl Message {
             size,
         }
     }
+
     pub fn start_casting() -> Self {
         Self::StartCasting
     }
@@ -168,6 +173,10 @@ impl Message {
         Self::Error {
             msg: msg.to_string(),
         }
+    }
+
+    pub fn resize(size: (u32, u32)) -> Self {
+        Self::Resize { size }
     }
 
     pub fn read<R: std::io::Read>(r: R) -> Result<Self> {
@@ -374,6 +383,17 @@ impl From<&Message> for Packet {
                     data,
                 }
             }
+            Message::Resize { size } => {
+                let mut data = vec![];
+
+                write_u32(size.0, &mut data);
+                write_u32(size.1, &mut data);
+
+                Self {
+                    ty: MSG_RESIZE,
+                    data,
+                }
+            }
         }
     }
 }
@@ -470,6 +490,12 @@ impl std::convert::TryFrom<Packet> for Message {
             MSG_ERROR => {
                 let (msg, data) = read_str(data)?;
                 (Self::Error { msg }, data)
+            }
+            MSG_RESIZE => {
+                let (cols, data) = read_u32(data)?;
+                let (rows, data) = read_u32(data)?;
+
+                (Self::Resize { size: (cols, rows) }, data)
             }
             _ => return Err(Error::InvalidMessageType { ty: packet.ty }),
         };

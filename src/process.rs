@@ -111,7 +111,11 @@ impl Process {
             raw_screen: None,
         };
 
-        self_.resize()?;
+        let (cols, rows) = crossterm::terminal()
+            .size()
+            .context(crate::error::GetTerminalSize)
+            .context(Common)?;
+        self_.resize(rows, cols)?;
 
         Ok(self_)
     }
@@ -122,12 +126,7 @@ impl Process {
         self
     }
 
-    pub fn resize(&self) -> Result<()> {
-        let (cols, rows) = crossterm::terminal()
-            .size()
-            .context(crate::error::GetTerminalSize)
-            .context(Common)?;
-
+    pub fn resize(&self, rows: u16, cols: u16) -> Result<()> {
         Resizer {
             rows,
             cols,

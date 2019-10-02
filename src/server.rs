@@ -188,6 +188,13 @@ impl Connection {
                 ..
             } => (username, term_info),
         };
+        let title = if let ConnectionState::Casting { saved_data, .. } =
+            &self.state
+        {
+            saved_data.title()
+        } else {
+            ""
+        };
 
         // i don't really care if things break for a connection that has been
         // idle for 136 years
@@ -200,6 +207,7 @@ impl Connection {
             idle_time: std::time::Instant::now()
                 .duration_since(self.last_activity)
                 .as_secs() as u32,
+            title: title.to_string(),
         })
     }
 

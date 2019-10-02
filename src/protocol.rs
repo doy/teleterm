@@ -46,6 +46,7 @@ pub struct Session {
     pub term_type: String,
     pub size: (u32, u32),
     pub idle_time: u32,
+    pub title: String,
 }
 
 pub struct FramedReader(
@@ -288,6 +289,7 @@ impl From<&Message> for Packet {
             write_u32(val.size.0, data);
             write_u32(val.size.1, data);
             write_u32(val.idle_time, data);
+            write_str(&val.title, data);
         }
         fn write_sessions(val: &[Session], data: &mut Vec<u8>) {
             write_u32(u32_from_usize(val.len()), data);
@@ -403,6 +405,7 @@ impl std::convert::TryFrom<Packet> for Message {
             let (cols, data) = read_u32(data)?;
             let (rows, data) = read_u32(data)?;
             let (idle_time, data) = read_u32(data)?;
+            let (title, data) = read_str(data)?;
             Ok((
                 Session {
                     id,
@@ -410,6 +413,7 @@ impl std::convert::TryFrom<Packet> for Message {
                     term_type,
                     size: (cols, rows),
                     idle_time,
+                    title,
                 },
                 data,
             ))

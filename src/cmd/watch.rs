@@ -74,13 +74,14 @@ fn list(address: &str) -> Result<()> {
             println!("available sessions:");
             for session in sessions {
                 println!(
-                    "{}: {}, {}x{}, TERM={}, idle {}s",
+                    "{}: {}, {}x{}, TERM={}, idle {}s: {}",
                     session.id,
                     session.username,
                     session.size.0,
                     session.size.1,
                     session.term_type,
                     session.idle_time,
+                    session.title,
                 );
             }
         }

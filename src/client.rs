@@ -6,11 +6,8 @@ use tokio::io::AsyncRead as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
-    #[snafu(display("failed to parse address: {}", source))]
-    ParseAddr { source: std::net::AddrParseError },
-
-    #[snafu(display("failed to connect: {}", source))]
-    Connect { source: std::io::Error },
+    #[snafu(display("{}", source))]
+    Common { source: crate::error::Error },
 
     #[snafu(display("failed to write message: {}", source))]
     Write { source: crate::protocol::Error },
@@ -26,9 +23,6 @@ pub enum Error {
 
     #[snafu(display("failed to write message to server: {}", source))]
     WriteServer { source: crate::protocol::Error },
-
-    #[snafu(display("failed to get terminal size: {}", source))]
-    GetTerminalSize { source: crossterm::ErrorKind },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -199,17 +193,21 @@ impl Client {
                         &self
                             .address
                             .parse::<std::net::SocketAddr>()
-                            .context(ParseAddr)?,
+                            .context(crate::error::ParseAddr)
+                            .context(Common)?,
                     )
-                    .context(Connect),
+                    .context(crate::error::Connect)
+                    .context(Common),
                 ));
 
                 self.to_send.clear();
 
                 let term =
                     std::env::var("TERM").unwrap_or_else(|_| "".to_string());
-                let size =
-                    crossterm::terminal().size().context(GetTerminalSize)?;
+                let size = crossterm::terminal()
+                    .size()
+                    .context(crate::error::GetTerminalSize)
+                    .context(Common)?;
                 let msg = crate::protocol::Message::login(
                     &self.username,
                     &term,

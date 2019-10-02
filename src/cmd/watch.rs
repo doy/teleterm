@@ -5,8 +5,8 @@ use std::io::Write as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
-    #[snafu(display("failed to connect: {}", source))]
-    Connect { source: std::io::Error },
+    #[snafu(display("{}", source))]
+    Common { source: crate::error::Error },
 
     #[snafu(display("failed to read message: {}", source))]
     Read { source: crate::protocol::Error },
@@ -19,15 +19,6 @@ pub enum Error {
 
     #[snafu(display("communication with server failed: {}", source))]
     Client { source: crate::client::Error },
-
-    #[snafu(display(
-        "failed to read message: unexpected message received: {:?}",
-        message
-    ))]
-    UnexpectedMessage { message: crate::protocol::Message },
-
-    #[snafu(display("failed to get terminal size: {}", source))]
-    GetTerminalSize { source: crossterm::ErrorKind },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -59,9 +50,14 @@ fn run_impl(address: &str, id: Option<&str>) -> Result<()> {
 }
 
 fn list(address: &str) -> Result<()> {
-    let sock = std::net::TcpStream::connect(address).context(Connect)?;
+    let sock = std::net::TcpStream::connect(address)
+        .context(crate::error::Connect)
+        .context(Common)?;
     let term = std::env::var("TERM").unwrap_or_else(|_| "".to_string());
-    let size = crossterm::terminal().size().context(GetTerminalSize)?;
+    let size = crossterm::terminal()
+        .size()
+        .context(crate::error::GetTerminalSize)
+        .context(Common)?;
     let msg = crate::protocol::Message::login(
         "doy",
         &term,
@@ -92,7 +88,10 @@ fn list(address: &str) -> Result<()> {
             eprintln!("server error: {}", msg);
         }
         _ => {
-            return Err(Error::UnexpectedMessage { message: res });
+            return Err(crate::error::Error::UnexpectedMessage {
+                message: res,
+            })
+            .context(Common);
         }
     }
 
@@ -166,7 +165,10 @@ impl WatchSession {
                         eprintln!("server error: {}", msg);
                         Ok(crate::component_future::Poll::Event(()))
                     }
-                    msg => Err(Error::UnexpectedMessage { message: msg }),
+                    msg => Err(crate::error::Error::UnexpectedMessage {
+                        message: msg,
+                    })
+                    .context(Common),
                 },
             },
             futures::Async::Ready(None) => {

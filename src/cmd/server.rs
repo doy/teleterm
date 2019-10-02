@@ -4,8 +4,8 @@ use snafu::ResultExt as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
-    #[snafu(display("failed to parse address: {}", source))]
-    ParseAddress { source: std::net::AddrParseError },
+    #[snafu(display("{}", source))]
+    Common { source: crate::error::Error },
 
     #[snafu(display("failed to bind: {}", source))]
     Bind { source: tokio::io::Error },
@@ -28,7 +28,10 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
 
 fn run_impl(address: &str) -> Result<()> {
     let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(100);
-    let addr = address.parse().context(ParseAddress)?;
+    let addr = address
+        .parse()
+        .context(crate::error::ParseAddr)
+        .context(Common)?;
     let listener = tokio::net::TcpListener::bind(&addr).context(Bind)?;
     let acceptor = listener
         .incoming()

@@ -1,10 +1,14 @@
 use futures::stream::Stream as _;
 use snafu::futures01::stream::StreamExt as _;
 use snafu::futures01::FutureExt as _;
+use snafu::ResultExt as _;
 use tokio::io::AsyncRead as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
+    #[snafu(display("{}", source))]
+    Common { source: crate::error::Error },
+
     #[snafu(display(
         "failed to receive new socket over channel: {}",
         source
@@ -23,9 +27,6 @@ pub enum Error {
 
     #[snafu(display("failed to write message: {}", source))]
     WriteMessage { source: crate::protocol::Error },
-
-    #[snafu(display("unexpected message: {:?}", message))]
-    UnexpectedMessage { message: crate::protocol::Message },
 
     #[snafu(display("unauthenticated message: {:?}", message))]
     UnauthenticatedMessage { message: crate::protocol::Message },
@@ -315,7 +316,8 @@ impl Server {
                 conn.last_activity = std::time::Instant::now();
                 Ok(())
             }
-            m => Err(Error::UnexpectedMessage { message: m }),
+            m => Err(crate::error::Error::UnexpectedMessage { message: m })
+                .context(Common),
         }
     }
 
@@ -337,7 +339,8 @@ impl Server {
                     .push_back(crate::protocol::Message::heartbeat());
                 Ok(())
             }
-            m => Err(Error::UnexpectedMessage { message: m }),
+            m => Err(crate::error::Error::UnexpectedMessage { message: m })
+                .context(Common),
         }
     }
 
@@ -378,7 +381,8 @@ impl Server {
                     Err(Error::InvalidWatchId { id })
                 }
             }
-            m => Err(Error::UnexpectedMessage { message: m }),
+            m => Err(crate::error::Error::UnexpectedMessage { message: m })
+                .context(Common),
         }
     }
 

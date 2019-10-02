@@ -19,9 +19,6 @@ pub enum Error {
 
     #[snafu(display("communication with server failed: {}", source))]
     Client { source: crate::client::Error },
-
-    #[snafu(display("unexpected message: {:?}", message))]
-    UnexpectedMessage { message: crate::protocol::Message },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

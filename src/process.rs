@@ -5,6 +5,9 @@ use tokio_pty_process::CommandExt as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
+    #[snafu(display("{}", source))]
+    Common { source: crate::error::Error },
+
     #[snafu(display("failed to open a pty: {}", source))]
     OpenPty { source: std::io::Error },
 
@@ -37,9 +40,6 @@ pub enum Error {
         source
     ))]
     IntoRawMode { source: crossterm::ErrorKind },
-
-    #[snafu(display("failed to get terminal size: {}", source))]
-    GetTerminalSize { source: crossterm::ErrorKind },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -93,8 +93,10 @@ impl Process {
             .spawn_pty_async(&pty)
             .context(SpawnProcess { cmd })?;
 
-        let (cols, rows) =
-            crossterm::terminal().size().context(GetTerminalSize)?;
+        let (cols, rows) = crossterm::terminal()
+            .size()
+            .context(crate::error::GetTerminalSize)
+            .context(Common)?;
         Resizer {
             rows,
             cols,

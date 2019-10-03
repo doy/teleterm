@@ -21,7 +21,7 @@ impl Buffer {
     pub fn append(&mut self, mut buf: &[u8]) -> bool {
         let mut cleared = false;
         for window_title in WINDOW_TITLE {
-            if let Some(i) = twoway::find_bytes(buf, window_title.0) {
+            if let Some(i) = twoway::rfind_bytes(buf, window_title.0) {
                 if let Some(j) = twoway::find_bytes(&buf[i..], window_title.1)
                 {
                     let start = i + window_title.0.len();
@@ -33,7 +33,7 @@ impl Buffer {
             }
         }
         for reset in RESET {
-            if let Some(i) = twoway::find_bytes(buf, reset) {
+            if let Some(i) = twoway::rfind_bytes(buf, reset) {
                 cleared = true;
                 self.contents.clear();
                 buf = &buf[i..];

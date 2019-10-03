@@ -1,6 +1,6 @@
 use futures::future::Future as _;
 use futures::stream::Stream as _;
-use snafu::ResultExt as _;
+use snafu::{OptionExt as _, ResultExt as _};
 use std::io::Write as _;
 
 #[derive(Debug, snafu::Snafu)]
@@ -26,6 +26,11 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Watch shellshare streams")
         .arg(
+            clap::Arg::with_name("username")
+                .long("username")
+                .takes_value(true),
+        )
+        .arg(
             clap::Arg::with_name("address")
                 .long("address")
                 .takes_value(true),
@@ -35,21 +40,28 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
     run_impl(
+        &matches
+            .value_of("username")
+            .map(std::string::ToString::to_string)
+            .or_else(|| std::env::var("USER").ok())
+            .context(crate::error::CouldntFindUsername)
+            .context(Common)
+            .context(super::Watch)?,
         matches.value_of("address").unwrap_or("127.0.0.1:4144"),
         matches.value_of("id"),
     )
     .context(super::Watch)
 }
 
-fn run_impl(address: &str, id: Option<&str>) -> Result<()> {
+fn run_impl(username: &str, address: &str, id: Option<&str>) -> Result<()> {
     if let Some(id) = id {
-        watch(address, id)
+        watch(username, address, id)
     } else {
-        list(address)
+        list(username, address)
     }
 }
 
-fn list(address: &str) -> Result<()> {
+fn list(username: &str, address: &str) -> Result<()> {
     let sock = std::net::TcpStream::connect(address)
         .context(crate::error::Connect)
         .context(Common)?;
@@ -59,7 +71,7 @@ fn list(address: &str) -> Result<()> {
         .context(crate::error::GetTerminalSize)
         .context(Common)?;
     let msg = crate::protocol::Message::login(
-        "doy",
+        username,
         &term,
         (u32::from(size.0), u32::from(size.1)),
     );
@@ -99,12 +111,12 @@ fn list(address: &str) -> Result<()> {
     Ok(())
 }
 
-fn watch(address: &str, id: &str) -> Result<()> {
+fn watch(username: &str, address: &str, id: &str) -> Result<()> {
     tokio::run(
         WatchSession::new(
             id,
             address,
-            "doy",
+            username,
             std::time::Duration::from_secs(5),
         )?
         .map_err(|e| {

@@ -4,6 +4,9 @@ pub enum Error {
     #[snafu(display("failed to connect: {}", source))]
     Connect { source: std::io::Error },
 
+    #[snafu(display("couldn't find username"))]
+    CouldntFindUsername,
+
     #[snafu(display("failed to get terminal size: {}", source))]
     GetTerminalSize { source: crossterm::ErrorKind },
 

@@ -1,7 +1,7 @@
 use futures::future::Future as _;
 use futures::stream::Stream as _;
 use snafu::futures01::stream::StreamExt as _;
-use snafu::ResultExt as _;
+use snafu::{OptionExt as _, ResultExt as _};
 use tokio::io::AsyncWrite as _;
 
 #[derive(Debug, snafu::Snafu)]
@@ -36,6 +36,11 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Stream your terminal")
         .arg(
+            clap::Arg::with_name("username")
+                .long("username")
+                .takes_value(true),
+        )
+        .arg(
             clap::Arg::with_name("address")
                 .long("address")
                 .takes_value(true),
@@ -65,6 +70,13 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
         .context(Common)
         .context(super::Cast)?;
     run_impl(
+        &matches
+            .value_of("username")
+            .map(std::string::ToString::to_string)
+            .or_else(|| std::env::var("USER").ok())
+            .context(crate::error::CouldntFindUsername)
+            .context(Common)
+            .context(super::Cast)?,
         matches.value_of("address").unwrap_or("127.0.0.1:4144"),
         buffer_size,
         &matches.value_of("command").map_or_else(
@@ -80,6 +92,7 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
 }
 
 fn run_impl(
+    username: &str,
     address: &str,
     buffer_size: usize,
     command: &str,
@@ -91,7 +104,7 @@ fn run_impl(
             args,
             address,
             buffer_size,
-            "doy",
+            username,
             std::time::Duration::from_secs(5),
         )?
         .map_err(|e| {

@@ -113,7 +113,7 @@ impl ConnectionState {
         }
     }
 
-    fn cast(&self) -> Self {
+    fn cast(&self, buffer_size: usize) -> Self {
         match self {
             Self::LoggedIn {
                 username,
@@ -121,7 +121,7 @@ impl ConnectionState {
             } => Self::Casting {
                 username: username.clone(),
                 term_info: term_info.clone(),
-                saved_data: crate::term::Buffer::new(),
+                saved_data: crate::term::Buffer::new(buffer_size),
             },
             _ => unreachable!(),
         }
@@ -222,6 +222,7 @@ impl Connection {
 }
 
 pub struct Server {
+    buffer_size: usize,
     sock_stream: Box<
         dyn futures::stream::Stream<Item = Connection, Error = Error> + Send,
     >,
@@ -230,11 +231,13 @@ pub struct Server {
 
 impl Server {
     pub fn new(
+        buffer_size: usize,
         sock_r: tokio::sync::mpsc::Receiver<tokio::net::tcp::TcpStream>,
     ) -> Self {
         let sock_stream =
             sock_r.map(Connection::new).context(SocketChannelReceive);
         Self {
+            buffer_size,
             sock_stream: Box::new(sock_stream),
             connections: std::collections::HashMap::new(),
         }
@@ -380,7 +383,7 @@ impl Server {
                 Ok(())
             }
             crate::protocol::Message::StartCasting => {
-                conn.state = conn.state.cast();
+                conn.state = conn.state.cast(self.buffer_size);
                 Ok(())
             }
             crate::protocol::Message::StartWatching { id } => {

@@ -14,19 +14,37 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
-    app.about("Run a shellshare server").arg(
-        clap::Arg::with_name("address")
-            .long("address")
-            .takes_value(true),
-    )
+    app.about("Run a shellshare server")
+        .arg(
+            clap::Arg::with_name("address")
+                .long("address")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("buffer-size")
+                .long("buffer-size")
+                .takes_value(true),
+        )
 }
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    run_impl(matches.value_of("address").unwrap_or("0.0.0.0:4144"))
-        .context(super::Server)
+    let buffer_size_str =
+        matches.value_of("buffer-size").unwrap_or("10000000");
+    let buffer_size: usize = buffer_size_str
+        .parse()
+        .context(crate::error::ParseBufferSize {
+            input: buffer_size_str,
+        })
+        .context(Common)
+        .context(super::Server)?;
+    run_impl(
+        matches.value_of("address").unwrap_or("0.0.0.0:4144"),
+        buffer_size,
+    )
+    .context(super::Server)
 }
 
-fn run_impl(address: &str) -> Result<()> {
+fn run_impl(address: &str, buffer_size: usize) -> Result<()> {
     let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(100);
     let addr = address
         .parse()
@@ -45,7 +63,7 @@ fn run_impl(address: &str) -> Result<()> {
         });
 
     tokio::run(futures::future::lazy(move || {
-        let server = crate::server::Server::new(sock_r)
+        let server = crate::server::Server::new(buffer_size, sock_r)
             .map_err(|e| eprintln!("{}", e));
         tokio::spawn(server);
 

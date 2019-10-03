@@ -9,17 +9,20 @@ const WINDOW_TITLE: &[(&[u8], &[u8])] =
 
 #[derive(Debug, Default)]
 pub struct Buffer {
+    max_size: usize,
     contents: Vec<u8>,
     title: String,
 }
 
 impl Buffer {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(max_size: usize) -> Self {
+        let mut self_ = Self::default();
+        self_.max_size = max_size;
+        self_
     }
 
-    pub fn append(&mut self, mut buf: &[u8]) -> bool {
-        let mut cleared = false;
+    pub fn append(&mut self, mut buf: &[u8]) -> usize {
+        let mut truncated = 0;
         for window_title in WINDOW_TITLE {
             if let Some(i) = twoway::rfind_bytes(buf, window_title.0) {
                 if let Some(j) = twoway::find_bytes(&buf[i..], window_title.1)
@@ -34,15 +37,20 @@ impl Buffer {
         }
         for reset in RESET {
             if let Some(i) = twoway::rfind_bytes(buf, reset) {
-                cleared = true;
+                truncated = self.contents.len();
                 self.contents.clear();
                 buf = &buf[i..];
             }
         }
 
         self.contents.extend_from_slice(buf);
+        if self.contents.len() > self.max_size {
+            let new_contents = self.contents.split_off(self.max_size / 2);
+            truncated = self.contents.len();
+            self.contents = new_contents;
+        }
 
-        cleared
+        truncated
     }
 
     pub fn contents(&self) -> &[u8] {

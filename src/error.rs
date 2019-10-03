@@ -10,6 +10,12 @@ pub enum Error {
     #[snafu(display("failed to parse address: {}", source))]
     ParseAddr { source: std::net::AddrParseError },
 
+    #[snafu(display("failed to parse buffer size '{}': {}", input, source))]
+    ParseBufferSize {
+        input: String,
+        source: std::num::ParseIntError,
+    },
+
     #[snafu(display("unexpected message: {:?}", message))]
     UnexpectedMessage { message: crate::protocol::Message },
 }

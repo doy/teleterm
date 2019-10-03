@@ -40,6 +40,11 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
                 .long("address")
                 .takes_value(true),
         )
+        .arg(
+            clap::Arg::with_name("buffer-size")
+                .long("buffer-size")
+                .takes_value(true),
+        )
         .arg(clap::Arg::with_name("command").index(1))
         .arg(clap::Arg::with_name("args").index(2).multiple(true))
 }
@@ -50,8 +55,18 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
     } else {
         vec![]
     };
+    let buffer_size_str =
+        matches.value_of("buffer-size").unwrap_or("10000000");
+    let buffer_size: usize = buffer_size_str
+        .parse()
+        .context(crate::error::ParseBufferSize {
+            input: buffer_size_str,
+        })
+        .context(Common)
+        .context(super::Cast)?;
     run_impl(
         matches.value_of("address").unwrap_or("127.0.0.1:4144"),
+        buffer_size,
         &matches.value_of("command").map_or_else(
             || {
                 std::env::var("SHELL")
@@ -64,12 +79,18 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
     .context(super::Cast)
 }
 
-fn run_impl(address: &str, command: &str, args: &[String]) -> Result<()> {
+fn run_impl(
+    address: &str,
+    buffer_size: usize,
+    command: &str,
+    args: &[String],
+) -> Result<()> {
     tokio::run(
         CastSession::new(
             command,
             args,
             address,
+            buffer_size,
             "doy",
             std::time::Duration::from_secs(5),
         )?
@@ -99,6 +120,7 @@ impl CastSession {
         cmd: &str,
         args: &[String],
         address: &str,
+        buffer_size: usize,
         username: &str,
         heartbeat_duration: std::time::Duration,
     ) -> Result<Self> {
@@ -120,7 +142,7 @@ impl CastSession {
             process,
             stdout: tokio::io::stdout(),
             winches: Box::new(winches),
-            buffer: crate::term::Buffer::new(),
+            buffer: crate::term::Buffer::new(buffer_size),
             sent_local: 0,
             sent_remote: 0,
             needs_flush: false,
@@ -129,9 +151,16 @@ impl CastSession {
     }
 
     fn record_bytes(&mut self, buf: &[u8]) {
-        if self.buffer.append(buf) {
+        let truncated = self.buffer.append(buf);
+        if truncated > self.sent_local {
             self.sent_local = 0;
+        } else {
+            self.sent_local -= truncated;
+        }
+        if truncated > self.sent_remote {
             self.sent_remote = 0;
+        } else {
+            self.sent_remote -= truncated;
         }
     }
 }

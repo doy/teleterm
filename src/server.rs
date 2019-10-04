@@ -374,7 +374,20 @@ impl Server {
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
+        let username = if let ConnectionState::LoggedIn { username, .. } =
+            &mut conn.state
+        {
+            username
+        } else {
+            unreachable!()
+        };
         match message {
+            crate::protocol::Message::Heartbeat => {
+                println!("got a heartbeat from {}", username);
+                conn.to_send
+                    .push_back(crate::protocol::Message::heartbeat());
+                Ok(())
+            }
             crate::protocol::Message::ListSessions => {
                 let sessions: Vec<_> =
                     self.casters().flat_map(Connection::session).collect();

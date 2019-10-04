@@ -135,6 +135,30 @@ impl Client {
         }
     }
 
+    pub fn list(
+        address: &str,
+        username: &str,
+        heartbeat_duration: std::time::Duration,
+    ) -> Self {
+        let heartbeat_timer =
+            tokio::timer::Interval::new_interval(heartbeat_duration);
+        Self {
+            address: address.to_string(),
+            username: username.to_string(),
+            heartbeat_duration,
+
+            heartbeat_timer,
+            reconnect_timer: None,
+            last_server_time: std::time::Instant::now(),
+
+            rsock: ReadSocket::NotConnected,
+            wsock: WriteSocket::NotConnected,
+
+            on_connect: vec![],
+            to_send: std::collections::VecDeque::new(),
+        }
+    }
+
     pub fn send_message(&mut self, msg: crate::protocol::Message) {
         self.to_send.push_back(msg);
     }

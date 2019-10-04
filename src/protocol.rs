@@ -179,6 +179,7 @@ impl Message {
         Self::Resize { size }
     }
 
+    #[allow(dead_code)]
     pub fn read<R: std::io::Read>(r: R) -> Result<Self> {
         Packet::read(r).and_then(Self::try_from)
     }
@@ -192,6 +193,7 @@ impl Message {
         })
     }
 
+    #[allow(dead_code)]
     pub fn write<W: std::io::Write>(&self, w: W) -> Result<()> {
         Packet::from(self).write(w)
     }

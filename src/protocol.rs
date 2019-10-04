@@ -550,7 +550,14 @@ mod test {
         let msg2 = Message::try_from(packet).unwrap();
         assert_eq!(msg, msg2);
 
-        let msg = Message::sessions(&[]);
+        let msg = Message::sessions(&[Session {
+            id: "some-session-id".to_string(),
+            username: "doy".to_string(),
+            term_type: "screen".to_string(),
+            size: (80, 24),
+            idle_time: 123,
+            title: "it's my terminal title".to_string(),
+        }]);
         let packet = Packet::from(&msg);
         let msg2 = Message::try_from(packet).unwrap();
         assert_eq!(msg, msg2);

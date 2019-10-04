@@ -3,6 +3,11 @@ stages:
 
 variables:
   RUSTFLAGS: "-D warnings"
+  CARGO_HOME: cache
+
+cache:
+  paths:
+    - cache/
 
 rust-latest:
   stage: build

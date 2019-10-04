@@ -39,7 +39,7 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Session {
     pub id: String,
     pub username: String,
@@ -87,7 +87,7 @@ pub const PROTO_VERSION: u32 = 1;
 
 // XXX https://github.com/rust-lang/rust/issues/64362
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
     Login {
         proto_version: u32,
@@ -509,5 +509,65 @@ impl std::convert::TryFrom<Packet> for Message {
         }
 
         Ok(msg)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::cognitive_complexity)]
+#[allow(clippy::shadow_unrelated)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_serde() {
+        let msg = Message::login("doy", "screen", (80, 24));
+        let packet = Packet::from(&msg);
+        let msg2 = Message::try_from(packet).unwrap();
+        assert_eq!(msg, msg2);
+
+        let msg = Message::start_casting();
+        let packet = Packet::from(&msg);
+        let msg2 = Message::try_from(packet).unwrap();
+        assert_eq!(msg, msg2);
+
+        let msg = Message::start_watching("some-session-id");
+        let packet = Packet::from(&msg);
+        let msg2 = Message::try_from(packet).unwrap();
+        assert_eq!(msg, msg2);
+
+        let msg = Message::heartbeat();
+        let packet = Packet::from(&msg);
+        let msg2 = Message::try_from(packet).unwrap();
+        assert_eq!(msg, msg2);
+
+        let msg = Message::terminal_output(b"foobar");
+        let packet = Packet::from(&msg);
+        let msg2 = Message::try_from(packet).unwrap();
+        assert_eq!(msg, msg2);
+
+        let msg = Message::list_sessions();
+        let packet = Packet::from(&msg);
+        let msg2 = Message::try_from(packet).unwrap();
+        assert_eq!(msg, msg2);
+
+        let msg = Message::sessions(&[]);
+        let packet = Packet::from(&msg);
+        let msg2 = Message::try_from(packet).unwrap();
+        assert_eq!(msg, msg2);
+
+        let msg = Message::disconnected();
+        let packet = Packet::from(&msg);
+        let msg2 = Message::try_from(packet).unwrap();
+        assert_eq!(msg, msg2);
+
+        let msg = Message::error("error message");
+        let packet = Packet::from(&msg);
+        let msg2 = Message::try_from(packet).unwrap();
+        assert_eq!(msg, msg2);
+
+        let msg = Message::resize((81, 25));
+        let packet = Packet::from(&msg);
+        let msg2 = Message::try_from(packet).unwrap();
+        assert_eq!(msg, msg2);
     }
 }

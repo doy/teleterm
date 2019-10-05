@@ -34,6 +34,9 @@ pub enum Error {
 
     #[snafu(display("failed to create key reader: {}", source))]
     KeyReader { source: crate::key_reader::Error },
+
+    #[snafu(display("failed to switch to alternate screen: {}", source))]
+    ToAlternateScreen { source: crossterm::ErrorKind },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -191,8 +194,13 @@ impl SortedSessions {
 
 enum State {
     LoggingIn,
-    Choosing { sessions: SortedSessions },
-    Watching { client: Box<crate::client::Client> },
+    Choosing {
+        sessions: SortedSessions,
+        alternate_screen: crossterm::AlternateScreen,
+    },
+    Watching {
+        client: Box<crate::client::Client>,
+    },
 }
 
 struct WatchSession {
@@ -255,7 +263,7 @@ impl WatchSession {
             State::LoggingIn => {
                 Ok(crate::component_future::Poll::NothingToDo)
             }
-            State::Choosing { sessions } => {
+            State::Choosing { sessions, .. } => {
                 match self.key_reader.poll().context(ReadKey)? {
                     futures::Async::Ready(Some(e)) => {
                         match e {
@@ -269,7 +277,6 @@ impl WatchSession {
                             crossterm::InputEvent::Keyboard(
                                 crossterm::KeyEvent::Char('q'),
                             ) => {
-                                clear()?;
                                 return Ok(
                                     crate::component_future::Poll::Event(()),
                                 );
@@ -334,10 +341,38 @@ impl WatchSession {
                 }
                 crate::client::Event::ServerMessage(msg) => match msg {
                     crate::protocol::Message::Sessions { sessions } => {
-                        let sorted = SortedSessions::new(sessions);
-                        // TODO: async
-                        sorted.print()?;
-                        self.state = State::Choosing { sessions: sorted };
+                        // avoid dropping the alternate screen object if we
+                        // don't have to, because it causes flickering
+                        let old_state = std::mem::replace(
+                            &mut self.state,
+                            State::LoggingIn,
+                        );
+                        let alternate_screen = if let State::Choosing {
+                            alternate_screen,
+                            ..
+                        } = old_state
+                        {
+                            alternate_screen
+                        } else {
+                            crossterm::AlternateScreen::to_alternate(false)
+                                .context(ToAlternateScreen)?
+                        };
+
+                        let sessions = SortedSessions::new(sessions);
+
+                        self.state = State::Choosing {
+                            sessions,
+                            alternate_screen,
+                        };
+
+                        if let State::Choosing { sessions, .. } = &self.state
+                        {
+                            // TODO: async
+                            sessions.print()?;
+                        } else {
+                            unreachable!();
+                        }
+
                         Ok(crate::component_future::Poll::DidWork)
                     }
                     msg => Err(crate::error::Error::UnexpectedMessage {

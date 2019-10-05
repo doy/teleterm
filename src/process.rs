@@ -55,6 +55,8 @@ pub struct Process<R: tokio::io::AsyncRead> {
     started: bool,
     exited: bool,
     needs_resize: Option<(u16, u16)>,
+    stdin_closed: bool,
+    stdout_closed: bool,
 }
 
 impl<R: tokio::io::AsyncRead + 'static> Process<R> {
@@ -78,6 +80,8 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             started: false,
             exited: false,
             needs_resize: None,
+            stdin_closed: false,
+            stdout_closed: false,
         })
     }
 
@@ -138,7 +142,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
     fn poll_read_stdin(
         &mut self,
     ) -> Result<crate::component_future::Poll<Event>> {
-        if self.exited {
+        if self.exited || self.stdin_closed {
             return Ok(crate::component_future::Poll::NothingToDo);
         }
 
@@ -150,6 +154,9 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             futures::Async::Ready(n) => {
                 if n > 0 {
                     self.input_buf.extend(self.buf[..n].iter());
+                } else {
+                    self.input_buf.push_back(b'\x04');
+                    self.stdin_closed = true;
                 }
                 Ok(crate::component_future::Poll::DidWork)
             }
@@ -184,17 +191,24 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
     fn poll_read_stdout(
         &mut self,
     ) -> Result<crate::component_future::Poll<Event>> {
-        if self.exited {
-            return Ok(crate::component_future::Poll::NothingToDo);
-        }
-
-        match self.pty.poll_read(&mut self.buf).context(ReadFromPty)? {
-            futures::Async::Ready(n) => {
+        match self.pty.poll_read(&mut self.buf).context(ReadFromPty) {
+            Ok(futures::Async::Ready(n)) => {
                 let bytes = self.buf[..n].to_vec();
                 Ok(crate::component_future::Poll::Event(Event::Output(bytes)))
             }
-            futures::Async::NotReady => {
+            Ok(futures::Async::NotReady) => {
                 Ok(crate::component_future::Poll::NotReady)
+            }
+            Err(e) => {
+                // XXX this seems to be how eof is returned, but this seems...
+                // wrong? i feel like there has to be a better way to do this
+                if let Error::ReadFromPty { source } = &e {
+                    if source.kind() == std::io::ErrorKind::Other {
+                        self.stdout_closed = true;
+                        return Ok(crate::component_future::Poll::DidWork);
+                    }
+                }
+                Err(e)
             }
         }
     }
@@ -204,6 +218,9 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
     ) -> Result<crate::component_future::Poll<Event>> {
         if self.exited {
             return Ok(crate::component_future::Poll::Done);
+        }
+        if !self.stdout_closed {
+            return Ok(crate::component_future::Poll::NothingToDo);
         }
 
         match self.process.poll().context(ProcessExitPoll)? {

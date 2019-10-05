@@ -1,7 +1,7 @@
 use futures::future::Future as _;
 use snafu::ResultExt as _;
 use tokio::io::{AsyncRead as _, AsyncWrite as _};
-use tokio_pty_process::CommandExt as _;
+use tokio_pty_process::{CommandExt as _, PtyMaster as _};
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
@@ -42,23 +42,6 @@ pub enum Event {
     CommandStart(String, Vec<String>),
     Output(Vec<u8>),
     CommandExit(std::process::ExitStatus),
-}
-
-struct Resizer<'a, T> {
-    rows: u16,
-    cols: u16,
-    pty: &'a T,
-}
-
-impl<'a, T: tokio_pty_process::PtyMaster> futures::future::Future
-    for Resizer<'a, T>
-{
-    type Item = ();
-    type Error = std::io::Error;
-
-    fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-        self.pty.resize(self.rows, self.cols)
-    }
 }
 
 pub struct Process<R: tokio::io::AsyncRead> {
@@ -129,12 +112,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
         &mut self,
     ) -> Result<crate::component_future::Poll<Event>> {
         if let Some((rows, cols)) = self.needs_resize {
-            let mut resizer = Resizer {
-                rows,
-                cols,
-                pty: &self.pty,
-            };
-            match resizer.poll().context(ResizePty)? {
+            match self.pty.resize(rows, cols).context(ResizePty)? {
                 futures::Async::Ready(()) => {
                     self.needs_resize = None;
                     Ok(crate::component_future::Poll::DidWork)

@@ -126,6 +126,7 @@ struct CastSession {
     sent_remote: usize,
     needs_flush: bool,
     done: bool,
+    raw_screen: Option<crossterm::RawScreen>,
 }
 
 impl CastSession {
@@ -160,6 +161,7 @@ impl CastSession {
             sent_remote: 0,
             needs_flush: false,
             done: false,
+            raw_screen: None,
         })
     }
 
@@ -344,6 +346,13 @@ impl futures::future::Future for CastSession {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
+        if self.raw_screen.is_none() {
+            self.raw_screen = Some(
+                crossterm::RawScreen::into_raw_mode()
+                    .context(crate::error::IntoRawMode)
+                    .context(Common)?,
+            );
+        }
         crate::component_future::poll_future(self, Self::POLL_FNS)
     }
 }

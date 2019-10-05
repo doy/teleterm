@@ -73,8 +73,6 @@ pub struct Process {
     buf: Vec<u8>,
     started: bool,
     exited: bool,
-    manage_screen: bool,
-    raw_screen: Option<crossterm::RawScreen>,
 }
 
 impl Process {
@@ -101,8 +99,6 @@ impl Process {
             buf: vec![0; 4096],
             started: false,
             exited: false,
-            manage_screen: true,
-            raw_screen: None,
         };
 
         let (cols, rows) = crossterm::terminal()
@@ -112,12 +108,6 @@ impl Process {
         self_.resize(rows, cols)?;
 
         Ok(self_)
-    }
-
-    #[allow(dead_code)]
-    pub fn set_raw(mut self, raw: bool) -> Self {
-        self.manage_screen = raw;
-        self
     }
 
     pub fn resize(&self, rows: u16, cols: u16) -> Result<()> {
@@ -297,14 +287,6 @@ impl futures::stream::Stream for Process {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
-        if self.manage_screen && self.raw_screen.is_none() {
-            self.raw_screen = Some(
-                crossterm::RawScreen::into_raw_mode()
-                    .context(crate::error::IntoRawMode)
-                    .context(Common)?,
-            );
-        }
-
         crate::component_future::poll_stream(self, Self::POLL_FNS)
     }
 }

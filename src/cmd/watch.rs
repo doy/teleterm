@@ -104,6 +104,8 @@ impl SortedSessions {
                 by_name[a].iter().min_by_key(|session| session.idle_time);
             let b_idle =
                 by_name[b].iter().min_by_key(|session| session.idle_time);
+            // these unwraps are safe because we know that none of the vecs in
+            // the map can be empty
             a_idle.unwrap().idle_time.cmp(&b_idle.unwrap().idle_time)
         });
         for name in &names {

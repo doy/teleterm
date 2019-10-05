@@ -174,18 +174,25 @@ impl Process {
         // own will block reading from stdin, so i need a way to explicitly
         // check readiness before doing the read
         let ready = mio::Ready::readable();
-        match self.input.poll_read_ready(ready) {
-            Ok(futures::Async::Ready(_)) => {
-                match self.input.poll_read(&mut self.buf) {
-                    Ok(futures::Async::Ready(n)) => {
+        match self
+            .input
+            .poll_read_ready(ready)
+            .context(ReadFromTerminal)?
+        {
+            futures::Async::Ready(_) => {
+                match self
+                    .input
+                    .poll_read(&mut self.buf)
+                    .context(ReadFromTerminal)?
+                {
+                    futures::Async::Ready(n) => {
                         if n > 0 {
                             self.input_buf.extend(self.buf[..n].iter());
                         }
                     }
-                    Ok(futures::Async::NotReady) => {
+                    futures::Async::NotReady => {
                         return Ok(crate::component_future::Poll::NotReady);
                     }
-                    Err(e) => return Err(e).context(ReadFromTerminal),
                 }
                 // XXX i'm pretty sure this is wrong (if the single poll_read
                 // call didn't return all waiting data, clearing read ready
@@ -202,10 +209,9 @@ impl Process {
 
                 Ok(crate::component_future::Poll::DidWork)
             }
-            Ok(futures::Async::NotReady) => {
+            futures::Async::NotReady => {
                 Ok(crate::component_future::Poll::NotReady)
             }
-            Err(e) => Err(e).context(ReadFromTerminal),
         }
     }
 

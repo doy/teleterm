@@ -334,7 +334,7 @@ impl WatchSession {
     ) -> Result<crate::component_future::Poll<()>> {
         match self.list_client.poll().context(Client)? {
             futures::Async::Ready(Some(e)) => match e {
-                crate::client::Event::Reconnect => {
+                crate::client::Event::Reconnect(_) => {
                     self.reconnect();
                     Ok(crate::component_future::Poll::DidWork)
                 }
@@ -379,6 +379,17 @@ impl WatchSession {
                     })
                     .context(Common),
                 },
+                crate::client::Event::Resize(_) => {
+                    match &self.state {
+                        State::LoggingIn | State::Choosing { .. } => {
+                            self.list_client.send_message(
+                                crate::protocol::Message::list_sessions(),
+                            );
+                        }
+                        State::Watching { .. } => {}
+                    }
+                    Ok(crate::component_future::Poll::DidWork)
+                }
             },
             futures::Async::Ready(None) => {
                 // the client should never exit on its own
@@ -401,7 +412,7 @@ impl WatchSession {
 
         match client.poll().context(Client)? {
             futures::Async::Ready(Some(e)) => match e {
-                crate::client::Event::Reconnect => {
+                crate::client::Event::Reconnect(_) => {
                     Ok(crate::component_future::Poll::DidWork)
                 }
                 crate::client::Event::ServerMessage(msg) => match msg {
@@ -439,6 +450,10 @@ impl WatchSession {
                     })
                     .context(Common),
                 },
+                crate::client::Event::Resize(_) => {
+                    // watch clients don't respond to resize events
+                    unreachable!()
+                }
             },
             futures::Async::Ready(None) => {
                 // the client should never exit on its own

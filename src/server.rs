@@ -395,10 +395,13 @@ impl Server {
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let username = if let ConnectionState::LoggedIn { username, .. } =
-            &mut conn.state
+        let (username, term_info) = if let ConnectionState::LoggedIn {
+            username,
+            term_info,
+            ..
+        } = &mut conn.state
         {
-            username
+            (username, term_info)
         } else {
             unreachable!()
         };
@@ -407,6 +410,10 @@ impl Server {
                 println!("got a heartbeat from {}", username);
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
+                Ok(())
+            }
+            crate::protocol::Message::Resize { size } => {
+                term_info.size = size;
                 Ok(())
             }
             crate::protocol::Message::ListSessions => {

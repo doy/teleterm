@@ -1,6 +1,5 @@
 use futures::future::Future as _;
 use futures::stream::Stream as _;
-use snafu::futures01::stream::StreamExt as _;
 use snafu::{OptionExt as _, ResultExt as _};
 use tokio::io::AsyncWrite as _;
 
@@ -23,9 +22,6 @@ pub enum Error {
 
     #[snafu(display("communication with server failed: {}", source))]
     Client { source: crate::client::Error },
-
-    #[snafu(display("SIGWINCH handler failed: {}", source))]
-    SigWinchHandler { source: std::io::Error },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -116,8 +112,6 @@ struct CastSession {
     client: crate::client::Client,
     process: crate::process::Process<crate::async_stdin::Stdin>,
     stdout: tokio::io::Stdout,
-    winches:
-        Box<dyn futures::stream::Stream<Item = (), Error = Error> + Send>,
     buffer: crate::term::Buffer,
     sent_local: usize,
     sent_remote: usize,
@@ -146,26 +140,13 @@ impl CastSession {
         // let input = tokio::io::stdin();
         let input = crate::async_stdin::Stdin::new();
 
-        let mut process =
+        let process =
             crate::process::Process::new(cmd, args, input).context(Spawn)?;
-        let (cols, rows) = crossterm::terminal()
-            .size()
-            .context(crate::error::GetTerminalSize)
-            .context(Common)?;
-        process.resize(rows, cols);
-
-        let winches = tokio_signal::unix::Signal::new(
-            tokio_signal::unix::libc::SIGWINCH,
-        )
-        .flatten_stream()
-        .map(|_| ())
-        .context(SigWinchHandler);
 
         Ok(Self {
             client,
             process,
             stdout: tokio::io::stdout(),
-            winches: Box::new(winches),
             buffer: crate::term::Buffer::new(buffer_size),
             sent_local: 0,
             sent_remote: 0,
@@ -201,7 +182,6 @@ impl CastSession {
         &Self::poll_write_terminal,
         &Self::poll_flush_terminal,
         &Self::poll_write_server,
-        &Self::poll_sigwinch,
     ];
 
     // this should never return Err, because we don't want server
@@ -211,8 +191,9 @@ impl CastSession {
     ) -> Result<crate::component_future::Poll<()>> {
         match self.client.poll().context(Client) {
             Ok(futures::Async::Ready(Some(e))) => match e {
-                crate::client::Event::Reconnect => {
+                crate::client::Event::Reconnect((rows, cols)) => {
                     self.sent_remote = 0;
+                    self.process.resize(rows, cols);
                     Ok(crate::component_future::Poll::DidWork)
                 }
                 crate::client::Event::ServerMessage(..) => {
@@ -220,6 +201,10 @@ impl CastSession {
                     // start casting, so if one comes through, assume
                     // something is messed up and try again
                     self.client.reconnect();
+                    Ok(crate::component_future::Poll::DidWork)
+                }
+                crate::client::Event::Resize((rows, cols)) => {
+                    self.process.resize(rows, cols);
                     Ok(crate::component_future::Poll::DidWork)
                 }
             },
@@ -326,27 +311,6 @@ impl CastSession {
         self.sent_remote = self.buffer.len();
 
         Ok(crate::component_future::Poll::DidWork)
-    }
-
-    fn poll_sigwinch(&mut self) -> Result<crate::component_future::Poll<()>> {
-        match self.winches.poll()? {
-            futures::Async::Ready(Some(_)) => {
-                let (cols, rows) = crossterm::terminal()
-                    .size()
-                    .context(crate::error::GetTerminalSize)
-                    .context(Common)?;
-                self.process.resize(rows, cols);
-                self.client.send_message(crate::protocol::Message::resize((
-                    u32::from(cols),
-                    u32::from(rows),
-                )));
-                Ok(crate::component_future::Poll::DidWork)
-            }
-            futures::Async::Ready(None) => unreachable!(),
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Poll::NotReady)
-            }
-        }
     }
 }
 

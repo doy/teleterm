@@ -1,5 +1,6 @@
 use futures::future::Future as _;
 use futures::stream::Stream as _;
+use snafu::futures01::stream::StreamExt as _;
 use snafu::futures01::FutureExt as _;
 use snafu::ResultExt as _;
 use tokio::io::AsyncRead as _;
@@ -23,6 +24,9 @@ pub enum Error {
 
     #[snafu(display("failed to write message to server: {}", source))]
     WriteServer { source: crate::protocol::Error },
+
+    #[snafu(display("SIGWINCH handler failed: {}", source))]
+    SigWinchHandler { source: std::io::Error },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -78,7 +82,8 @@ enum WriteSocket {
 
 pub enum Event {
     ServerMessage(crate::protocol::Message),
-    Reconnect,
+    Reconnect((u16, u16)),
+    Resize((u16, u16)),
 }
 
 pub struct Client {
@@ -89,6 +94,9 @@ pub struct Client {
     heartbeat_timer: tokio::timer::Interval,
     reconnect_timer: Option<tokio::timer::Delay>,
     last_server_time: std::time::Instant,
+    winches: Option<
+        Box<dyn futures::stream::Stream<Item = (), Error = Error> + Send>,
+    >,
 
     rsock: ReadSocket,
     wsock: WriteSocket,
@@ -103,23 +111,13 @@ impl Client {
         username: &str,
         heartbeat_duration: std::time::Duration,
     ) -> Self {
-        let heartbeat_timer =
-            tokio::timer::Interval::new_interval(heartbeat_duration);
-        Self {
-            address: address.to_string(),
-            username: username.to_string(),
+        Self::new(
+            address,
+            username,
             heartbeat_duration,
-
-            heartbeat_timer,
-            reconnect_timer: None,
-            last_server_time: std::time::Instant::now(),
-
-            rsock: ReadSocket::NotConnected,
-            wsock: WriteSocket::NotConnected,
-
-            on_connect: vec![crate::protocol::Message::start_casting()],
-            to_send: std::collections::VecDeque::new(),
-        }
+            &[crate::protocol::Message::start_casting()],
+            true,
+        )
     }
 
     pub fn watch(
@@ -128,23 +126,13 @@ impl Client {
         heartbeat_duration: std::time::Duration,
         id: &str,
     ) -> Self {
-        let heartbeat_timer =
-            tokio::timer::Interval::new_interval(heartbeat_duration);
-        Self {
-            address: address.to_string(),
-            username: username.to_string(),
+        Self::new(
+            address,
+            username,
             heartbeat_duration,
-
-            heartbeat_timer,
-            reconnect_timer: None,
-            last_server_time: std::time::Instant::now(),
-
-            rsock: ReadSocket::NotConnected,
-            wsock: WriteSocket::NotConnected,
-
-            on_connect: vec![crate::protocol::Message::start_watching(id)],
-            to_send: std::collections::VecDeque::new(),
-        }
+            &[crate::protocol::Message::start_watching(id)],
+            false,
+        )
     }
 
     pub fn list(
@@ -152,8 +140,32 @@ impl Client {
         username: &str,
         heartbeat_duration: std::time::Duration,
     ) -> Self {
+        Self::new(address, username, heartbeat_duration, &[], true)
+    }
+
+    fn new(
+        address: &str,
+        username: &str,
+        heartbeat_duration: std::time::Duration,
+        on_connect: &[crate::protocol::Message],
+        handle_sigwinch: bool,
+    ) -> Self {
         let heartbeat_timer =
             tokio::timer::Interval::new_interval(heartbeat_duration);
+        let winches: Option<
+            Box<dyn futures::stream::Stream<Item = (), Error = Error> + Send>,
+        > = if handle_sigwinch {
+            let winches = tokio_signal::unix::Signal::new(
+                tokio_signal::unix::libc::SIGWINCH,
+            )
+            .flatten_stream()
+            .map(|_| ())
+            .context(SigWinchHandler);
+            Some(Box::new(winches))
+        } else {
+            None
+        };
+
         Self {
             address: address.to_string(),
             username: username.to_string(),
@@ -162,11 +174,12 @@ impl Client {
             heartbeat_timer,
             reconnect_timer: None,
             last_server_time: std::time::Instant::now(),
+            winches,
 
             rsock: ReadSocket::NotConnected,
             wsock: WriteSocket::NotConnected,
 
-            on_connect: vec![],
+            on_connect: on_connect.to_vec(),
             to_send: std::collections::VecDeque::new(),
         }
     }
@@ -192,6 +205,7 @@ impl Client {
         &Self::poll_read_server,
         &Self::poll_write_server,
         &Self::poll_heartbeat,
+        &Self::poll_sigwinch,
     ];
 
     fn poll_reconnect_server(
@@ -255,7 +269,9 @@ impl Client {
                     self.to_send.push_back(msg.clone());
                 }
 
-                Ok(crate::component_future::Poll::Event(Event::Reconnect))
+                Ok(crate::component_future::Poll::Event(Event::Reconnect((
+                    size.1, size.0,
+                ))))
             }
             WriteSocket::Connecting(ref mut fut) => match fut.poll() {
                 Ok(futures::Async::Ready(s)) => {
@@ -380,6 +396,34 @@ impl Client {
             futures::Async::NotReady => {
                 Ok(crate::component_future::Poll::NotReady)
             }
+        }
+    }
+
+    fn poll_sigwinch(
+        &mut self,
+    ) -> Result<crate::component_future::Poll<Event>> {
+        if let Some(winches) = &mut self.winches {
+            match winches.poll()? {
+                futures::Async::Ready(Some(_)) => {
+                    let (cols, rows) = crossterm::terminal()
+                        .size()
+                        .context(crate::error::GetTerminalSize)
+                        .context(Common)?;
+                    self.send_message(crate::protocol::Message::resize((
+                        u32::from(cols),
+                        u32::from(rows),
+                    )));
+                    Ok(crate::component_future::Poll::Event(Event::Resize((
+                        rows, cols,
+                    ))))
+                }
+                futures::Async::Ready(None) => unreachable!(),
+                futures::Async::NotReady => {
+                    Ok(crate::component_future::Poll::NotReady)
+                }
+            }
+        } else {
+            Ok(crate::component_future::Poll::NothingToDo)
         }
     }
 }

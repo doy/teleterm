@@ -136,8 +136,6 @@ impl SortedSessions {
     }
 
     fn print(&self) -> Result<()> {
-        clear()?;
-
         let name_width =
             self.sessions.iter().map(|(_, s)| s.username.len()).max();
         let name_width = if let Some(width) = name_width {
@@ -154,6 +152,7 @@ impl SortedSessions {
             .context(crate::error::GetTerminalSize)
             .context(Common)?;
 
+        clear()?;
         println!("welcome to shellshare\r");
         println!("available sessions:\r");
         println!("\r");

@@ -38,13 +38,19 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 enum ReadSocket {
-    Connected(crate::protocol::FramedReader),
+    Connected(
+        crate::protocol::FramedReader<
+            tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
+        >,
+    ),
     Reading(
         Box<
             dyn futures::future::Future<
                     Item = (
                         crate::protocol::Message,
-                        crate::protocol::FramedReader,
+                        crate::protocol::FramedReader<
+                            tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
+                        >,
                     ),
                     Error = Error,
                 > + Send,
@@ -53,11 +59,17 @@ enum ReadSocket {
 }
 
 enum WriteSocket {
-    Connected(crate::protocol::FramedWriter),
+    Connected(
+        crate::protocol::FramedWriter<
+            tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
+        >,
+    ),
     Writing(
         Box<
             dyn futures::future::Future<
-                    Item = crate::protocol::FramedWriter,
+                    Item = crate::protocol::FramedWriter<
+                        tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
+                    >,
                     Error = Error,
                 > + Send,
         >,

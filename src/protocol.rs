@@ -49,15 +49,15 @@ pub struct Session {
     pub title: String,
 }
 
-pub struct FramedReader(
+pub struct FramedReader<T: tokio::io::AsyncRead>(
     tokio::codec::FramedRead<
-        tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
+        T,
         tokio::codec::length_delimited::LengthDelimitedCodec,
     >,
 );
 
-impl FramedReader {
-    pub fn new(rs: tokio::io::ReadHalf<tokio::net::tcp::TcpStream>) -> Self {
+impl<T: tokio::io::AsyncRead> FramedReader<T> {
+    pub fn new(rs: T) -> Self {
         Self(
             tokio::codec::length_delimited::Builder::new()
                 .length_field_length(4)
@@ -66,15 +66,15 @@ impl FramedReader {
     }
 }
 
-pub struct FramedWriter(
+pub struct FramedWriter<T: tokio::io::AsyncWrite>(
     tokio::codec::FramedWrite<
-        tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
+        T,
         tokio::codec::length_delimited::LengthDelimitedCodec,
     >,
 );
 
-impl FramedWriter {
-    pub fn new(ws: tokio::io::WriteHalf<tokio::net::tcp::TcpStream>) -> Self {
+impl<T: tokio::io::AsyncWrite> FramedWriter<T> {
+    pub fn new(ws: T) -> Self {
         Self(
             tokio::codec::length_delimited::Builder::new()
                 .length_field_length(4)
@@ -184,9 +184,9 @@ impl Message {
         Packet::read(r).and_then(Self::try_from)
     }
 
-    pub fn read_async(
-        r: FramedReader,
-    ) -> impl futures::future::Future<Item = (Self, FramedReader), Error = Error>
+    pub fn read_async<T: tokio::io::AsyncRead>(
+        r: FramedReader<T>,
+    ) -> impl futures::future::Future<Item = (Self, FramedReader<T>), Error = Error>
     {
         Packet::read_async(r).and_then(|(packet, r)| {
             Self::try_from(packet).map(|msg| (msg, r))
@@ -198,10 +198,10 @@ impl Message {
         Packet::from(self).write(w)
     }
 
-    pub fn write_async(
+    pub fn write_async<T: tokio::io::AsyncWrite>(
         &self,
-        w: FramedWriter,
-    ) -> impl futures::future::Future<Item = FramedWriter, Error = Error>
+        w: FramedWriter<T>,
+    ) -> impl futures::future::Future<Item = FramedWriter<T>, Error = Error>
     {
         Packet::from(self).write_async(w)
     }
@@ -229,9 +229,9 @@ impl Packet {
         })
     }
 
-    fn read_async(
-        r: FramedReader,
-    ) -> impl futures::future::Future<Item = (Self, FramedReader), Error = Error>
+    fn read_async<T: tokio::io::AsyncRead>(
+        r: FramedReader<T>,
+    ) -> impl futures::future::Future<Item = (Self, FramedReader<T>), Error = Error>
     {
         r.0.into_future()
             .map_err(|(e, _)| Error::ReadAsync { source: e })
@@ -257,10 +257,10 @@ impl Packet {
         Ok(w.write_all(&buf).context(Write)?)
     }
 
-    fn write_async(
+    fn write_async<T: tokio::io::AsyncWrite>(
         &self,
-        w: FramedWriter,
-    ) -> impl futures::future::Future<Item = FramedWriter, Error = Error>
+        w: FramedWriter<T>,
+    ) -> impl futures::future::Future<Item = FramedWriter<T>, Error = Error>
     {
         w.0.send(bytes::Bytes::from(self.as_bytes()))
             .map(FramedWriter)

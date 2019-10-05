@@ -86,7 +86,7 @@ fn run_impl(username: &str, address: &str) -> Result<()> {
 }
 
 struct SortedSessions {
-    sessions: std::collections::HashMap<char, crate::protocol::Session>,
+    sessions: std::collections::BTreeMap<char, crate::protocol::Session>,
 }
 
 impl SortedSessions {
@@ -114,7 +114,7 @@ impl SortedSessions {
             }
         }
 
-        let mut keymap = std::collections::HashMap::new();
+        let mut keymap = std::collections::BTreeMap::new();
         let mut offset = 0;
         for name in names {
             let sessions = by_name.remove(&name).unwrap();
@@ -163,10 +163,7 @@ impl SortedSessions {
         println!("{}\r", "-".repeat(cols as usize));
 
         let mut prev_name: Option<&str> = None;
-        let mut chars: Vec<_> = self.sessions.keys().collect();
-        chars.sort();
-        for c in chars {
-            let session = self.sessions.get(c).unwrap();
+        for (c, session) in &self.sessions {
             let first = if let Some(name) = prev_name {
                 name != session.username
             } else {

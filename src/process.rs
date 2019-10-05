@@ -38,6 +38,7 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum Event {
     CommandStart(String, Vec<String>),
     Output(Vec<u8>),
@@ -246,5 +247,58 @@ impl<R: tokio::io::AsyncRead + 'static> futures::stream::Stream
 
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
         crate::component_future::poll_stream(self, Self::POLL_FNS)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use futures::sink::Sink as _;
+    use futures::stream::Stream as _;
+
+    #[test]
+    fn test_simple() {
+        let (wres, rres) = tokio::sync::mpsc::channel(100);
+        let wres2 = wres.clone();
+        let mut wres = wres.wait();
+        let buf = std::io::Cursor::new(b"hello world\n");
+        let fut = Process::new("cat", &[], buf)
+            .unwrap()
+            .for_each(move |e| {
+                wres.send(Ok(e)).unwrap();
+                Ok(())
+            })
+            .map_err(|e| {
+                wres2.wait().send(Err(e)).unwrap();
+            });
+        tokio::run(fut);
+
+        let mut rres = rres.wait();
+
+        let event = rres.next();
+        let event = event.unwrap();
+        let event = event.unwrap();
+        let event = event.unwrap();
+        assert_eq!(event, Event::CommandStart("cat".to_string(), vec![]));
+
+        let mut output: Vec<u8> = vec![];
+        let mut exited = false;
+        for event in rres {
+            assert!(!exited);
+            let event = event.unwrap();
+            let event = event.unwrap();
+            match event {
+                Event::CommandStart(..) => panic!("unexpected CommandStart"),
+                Event::Output(buf) => {
+                    output.extend(buf.iter());
+                }
+                Event::CommandExit(status) => {
+                    assert!(status.success());
+                    exited = true;
+                }
+            }
+        }
+        assert!(exited);
+        assert_eq!(output, b"hello world\r\nhello world\r\n");
     }
 }

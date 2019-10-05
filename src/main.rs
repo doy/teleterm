@@ -10,7 +10,7 @@ mod client;
 mod cmd;
 mod component_future;
 mod error;
-mod keyreader;
+mod key_reader;
 mod process;
 mod protocol;
 mod server;

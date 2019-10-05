@@ -12,7 +12,7 @@ pub enum Error {
     Read { source: crate::protocol::Error },
 
     #[snafu(display("failed to read key from terminal: {}", source))]
-    ReadKey { source: crate::keyreader::Error },
+    ReadKey { source: crate::key_reader::Error },
 
     #[snafu(display("failed to write message: {}", source))]
     Write { source: crate::protocol::Error },
@@ -33,7 +33,7 @@ pub enum Error {
     Server { message: String },
 
     #[snafu(display("failed to create key reader: {}", source))]
-    KeyReader { source: crate::keyreader::Error },
+    KeyReader { source: crate::key_reader::Error },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -203,7 +203,7 @@ struct WatchSession {
     username: String,
     heartbeat_duration: std::time::Duration,
 
-    key_reader: crate::keyreader::KeyReader,
+    key_reader: crate::key_reader::KeyReader,
     list_client: crate::client::Client,
     state: State,
     raw_screen: Option<crossterm::RawScreen>,
@@ -227,7 +227,7 @@ impl WatchSession {
             username: username.to_string(),
             heartbeat_duration,
 
-            key_reader: crate::keyreader::KeyReader::new(task)
+            key_reader: crate::key_reader::KeyReader::new(task)
                 .context(KeyReader)?,
             list_client,
             state: State::LoggingIn,

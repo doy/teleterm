@@ -77,6 +77,7 @@ fn run_impl(username: &str, address: &str) -> Result<()> {
     let address = address.to_string();
     tokio::run(futures::lazy(move || {
         futures::future::result(WatchSession::new(
+            futures::task::current(),
             &address,
             &username,
             std::time::Duration::from_secs(5),
@@ -216,6 +217,7 @@ struct WatchSession {
 
 impl WatchSession {
     fn new(
+        task: futures::task::Task,
         address: &str,
         username: &str,
         heartbeat_duration: std::time::Duration,
@@ -231,10 +233,8 @@ impl WatchSession {
             username: username.to_string(),
             heartbeat_duration,
 
-            key_reader: crate::keyreader::KeyReader::new(
-                futures::task::current(),
-            )
-            .context(KeyReader)?,
+            key_reader: crate::keyreader::KeyReader::new(task)
+                .context(KeyReader)?,
             list_client,
             state: State::LoggingIn,
             raw_screen: None,

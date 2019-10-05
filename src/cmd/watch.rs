@@ -89,11 +89,13 @@ fn run_impl(username: &str, address: &str) -> Result<()> {
 }
 
 struct SortedSessions {
-    sessions: std::collections::BTreeMap<char, crate::protocol::Session>,
+    sessions: Vec<crate::protocol::Session>,
+    offset: usize,
+    size: (u16, u16),
 }
 
 impl SortedSessions {
-    fn new(sessions: Vec<crate::protocol::Session>) -> Self {
+    fn new(sessions: Vec<crate::protocol::Session>) -> Result<Self> {
         let mut by_name = std::collections::HashMap::new();
         for session in sessions {
             if !by_name.contains_key(&session.username) {
@@ -117,27 +119,28 @@ impl SortedSessions {
             }
         }
 
-        let mut keymap = std::collections::BTreeMap::new();
-        let mut offset = 0;
+        let mut keymap = vec![];
         for name in names {
             let sessions = by_name.remove(&name).unwrap();
             for session in sessions {
-                let c = std::char::from_u32(('a' as u32) + offset).unwrap();
-                offset += 1;
-                if offset == 16 {
-                    // 'q'
-                    offset += 1;
-                }
-                keymap.insert(c, session);
+                keymap.push(session);
             }
         }
 
-        Self { sessions: keymap }
+        let (cols, rows) = crossterm::terminal()
+            .size()
+            .context(crate::error::GetTerminalSize)
+            .context(Common)?;
+
+        Ok(Self {
+            sessions: keymap,
+            offset: 0,
+            size: (rows, cols),
+        })
     }
 
     fn print(&self) -> Result<()> {
-        let name_width =
-            self.sessions.iter().map(|(_, s)| s.username.len()).max();
+        let name_width = self.sessions.iter().map(|s| s.username.len()).max();
         let name_width = if let Some(width) = name_width {
             if width < 4 {
                 4
@@ -147,47 +150,126 @@ impl SortedSessions {
         } else {
             4
         };
-        let (cols, _) = crossterm::terminal()
-            .size()
-            .context(crate::error::GetTerminalSize)
-            .context(Common)?;
 
         clear()?;
         println!("welcome to shellshare\r");
-        println!("available sessions: (space to refresh, q to quit)\r");
+        println!("available sessions:\r");
         println!("\r");
         println!(
             "   | {:3$} | {:7} | {:13} | title\r",
             "name", "size", "idle", name_width
         );
-        println!("{}\r", "-".repeat(cols as usize));
+        println!("{}\r", "-".repeat(self.size.1 as usize));
 
         let mut prev_name: Option<&str> = None;
-        for (c, session) in &self.sessions {
-            let first = if let Some(name) = prev_name {
-                name != session.username
-            } else {
-                true
-            };
-            print!(
-                "{})   {:2$} ",
-                c,
-                if first { &session.username } else { "" },
-                name_width + 2,
-            );
-            print_session(session);
+        for (i, session) in self.sessions.iter().skip(self.offset).enumerate()
+        {
+            if let Some(c) = self.idx_to_char(i) {
+                let first = if let Some(name) = prev_name {
+                    name != session.username
+                } else {
+                    true
+                };
+                print!(
+                    "{})   {:2$} ",
+                    c,
+                    if first { &session.username } else { "" },
+                    name_width + 2,
+                );
+                print_session(session);
 
-            println!("\r");
-            prev_name = Some(&session.username);
+                println!("\r");
+                prev_name = Some(&session.username);
+            } else {
+                break;
+            }
         }
-        print!(" --> ");
+        print!(
+            "({}/{}) space: refresh, q: quit, <: prev page, >: next page --> ",
+            self.current_page(),
+            self.total_pages(),
+        );
         std::io::stdout().flush().context(FlushTerminal)?;
 
         Ok(())
     }
 
+    fn idx_to_char(&self, mut i: usize) -> Option<char> {
+        if i >= self.limit() {
+            return None;
+        }
+
+        if i >= 16 {
+            i += 1;
+        }
+
+        #[allow(clippy::cast_possible_truncation)]
+        Some(std::char::from_u32(('a' as u32) + (i as u32)).unwrap())
+    }
+
+    fn char_to_idx(&self, c: char) -> Option<usize> {
+        if c == 'q' {
+            return None;
+        }
+
+        let i = ((c as i32) - ('a' as i32)) as isize;
+        if i < 0 {
+            return None;
+        }
+        #[allow(clippy::cast_sign_loss)]
+        let mut i = i as usize;
+
+        if i > 16 {
+            i -= 1;
+        }
+
+        if i > self.limit() {
+            return None;
+        }
+
+        Some(i)
+    }
+
     fn id_for(&self, c: char) -> Option<&str> {
-        self.sessions.get(&c).map(|s| s.id.as_ref())
+        self.char_to_idx(c).and_then(|i| {
+            self.sessions.get(i + self.offset).map(|s| s.id.as_ref())
+        })
+    }
+
+    fn next_page(&mut self) {
+        let inc = self.limit();
+        if self.offset + inc < self.sessions.len() {
+            self.offset += inc;
+        }
+    }
+
+    fn prev_page(&mut self) {
+        let dec = self.limit();
+        if self.offset >= dec {
+            self.offset -= dec;
+        }
+    }
+
+    fn current_page(&self) -> usize {
+        self.offset / self.limit() + 1
+    }
+
+    fn total_pages(&self) -> usize {
+        if self.sessions.is_empty() {
+            1
+        } else {
+            (self.sessions.len() - 1) / self.limit() + 1
+        }
+    }
+
+    fn limit(&self) -> usize {
+        let rows = self.size.0;
+        let limit = rows as usize - 6;
+        if limit > 25 {
+            25
+        } else {
+            limit
+        }
     }
 }
 
@@ -258,7 +340,7 @@ impl WatchSession {
     ];
 
     fn poll_input(&mut self) -> Result<crate::component_future::Poll<()>> {
-        match &self.state {
+        match &mut self.state {
             State::LoggingIn => {
                 Ok(crate::component_future::Poll::NothingToDo)
             }
@@ -281,10 +363,21 @@ impl WatchSession {
                                 );
                             }
                             crossterm::InputEvent::Keyboard(
+                                crossterm::KeyEvent::Char('<'),
+                            ) => {
+                                sessions.prev_page();
+                                sessions.print()?;
+                            }
+                            crossterm::InputEvent::Keyboard(
+                                crossterm::KeyEvent::Char('>'),
+                            ) => {
+                                sessions.next_page();
+                                sessions.print()?;
+                            }
+                            crossterm::InputEvent::Keyboard(
                                 crossterm::KeyEvent::Char(c),
                             ) => {
                                 if let Some(id) = sessions.id_for(c) {
-                                    clear()?;
                                     let client = crate::client::Client::watch(
                                         &self.address,
                                         &self.username,
@@ -294,6 +387,7 @@ impl WatchSession {
                                     self.state = State::Watching {
                                         client: Box::new(client),
                                     };
+                                    clear()?;
                                 }
                             }
                             _ => {}
@@ -357,7 +451,7 @@ impl WatchSession {
                                 .context(ToAlternateScreen)?
                         };
 
-                        let sessions = SortedSessions::new(sessions);
+                        let sessions = SortedSessions::new(sessions)?;
 
                         self.state = State::Choosing {
                             sessions,

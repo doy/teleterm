@@ -211,7 +211,7 @@ struct WatchSession {
     key_reader: crate::keyreader::KeyReader,
     list_client: crate::client::Client,
     state: State,
-    _raw_screen: crossterm::RawScreen,
+    raw_screen: Option<crossterm::RawScreen>,
 }
 
 impl WatchSession {
@@ -237,8 +237,7 @@ impl WatchSession {
             .context(KeyReader)?,
             list_client,
             state: State::LoggingIn,
-            _raw_screen: crossterm::RawScreen::into_raw_mode()
-                .context(IntoRawMode)?,
+            raw_screen: None,
         })
     }
 }
@@ -453,6 +452,11 @@ impl futures::future::Future for WatchSession {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
+        if self.raw_screen.is_none() {
+            self.raw_screen = Some(
+                crossterm::RawScreen::into_raw_mode().context(IntoRawMode)?,
+            );
+        }
         crate::component_future::poll_future(self, Self::POLL_FNS)
     }
 }

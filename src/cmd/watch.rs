@@ -234,6 +234,12 @@ impl WatchSession {
             raw_screen: None,
         })
     }
+
+    fn reconnect(&mut self) {
+        self.state = State::LoggingIn;
+        self.list_client
+            .send_message(crate::protocol::Message::list_sessions());
+    }
 }
 
 impl WatchSession {
@@ -307,10 +313,7 @@ impl WatchSession {
                             crossterm::InputEvent::Keyboard(
                                 crossterm::KeyEvent::Char('q'),
                             ) => {
-                                self.state = State::LoggingIn;
-                                self.list_client.send_message(
-                                    crate::protocol::Message::list_sessions(),
-                                );
+                                self.reconnect();
                             }
                             _ => {}
                         }
@@ -331,10 +334,7 @@ impl WatchSession {
         match self.list_client.poll().context(Client)? {
             futures::Async::Ready(Some(e)) => match e {
                 crate::client::Event::Reconnect => {
-                    self.state = State::LoggingIn;
-                    self.list_client.send_message(
-                        crate::protocol::Message::list_sessions(),
-                    );
+                    self.reconnect();
                     Ok(crate::component_future::Poll::DidWork)
                 }
                 crate::client::Event::ServerMessage(msg) => match msg {
@@ -398,7 +398,8 @@ impl WatchSession {
                         Ok(crate::component_future::Poll::DidWork)
                     }
                     crate::protocol::Message::Disconnected => {
-                        Ok(crate::component_future::Poll::Event(()))
+                        self.reconnect();
+                        Ok(crate::component_future::Poll::DidWork)
                     }
                     crate::protocol::Message::Error { msg } => {
                         eprintln!("server error: {}", msg);

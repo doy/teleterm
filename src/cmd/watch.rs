@@ -377,6 +377,19 @@ impl WatchSession {
                 }
                 crate::client::Event::ServerMessage(msg) => match msg {
                     crate::protocol::Message::TerminalOutput { data } => {
+                        let data: Vec<_> = data
+                            .iter()
+                            // replace \n with \r\n since we're writing to a
+                            // raw terminal
+                            .fold(vec![], |mut acc, &c| {
+                                if c == b'\n' {
+                                    acc.push(b'\r');
+                                    acc.push(b'\n');
+                                } else {
+                                    acc.push(c);
+                                }
+                                acc
+                            });
                         // TODO async
                         let stderr = std::io::stderr();
                         let mut stderr = stderr.lock();

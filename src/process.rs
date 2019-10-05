@@ -255,18 +255,6 @@ impl Process {
         match self.pty.poll_read(&mut self.buf) {
             Ok(futures::Async::Ready(n)) => {
                 let bytes = self.buf[..n].to_vec();
-                let bytes: Vec<_> = bytes
-                    .iter()
-                    // replace \n with \r\n
-                    .fold(vec![], |mut acc, &c| {
-                        if c == b'\n' {
-                            acc.push(b'\r');
-                            acc.push(b'\n');
-                        } else {
-                            acc.push(c);
-                        }
-                        acc
-                    });
                 Ok(crate::component_future::Poll::Event(Event::Output(bytes)))
             }
             Ok(futures::Async::NotReady) => {

@@ -650,7 +650,7 @@ mod test {
     fn test_read_write_async() {
         let (wres, rres) = tokio::sync::mpsc::channel(1);
         let wres2 = wres.clone();
-        let buf = std::io::Cursor::new(vec![0; 1024]);
+        let buf = std::io::Cursor::new(vec![]);
         let msg = Message::login("doy", "screen", (80, 24));
         let fut = msg
             .write_async(FramedWriter::new(buf))

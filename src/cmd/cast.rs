@@ -114,7 +114,7 @@ fn run_impl(
 
 struct CastSession {
     client: crate::client::Client,
-    process: crate::process::Process,
+    process: crate::process::Process<crate::async_stdin::Stdin>,
     stdout: tokio::io::Stdout,
     winches:
         Box<dyn futures::stream::Stream<Item = (), Error = Error> + Send>,
@@ -140,8 +140,13 @@ impl CastSession {
             username,
             heartbeat_duration,
         );
+        // TODO: tokio::io::stdin is broken (it's blocking)
+        // see https://github.com/tokio-rs/tokio/issues/589
+        // let input = tokio::io::stdin();
+        let input = crate::async_stdin::Stdin::new();
+
         let process =
-            crate::process::Process::new(cmd, args).context(Spawn)?;
+            crate::process::Process::new(cmd, args, input).context(Spawn)?;
         let winches = tokio_signal::unix::Signal::new(
             tokio_signal::unix::libc::SIGWINCH,
         )

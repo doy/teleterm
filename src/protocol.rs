@@ -519,7 +519,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_serde() {
+    fn test_serialize_deserialize() {
         let msg = Message::login("doy", "screen", (80, 24));
         let packet = Packet::from(&msg);
         let msg2 = Message::try_from(packet).unwrap();
@@ -575,6 +575,76 @@ mod test {
         let msg = Message::resize((81, 25));
         let packet = Packet::from(&msg);
         let msg2 = Message::try_from(packet).unwrap();
+        assert_eq!(msg, msg2);
+    }
+
+    #[test]
+    fn test_read_write() {
+        let mut buf = vec![];
+        let msg = Message::login("doy", "screen", (80, 24));
+        msg.write(&mut buf).unwrap();
+        let msg2 = Message::read(buf.as_slice()).unwrap();
+        assert_eq!(msg, msg2);
+
+        let mut buf = vec![];
+        let msg = Message::start_casting();
+        msg.write(&mut buf).unwrap();
+        let msg2 = Message::read(buf.as_slice()).unwrap();
+        assert_eq!(msg, msg2);
+
+        let mut buf = vec![];
+        let msg = Message::start_watching("some-session-id");
+        msg.write(&mut buf).unwrap();
+        let msg2 = Message::read(buf.as_slice()).unwrap();
+        assert_eq!(msg, msg2);
+
+        let mut buf = vec![];
+        let msg = Message::heartbeat();
+        msg.write(&mut buf).unwrap();
+        let msg2 = Message::read(buf.as_slice()).unwrap();
+        assert_eq!(msg, msg2);
+
+        let mut buf = vec![];
+        let msg = Message::terminal_output(b"foobar");
+        msg.write(&mut buf).unwrap();
+        let msg2 = Message::read(buf.as_slice()).unwrap();
+        assert_eq!(msg, msg2);
+
+        let mut buf = vec![];
+        let msg = Message::list_sessions();
+        msg.write(&mut buf).unwrap();
+        let msg2 = Message::read(buf.as_slice()).unwrap();
+        assert_eq!(msg, msg2);
+
+        let mut buf = vec![];
+        let msg = Message::sessions(&[Session {
+            id: "some-session-id".to_string(),
+            username: "doy".to_string(),
+            term_type: "screen".to_string(),
+            size: (80, 24),
+            idle_time: 123,
+            title: "it's my terminal title".to_string(),
+        }]);
+        msg.write(&mut buf).unwrap();
+        let msg2 = Message::read(buf.as_slice()).unwrap();
+        assert_eq!(msg, msg2);
+
+        let mut buf = vec![];
+        let msg = Message::disconnected();
+        msg.write(&mut buf).unwrap();
+        let msg2 = Message::read(buf.as_slice()).unwrap();
+        assert_eq!(msg, msg2);
+
+        let mut buf = vec![];
+        let msg = Message::error("error message");
+        msg.write(&mut buf).unwrap();
+        let msg2 = Message::read(buf.as_slice()).unwrap();
+        assert_eq!(msg, msg2);
+
+        let mut buf = vec![];
+        let msg = Message::resize((81, 25));
+        msg.write(&mut buf).unwrap();
+        let msg2 = Message::read(buf.as_slice()).unwrap();
         assert_eq!(msg, msg2);
     }
 }

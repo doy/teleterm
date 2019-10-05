@@ -31,6 +31,12 @@ pub enum Error {
     #[snafu(display("unauthenticated message: {:?}", message))]
     UnauthenticatedMessage { message: crate::protocol::Message },
 
+    #[snafu(display(
+        "terminal must be smaller than 1000 rows or columns (got {}x{})",
+        size.0, size.1
+    ))]
+    TermTooBig { size: (u32, u32) },
+
     #[snafu(display("invalid watch id: {}", id))]
     InvalidWatchId { id: String },
 }
@@ -288,6 +294,9 @@ impl Server {
                 size,
                 ..
             } => {
+                if size.0 >= 1000 || size.1 >= 1000 {
+                    return Err(Error::TermTooBig { size });
+                }
                 println!("got a connection from {}", username);
                 conn.state = conn.state.login(&username, &term_type, size);
                 Ok(())

@@ -231,17 +231,16 @@ impl Process {
 
         let (a, b) = self.input_buf.as_slices();
         let buf = if a.is_empty() { b } else { a };
-        match self.pty.poll_write(buf) {
-            Ok(futures::Async::Ready(n)) => {
+        match self.pty.poll_write(buf).context(WriteToPty)? {
+            futures::Async::Ready(n) => {
                 for _ in 0..n {
                     self.input_buf.pop_front();
                 }
                 Ok(crate::component_future::Poll::DidWork)
             }
-            Ok(futures::Async::NotReady) => {
+            futures::Async::NotReady => {
                 Ok(crate::component_future::Poll::NotReady)
             }
-            Err(e) => Err(e).context(WriteToPty),
         }
     }
 
@@ -252,15 +251,14 @@ impl Process {
             return Ok(crate::component_future::Poll::NothingToDo);
         }
 
-        match self.pty.poll_read(&mut self.buf) {
-            Ok(futures::Async::Ready(n)) => {
+        match self.pty.poll_read(&mut self.buf).context(ReadFromPty)? {
+            futures::Async::Ready(n) => {
                 let bytes = self.buf[..n].to_vec();
                 Ok(crate::component_future::Poll::Event(Event::Output(bytes)))
             }
-            Ok(futures::Async::NotReady) => {
+            futures::Async::NotReady => {
                 Ok(crate::component_future::Poll::NotReady)
             }
-            Err(e) => Err(e).context(ReadFromPty),
         }
     }
 
@@ -271,17 +269,16 @@ impl Process {
             return Ok(crate::component_future::Poll::Done);
         }
 
-        match self.process.poll().context(ProcessExitPoll) {
-            Ok(futures::Async::Ready(status)) => {
+        match self.process.poll().context(ProcessExitPoll)? {
+            futures::Async::Ready(status) => {
                 self.exited = true;
                 Ok(crate::component_future::Poll::Event(Event::CommandExit(
                     status,
                 )))
             }
-            Ok(futures::Async::NotReady) => {
+            futures::Async::NotReady => {
                 Ok(crate::component_future::Poll::NotReady)
             }
-            Err(e) => Err(e),
         }
     }
 }

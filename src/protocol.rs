@@ -27,6 +27,20 @@ pub enum Error {
         source: std::array::TryFromSliceError,
     },
 
+    #[snafu(display(
+        "packet length must be at least {} bytes (got {})",
+        expected,
+        len
+    ))]
+    LenTooSmall { len: u32, expected: usize },
+
+    #[snafu(display(
+        "packet length must be at most {} bytes (got {})",
+        expected,
+        len
+    ))]
+    LenTooBig { len: u32, expected: usize },
+
     #[snafu(display("failed to parse string: {:?}", data))]
     ExtraMessageData { data: Vec<u8> },
 
@@ -217,8 +231,14 @@ impl Packet {
         let mut len_buf = [0_u8; std::mem::size_of::<u32>()];
         r.read_exact(&mut len_buf).context(Read)?;
         let len = u32::from_be_bytes(len_buf.try_into().unwrap());
+        if (len as usize) < std::mem::size_of::<u32>() {
+            return Err(Error::LenTooSmall {
+                len,
+                expected: std::mem::size_of::<u32>(),
+            });
+        }
 
-        let mut data = vec![0_u8; len.try_into().unwrap()];
+        let mut data = vec![0_u8; len as usize];
         r.read_exact(&mut data).context(Read)?;
         let (ty_buf, rest) = data.split_at(std::mem::size_of::<u32>());
         let ty = u32::from_be_bytes(ty_buf.try_into().unwrap());
@@ -239,12 +259,18 @@ impl Packet {
                 Some(data) => Ok((data, r)),
                 None => Err(Error::EOF),
             })
-            .map(|(buf, r)| {
+            .and_then(|(buf, r)| {
+                if buf.len() < std::mem::size_of::<u32>() {
+                    return Err(Error::LenTooSmall {
+                        len: buf.len().try_into().unwrap(),
+                        expected: std::mem::size_of::<u32>(),
+                    });
+                }
                 let (ty_buf, data_buf) =
                     buf.split_at(std::mem::size_of::<u32>());
                 let ty = u32::from_be_bytes(ty_buf.try_into().unwrap());
                 let data = data_buf.to_vec();
-                (Self { ty, data }, FramedReader(r))
+                Ok((Self { ty, data }, FramedReader(r)))
             })
     }
 
@@ -280,7 +306,6 @@ impl Packet {
 impl From<&Message> for Packet {
     fn from(msg: &Message) -> Self {
         fn u32_from_usize(n: usize) -> u32 {
-            // XXX this can actually panic
             n.try_into().unwrap()
         }
         fn write_u32(val: u32, data: &mut Vec<u8>) {
@@ -405,13 +430,25 @@ impl std::convert::TryFrom<Packet> for Message {
 
     fn try_from(packet: Packet) -> Result<Self> {
         fn read_u32(data: &[u8]) -> Result<(u32, &[u8])> {
+            if std::mem::size_of::<u32>() > data.len() {
+                return Err(Error::LenTooBig {
+                    len: std::mem::size_of::<u32>().try_into().unwrap(),
+                    expected: data.len(),
+                });
+            }
             let (buf, rest) = data.split_at(std::mem::size_of::<u32>());
             let val = u32::from_be_bytes(buf.try_into().context(ParseInt)?);
             Ok((val, rest))
         }
         fn read_bytes(data: &[u8]) -> Result<(Vec<u8>, &[u8])> {
             let (len, data) = read_u32(data)?;
-            let (buf, rest) = data.split_at(len.try_into().unwrap());
+            if len as usize > data.len() {
+                return Err(Error::LenTooBig {
+                    len,
+                    expected: data.len(),
+                });
+            }
+            let (buf, rest) = data.split_at(len as usize);
             let val = buf.to_vec();
             Ok((val, rest))
         }

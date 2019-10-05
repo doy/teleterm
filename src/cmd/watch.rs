@@ -154,7 +154,7 @@ impl SortedSessions {
 
         clear()?;
         println!("welcome to shellshare\r");
-        println!("available sessions:\r");
+        println!("available sessions: (space to refresh, q to quit)\r");
         println!("\r");
         println!(
             "   | {:3$} | {:7} | {:13} | title\r",

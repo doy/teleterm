@@ -391,9 +391,10 @@ impl WatchSession {
                                 acc
                             });
                         // TODO async
-                        let stderr = std::io::stderr();
-                        let mut stderr = stderr.lock();
-                        stderr.write(&data).context(WriteTerminal)?;
+                        let stdout = std::io::stdout();
+                        let mut stdout = stdout.lock();
+                        stdout.write(&data).context(WriteTerminal)?;
+                        stdout.flush().context(FlushTerminal)?;
                         Ok(crate::component_future::Poll::DidWork)
                     }
                     crate::protocol::Message::Disconnected => {

@@ -1,3 +1,4 @@
+use futures::sink::Sink as _;
 use snafu::ResultExt as _;
 
 #[derive(Debug, snafu::Snafu)]
@@ -24,8 +25,8 @@ pub struct KeyReader {
 impl KeyReader {
     pub fn new(task: futures::task::Task) -> Result<Self> {
         let reader = crossterm::input().read_sync();
-        let (mut events_tx, events_rx) =
-            tokio::sync::mpsc::unbounded_channel();
+        let (events_tx, events_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut events_tx = events_tx.wait();
         let (quit_tx, mut quit_rx) = tokio::sync::oneshot::channel();
         // TODO: this is pretty janky - it'd be better to build in more useful
         // support to crossterm directly
@@ -34,7 +35,7 @@ impl KeyReader {
                 for event in reader {
                     // unwrap is unpleasant, but so is figuring out how to
                     // propagate the error back to the main thread
-                    events_tx.try_send(event).unwrap();
+                    events_tx.send(event).unwrap();
                     task.notify();
                     if quit_rx.try_recv().is_ok() {
                         break;

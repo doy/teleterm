@@ -73,6 +73,7 @@ pub struct Process {
     buf: Vec<u8>,
     started: bool,
     exited: bool,
+    needs_resize: Option<(u16, u16)>,
 }
 
 impl Process {
@@ -89,7 +90,12 @@ impl Process {
         // let input = tokio::io::stdin();
         let input = tokio::reactor::PollEvented2::new(EventedStdin);
 
-        let self_ = Self {
+        let (cols, rows) = crossterm::terminal()
+            .size()
+            .context(crate::error::GetTerminalSize)
+            .context(Common)?;
+
+        Ok(Self {
             pty,
             process,
             input,
@@ -99,27 +105,12 @@ impl Process {
             buf: vec![0; 4096],
             started: false,
             exited: false,
-        };
-
-        let (cols, rows) = crossterm::terminal()
-            .size()
-            .context(crate::error::GetTerminalSize)
-            .context(Common)?;
-        self_.resize(rows, cols)?;
-
-        Ok(self_)
+            needs_resize: Some((rows, cols)),
+        })
     }
 
-    pub fn resize(&self, rows: u16, cols: u16) -> Result<()> {
-        Resizer {
-            rows,
-            cols,
-            pty: &self.pty,
-        }
-        .wait()
-        .context(ResizePty)?;
-
-        Ok(())
+    pub fn resize(&mut self, rows: u16, cols: u16) {
+        self.needs_resize = Some((rows, cols));
     }
 }
 
@@ -132,12 +123,36 @@ impl Process {
         // order is important here - checking command_exit first so that we
         // don't try to read from a process that has already exited, which
         // causes an error
+        &Self::poll_resize,
         &Self::poll_command_start,
         &Self::poll_command_exit,
         &Self::poll_read_stdin,
         &Self::poll_write_stdin,
         &Self::poll_read_stdout,
     ];
+
+    fn poll_resize(
+        &mut self,
+    ) -> Result<crate::component_future::Poll<Event>> {
+        if let Some((rows, cols)) = self.needs_resize {
+            let mut resizer = Resizer {
+                rows,
+                cols,
+                pty: &self.pty,
+            };
+            match resizer.poll().context(ResizePty)? {
+                futures::Async::Ready(()) => {
+                    self.needs_resize = None;
+                    Ok(crate::component_future::Poll::DidWork)
+                }
+                futures::Async::NotReady => {
+                    Ok(crate::component_future::Poll::NotReady)
+                }
+            }
+        } else {
+            Ok(crate::component_future::Poll::NothingToDo)
+        }
+    }
 
     fn poll_command_start(
         &mut self,

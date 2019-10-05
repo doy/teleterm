@@ -26,9 +26,6 @@ pub enum Error {
 
     #[snafu(display("SIGWINCH handler failed: {}", source))]
     SigWinchHandler { source: std::io::Error },
-
-    #[snafu(display("failed to resize pty: {}", source))]
-    ResizeTerminal { source: crate::process::Error },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -325,7 +322,7 @@ impl CastSession {
                     .size()
                     .context(crate::error::GetTerminalSize)
                     .context(Common)?;
-                self.process.resize(rows, cols).context(ResizeTerminal)?;
+                self.process.resize(rows, cols);
                 self.client.send_message(crate::protocol::Message::resize((
                     u32::from(cols),
                     u32::from(rows),

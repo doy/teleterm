@@ -22,7 +22,10 @@ pub fn poll_future<T, Item, Error>(
         Poll<Item>,
         Error,
     >],
-) -> futures::Poll<Item, Error> {
+) -> futures::Poll<Item, Error>
+where
+    T: futures::future::Future<Item = Item, Error = Error>,
+{
     loop {
         let mut not_ready = false;
         let mut did_work = false;
@@ -55,7 +58,10 @@ pub fn poll_stream<T, Item, Error>(
         Poll<Item>,
         Error,
     >],
-) -> futures::Poll<Option<Item>, Error> {
+) -> futures::Poll<Option<Item>, Error>
+where
+    T: futures::stream::Stream<Item = Item, Error = Error>,
+{
     loop {
         let mut not_ready = false;
         let mut did_work = false;

@@ -34,12 +34,6 @@ pub enum Error {
 
     #[snafu(display("failed to poll for process exit: {}", source))]
     ProcessExitPoll { source: std::io::Error },
-
-    #[snafu(display(
-        "failed to put the terminal into raw mode: {}",
-        source
-    ))]
-    IntoRawMode { source: crossterm::ErrorKind },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -299,7 +293,9 @@ impl futures::stream::Stream for Process {
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
         if self.manage_screen && self.raw_screen.is_none() {
             self.raw_screen = Some(
-                crossterm::RawScreen::into_raw_mode().context(IntoRawMode)?,
+                crossterm::RawScreen::into_raw_mode()
+                    .context(crate::error::IntoRawMode)
+                    .context(Common)?,
             );
         }
 

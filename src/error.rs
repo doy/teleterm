@@ -10,6 +10,12 @@ pub enum Error {
     #[snafu(display("failed to get terminal size: {}", source))]
     GetTerminalSize { source: crossterm::ErrorKind },
 
+    #[snafu(display(
+        "failed to put the terminal into raw mode: {}",
+        source
+    ))]
+    IntoRawMode { source: crossterm::ErrorKind },
+
     #[snafu(display("failed to parse address: {}", source))]
     ParseAddr { source: std::net::AddrParseError },
 

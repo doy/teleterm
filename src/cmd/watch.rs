@@ -32,12 +32,6 @@ pub enum Error {
     #[snafu(display("received error from server: {}", message))]
     Server { message: String },
 
-    #[snafu(display(
-        "failed to put the terminal into raw mode: {}",
-        source
-    ))]
-    IntoRawMode { source: crossterm::ErrorKind },
-
     #[snafu(display("failed to create key reader: {}", source))]
     KeyReader { source: crate::keyreader::Error },
 }
@@ -454,7 +448,9 @@ impl futures::future::Future for WatchSession {
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
         if self.raw_screen.is_none() {
             self.raw_screen = Some(
-                crossterm::RawScreen::into_raw_mode().context(IntoRawMode)?,
+                crossterm::RawScreen::into_raw_mode()
+                    .context(crate::error::IntoRawMode)
+                    .context(Common)?,
             );
         }
         crate::component_future::poll_future(self, Self::POLL_FNS)

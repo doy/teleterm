@@ -67,11 +67,6 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             .spawn_pty_async(&pty)
             .context(SpawnProcess { cmd })?;
 
-        let (cols, rows) = crossterm::terminal()
-            .size()
-            .context(crate::error::GetTerminalSize)
-            .context(Common)?;
-
         Ok(Self {
             pty,
             process,
@@ -82,7 +77,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             buf: vec![0; 4096],
             started: false,
             exited: false,
-            needs_resize: Some((rows, cols)),
+            needs_resize: None,
         })
     }
 

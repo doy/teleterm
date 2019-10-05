@@ -140,19 +140,27 @@ impl CastSession {
             username,
             heartbeat_duration,
         );
+
         // TODO: tokio::io::stdin is broken (it's blocking)
         // see https://github.com/tokio-rs/tokio/issues/589
         // let input = tokio::io::stdin();
         let input = crate::async_stdin::Stdin::new();
 
-        let process =
+        let mut process =
             crate::process::Process::new(cmd, args, input).context(Spawn)?;
+        let (cols, rows) = crossterm::terminal()
+            .size()
+            .context(crate::error::GetTerminalSize)
+            .context(Common)?;
+        process.resize(rows, cols);
+
         let winches = tokio_signal::unix::Signal::new(
             tokio_signal::unix::libc::SIGWINCH,
         )
         .flatten_stream()
         .map(|_| ())
         .context(SigWinchHandler);
+
         Ok(Self {
             client,
             process,

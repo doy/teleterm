@@ -133,9 +133,7 @@ impl SortedSessions {
     }
 
     fn print(&self) -> Result<()> {
-        let term = crossterm::terminal();
-        term.clear(crossterm::ClearType::All)
-            .context(WriteTerminalCrossterm)?;
+        clear()?;
 
         let name_width =
             self.sessions.iter().map(|(_, s)| s.username.len()).max();
@@ -271,7 +269,7 @@ impl WatchSession {
                             crossterm::InputEvent::Keyboard(
                                 crossterm::KeyEvent::Char('q'),
                             ) => {
-                                println!("\r");
+                                clear()?;
                                 return Ok(
                                     crate::component_future::Poll::Event(()),
                                 );
@@ -280,9 +278,7 @@ impl WatchSession {
                                 crossterm::KeyEvent::Char(c),
                             ) => {
                                 if let Some(id) = sessions.id_for(c) {
-                                    let term = crossterm::terminal();
-                                    term.clear(crossterm::ClearType::All)
-                                        .context(WriteTerminalCrossterm)?;
+                                    clear()?;
                                     let client = crate::client::Client::watch(
                                         &self.address,
                                         &self.username,
@@ -452,6 +448,12 @@ fn format_time(dur: u32) -> String {
 
     let days = dur;
     format!("{}d{}h{}m{}s", days, hours, mins, secs)
+}
+
+fn clear() -> Result<()> {
+    let term = crossterm::terminal();
+    term.clear(crossterm::ClearType::All)
+        .context(WriteTerminalCrossterm)
 }
 
 #[must_use = "futures do nothing unless polled"]

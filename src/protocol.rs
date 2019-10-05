@@ -513,8 +513,6 @@ impl std::convert::TryFrom<Packet> for Message {
 }
 
 #[cfg(test)]
-#[allow(clippy::cognitive_complexity)]
-#[allow(clippy::shadow_unrelated)]
 mod test {
     use super::*;
 

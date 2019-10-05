@@ -65,6 +65,7 @@ pub struct Process {
     pty: tokio_pty_process::AsyncPtyMaster,
     process: tokio_pty_process::Child,
     // TODO: tokio::io::Stdin is broken
+    // see https://github.com/tokio-rs/tokio/issues/589
     // input: tokio::io::Stdin,
     input: tokio::reactor::PollEvented2<EventedStdin>,
     input_buf: std::collections::VecDeque<u8>,
@@ -87,6 +88,7 @@ impl Process {
             .context(SpawnProcess { cmd })?;
 
         // TODO: tokio::io::stdin is broken (it's blocking)
+        // see https://github.com/tokio-rs/tokio/issues/589
         // let input = tokio::io::stdin();
         let input = tokio::reactor::PollEvented2::new(EventedStdin);
 

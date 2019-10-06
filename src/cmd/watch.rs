@@ -8,6 +8,9 @@ pub enum Error {
     #[snafu(display("{}", source))]
     Common { source: crate::error::Error },
 
+    #[snafu(display("{}", source))]
+    Resize { source: crate::term::Error },
+
     #[snafu(display("failed to read message: {}", source))]
     Read { source: crate::protocol::Error },
 
@@ -91,7 +94,7 @@ fn run_impl(username: &str, address: &str) -> Result<()> {
 struct SortedSessions {
     sessions: Vec<crate::protocol::Session>,
     offset: usize,
-    size: (u16, u16),
+    size: crate::term::Size,
 }
 
 impl SortedSessions {
@@ -127,22 +130,17 @@ impl SortedSessions {
             }
         }
 
-        let (cols, rows) = crossterm::terminal()
-            .size()
-            .context(crate::error::GetTerminalSize)
-            .context(Common)?;
-
         Ok(Self {
             sessions: keymap,
             offset: 0,
-            size: (rows, cols),
+            size: crate::term::Size::get().context(Resize)?,
         })
     }
 
     fn print(&self) -> Result<()> {
         let char_width = 2;
 
-        let max_name_width = (self.size.1 / 3) as usize;
+        let max_name_width = (self.size.cols / 3) as usize;
         let name_width = self
             .sessions
             .iter()
@@ -166,7 +164,7 @@ impl SortedSessions {
         let idle_width = format_time(max_idle_time).len();
         let idle_width = if idle_width < 4 { 4 } else { idle_width };
 
-        let max_title_width = (self.size.1 as usize)
+        let max_title_width = (self.size.cols as usize)
             - char_width
             - 3
             - name_width
@@ -191,7 +189,7 @@ impl SortedSessions {
             size_width,
             idle_width
         );
-        println!("{}\r", "-".repeat(self.size.1 as usize));
+        println!("{}\r", "-".repeat(self.size.cols as usize));
 
         let mut prev_name: Option<&str> = None;
         for (i, session) in self.sessions.iter().skip(self.offset).enumerate()
@@ -209,8 +207,7 @@ impl SortedSessions {
                 } else {
                     "".to_string()
                 };
-                let display_size =
-                    format!("{}x{}", session.size.0, session.size.1);
+                let display_size = &session.size;
                 let display_idle = format_time(session.idle_time);
                 let display_title = truncate(&session.title, max_title_width);
 
@@ -311,8 +308,7 @@ impl SortedSessions {
     }
 
     fn limit(&self) -> usize {
-        let rows = self.size.0;
-        let limit = rows as usize - 6;
+        let limit = self.size.rows as usize - 6;
         if limit > 25 {
             25
         } else {

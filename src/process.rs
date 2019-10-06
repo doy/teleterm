@@ -1,21 +1,21 @@
 use futures::future::Future as _;
 use snafu::ResultExt as _;
 use tokio::io::{AsyncRead as _, AsyncWrite as _};
-use tokio_pty_process::{CommandExt as _, PtyMaster as _};
+use tokio_pty_process::CommandExt as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
     #[snafu(display("{}", source))]
     Common { source: crate::error::Error },
 
+    #[snafu(display("{}", source))]
+    Resize { source: crate::term::Error },
+
     #[snafu(display("failed to open a pty: {}", source))]
     OpenPty { source: std::io::Error },
 
     #[snafu(display("failed to spawn process for `{}`: {}", cmd, source))]
     SpawnProcess { cmd: String, source: std::io::Error },
-
-    #[snafu(display("failed to resize pty: {}", source))]
-    ResizePty { source: std::io::Error },
 
     #[snafu(display("failed to read from pty: {}", source))]
     ReadFromPty { source: std::io::Error },
@@ -55,7 +55,7 @@ pub struct Process<R: tokio::io::AsyncRead> {
     buf: Vec<u8>,
     started: bool,
     exited: bool,
-    needs_resize: Option<(u16, u16)>,
+    needs_resize: Option<crate::term::Size>,
     stdin_closed: bool,
     stdout_closed: bool,
 }
@@ -86,8 +86,8 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
         })
     }
 
-    pub fn resize(&mut self, rows: u16, cols: u16) {
-        self.needs_resize = Some((rows, cols));
+    pub fn resize(&mut self, size: crate::term::Size) {
+        self.needs_resize = Some(size);
     }
 }
 
@@ -111,8 +111,8 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
     fn poll_resize(
         &mut self,
     ) -> Result<crate::component_future::Poll<Event>> {
-        if let Some((rows, cols)) = self.needs_resize {
-            match self.pty.resize(rows, cols).context(ResizePty)? {
+        if let Some(size) = &self.needs_resize {
+            match size.resize_pty(&self.pty).context(Resize)? {
                 futures::Async::Ready(()) => {
                     self.needs_resize = None;
                     Ok(crate::component_future::Poll::DidWork)

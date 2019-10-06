@@ -7,9 +7,6 @@ pub enum Error {
     #[snafu(display("couldn't find username"))]
     CouldntFindUsername,
 
-    #[snafu(display("failed to get terminal size: {}", source))]
-    GetTerminalSize { source: crossterm::ErrorKind },
-
     #[snafu(display(
         "failed to put the terminal into raw mode: {}",
         source

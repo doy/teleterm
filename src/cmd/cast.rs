@@ -191,9 +191,9 @@ impl CastSession {
     ) -> Result<crate::component_future::Poll<()>> {
         match self.client.poll().context(Client) {
             Ok(futures::Async::Ready(Some(e))) => match e {
-                crate::client::Event::Reconnect((rows, cols)) => {
+                crate::client::Event::Reconnect(size) => {
                     self.sent_remote = 0;
-                    self.process.resize(rows, cols);
+                    self.process.resize(size);
                     Ok(crate::component_future::Poll::DidWork)
                 }
                 crate::client::Event::ServerMessage(..) => {
@@ -203,8 +203,8 @@ impl CastSession {
                     self.client.reconnect();
                     Ok(crate::component_future::Poll::DidWork)
                 }
-                crate::client::Event::Resize((rows, cols)) => {
-                    self.process.resize(rows, cols);
+                crate::client::Event::Resize(size) => {
+                    self.process.resize(size);
                     Ok(crate::component_future::Poll::DidWork)
                 }
             },

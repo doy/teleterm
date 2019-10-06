@@ -32,10 +32,10 @@ pub enum Error {
     UnauthenticatedMessage { message: crate::protocol::Message },
 
     #[snafu(display(
-        "terminal must be smaller than 1000 rows or columns (got {}x{})",
-        size.0, size.1
+        "terminal must be smaller than 1000 rows or columns (got {})",
+        size
     ))]
-    TermTooBig { size: (u32, u32) },
+    TermTooBig { size: crate::term::Size },
 
     #[snafu(display("invalid watch id: {}", id))]
     InvalidWatchId { id: String },
@@ -85,7 +85,7 @@ enum WriteSocket {
 #[derive(Debug, Clone)]
 struct TerminalInfo {
     term: String,
-    size: (u32, u32),
+    size: crate::term::Size,
 }
 
 // XXX https://github.com/rust-lang/rust/issues/64362
@@ -117,14 +117,14 @@ impl ConnectionState {
         &self,
         username: &str,
         term_type: &str,
-        size: (u32, u32),
+        size: &crate::term::Size,
     ) -> Self {
         match self {
             Self::Accepted => Self::LoggedIn {
                 username: username.to_string(),
                 term_info: TerminalInfo {
                     term: term_type.to_string(),
-                    size,
+                    size: size.clone(),
                 },
             },
             _ => unreachable!(),
@@ -221,7 +221,7 @@ impl Connection {
             id: self.id.clone(),
             username: username.clone(),
             term_type: term_info.term.clone(),
-            size: term_info.size,
+            size: term_info.size.clone(),
             idle_time: std::time::Instant::now()
                 .duration_since(self.last_activity)
                 .as_secs() as u32,
@@ -294,11 +294,11 @@ impl Server {
                 size,
                 ..
             } => {
-                if size.0 >= 1000 || size.1 >= 1000 {
+                if size.rows >= 1000 || size.cols >= 1000 {
                     return Err(Error::TermTooBig { size });
                 }
                 println!("got a connection from {}", username);
-                conn.state = conn.state.login(&username, &term_type, size);
+                conn.state = conn.state.login(&username, &term_type, &size);
                 Ok(())
             }
             m => Err(Error::UnauthenticatedMessage { message: m }),

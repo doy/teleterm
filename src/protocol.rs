@@ -58,7 +58,7 @@ pub struct Session {
     pub id: String,
     pub username: String,
     pub term_type: String,
-    pub size: (u32, u32),
+    pub size: crate::term::Size,
     pub idle_time: u32,
     pub title: String,
 }
@@ -107,7 +107,7 @@ pub enum Message {
         proto_version: u32,
         username: String,
         term_type: String,
-        size: (u32, u32),
+        size: crate::term::Size,
     },
     StartCasting,
     StartWatching {
@@ -126,7 +126,7 @@ pub enum Message {
         msg: String,
     },
     Resize {
-        size: (u32, u32),
+        size: crate::term::Size,
     },
 }
 
@@ -142,12 +142,16 @@ const MSG_ERROR: u32 = 8;
 const MSG_RESIZE: u32 = 9;
 
 impl Message {
-    pub fn login(username: &str, term_type: &str, size: (u32, u32)) -> Self {
+    pub fn login(
+        username: &str,
+        term_type: &str,
+        size: &crate::term::Size,
+    ) -> Self {
         Self::Login {
             proto_version: PROTO_VERSION,
             username: username.to_string(),
             term_type: term_type.to_string(),
-            size,
+            size: size.clone(),
         }
     }
 
@@ -189,8 +193,8 @@ impl Message {
         }
     }
 
-    pub fn resize(size: (u32, u32)) -> Self {
-        Self::Resize { size }
+    pub fn resize(size: &crate::term::Size) -> Self {
+        Self::Resize { size: size.clone() }
     }
 
     #[allow(dead_code)]
@@ -311,6 +315,9 @@ impl From<&Message> for Packet {
         fn write_u32(val: u32, data: &mut Vec<u8>) {
             data.extend_from_slice(&val.to_be_bytes());
         }
+        fn write_u16(val: u16, data: &mut Vec<u8>) {
+            data.extend_from_slice(&val.to_be_bytes());
+        }
         fn write_bytes(val: &[u8], data: &mut Vec<u8>) {
             write_u32(u32_from_usize(val.len()), data);
             data.extend_from_slice(val);
@@ -318,12 +325,15 @@ impl From<&Message> for Packet {
         fn write_str(val: &str, data: &mut Vec<u8>) {
             write_bytes(val.as_bytes(), data);
         }
+        fn write_size(val: &crate::term::Size, data: &mut Vec<u8>) {
+            write_u16(val.rows, data);
+            write_u16(val.cols, data);
+        }
         fn write_session(val: &Session, data: &mut Vec<u8>) {
             write_str(&val.id, data);
             write_str(&val.username, data);
             write_str(&val.term_type, data);
-            write_u32(val.size.0, data);
-            write_u32(val.size.1, data);
+            write_size(&val.size, data);
             write_u32(val.idle_time, data);
             write_str(&val.title, data);
         }
@@ -346,8 +356,7 @@ impl From<&Message> for Packet {
                 write_u32(*proto_version, &mut data);
                 write_str(username, &mut data);
                 write_str(term_type, &mut data);
-                write_u32(size.0, &mut data);
-                write_u32(size.1, &mut data);
+                write_size(size, &mut data);
 
                 Self {
                     ty: MSG_LOGIN,
@@ -413,8 +422,7 @@ impl From<&Message> for Packet {
             Message::Resize { size } => {
                 let mut data = vec![];
 
-                write_u32(size.0, &mut data);
-                write_u32(size.1, &mut data);
+                write_size(size, &mut data);
 
                 Self {
                     ty: MSG_RESIZE,
@@ -440,6 +448,17 @@ impl std::convert::TryFrom<Packet> for Message {
             let val = u32::from_be_bytes(buf.try_into().context(ParseInt)?);
             Ok((val, rest))
         }
+        fn read_u16(data: &[u8]) -> Result<(u16, &[u8])> {
+            if std::mem::size_of::<u16>() > data.len() {
+                return Err(Error::LenTooBig {
+                    len: std::mem::size_of::<u16>().try_into().unwrap(),
+                    expected: data.len(),
+                });
+            }
+            let (buf, rest) = data.split_at(std::mem::size_of::<u16>());
+            let val = u16::from_be_bytes(buf.try_into().context(ParseInt)?);
+            Ok((val, rest))
+        }
         fn read_bytes(data: &[u8]) -> Result<(Vec<u8>, &[u8])> {
             let (len, data) = read_u32(data)?;
             if len as usize > data.len() {
@@ -457,12 +476,16 @@ impl std::convert::TryFrom<Packet> for Message {
             let val = String::from_utf8(bytes).context(ParseString)?;
             Ok((val, rest))
         }
+        fn read_size(data: &[u8]) -> Result<(crate::term::Size, &[u8])> {
+            let (rows, data) = read_u16(data)?;
+            let (cols, data) = read_u16(data)?;
+            Ok((crate::term::Size { rows, cols }, data))
+        }
         fn read_session(data: &[u8]) -> Result<(Session, &[u8])> {
             let (id, data) = read_str(data)?;
             let (username, data) = read_str(data)?;
             let (term_type, data) = read_str(data)?;
-            let (cols, data) = read_u32(data)?;
-            let (rows, data) = read_u32(data)?;
+            let (size, data) = read_size(data)?;
             let (idle_time, data) = read_u32(data)?;
             let (title, data) = read_str(data)?;
             Ok((
@@ -470,7 +493,7 @@ impl std::convert::TryFrom<Packet> for Message {
                     id,
                     username,
                     term_type,
-                    size: (cols, rows),
+                    size,
                     idle_time,
                     title,
                 },
@@ -494,15 +517,14 @@ impl std::convert::TryFrom<Packet> for Message {
                 let (proto_version, data) = read_u32(data)?;
                 let (username, data) = read_str(data)?;
                 let (term_type, data) = read_str(data)?;
-                let (cols, data) = read_u32(data)?;
-                let (rows, data) = read_u32(data)?;
+                let (size, data) = read_size(data)?;
 
                 (
                     Self::Login {
                         proto_version,
                         username,
                         term_type,
-                        size: (cols, rows),
+                        size,
                     },
                     data,
                 )
@@ -531,10 +553,9 @@ impl std::convert::TryFrom<Packet> for Message {
                 (Self::Error { msg }, data)
             }
             MSG_RESIZE => {
-                let (cols, data) = read_u32(data)?;
-                let (rows, data) = read_u32(data)?;
+                let (size, data) = read_size(data)?;
 
-                (Self::Resize { size: (cols, rows) }, data)
+                (Self::Resize { size }, data)
             }
             _ => return Err(Error::InvalidMessageType { ty: packet.ty }),
         };
@@ -555,7 +576,11 @@ mod test {
 
     #[test]
     fn test_serialize_deserialize() {
-        let msg = Message::login("doy", "screen", (80, 24));
+        let msg = Message::login(
+            "doy",
+            "screen",
+            &crate::term::Size { rows: 24, cols: 80 },
+        );
         let packet = Packet::from(&msg);
         let msg2 = Message::try_from(packet).unwrap();
         assert_eq!(msg, msg2);
@@ -589,7 +614,7 @@ mod test {
             id: "some-session-id".to_string(),
             username: "doy".to_string(),
             term_type: "screen".to_string(),
-            size: (80, 24),
+            size: crate::term::Size { rows: 24, cols: 80 },
             idle_time: 123,
             title: "it's my terminal title".to_string(),
         }]);
@@ -607,7 +632,7 @@ mod test {
         let msg2 = Message::try_from(packet).unwrap();
         assert_eq!(msg, msg2);
 
-        let msg = Message::resize((81, 25));
+        let msg = Message::resize(&crate::term::Size { rows: 25, cols: 81 });
         let packet = Packet::from(&msg);
         let msg2 = Message::try_from(packet).unwrap();
         assert_eq!(msg, msg2);
@@ -616,7 +641,11 @@ mod test {
     #[test]
     fn test_read_write() {
         let mut buf = vec![];
-        let msg = Message::login("doy", "screen", (80, 24));
+        let msg = Message::login(
+            "doy",
+            "screen",
+            &crate::term::Size { rows: 24, cols: 80 },
+        );
         msg.write(&mut buf).unwrap();
         let msg2 = Message::read(buf.as_slice()).unwrap();
         assert_eq!(msg, msg2);
@@ -656,7 +685,7 @@ mod test {
             id: "some-session-id".to_string(),
             username: "doy".to_string(),
             term_type: "screen".to_string(),
-            size: (80, 24),
+            size: crate::term::Size { rows: 24, cols: 80 },
             idle_time: 123,
             title: "it's my terminal title".to_string(),
         }]);
@@ -677,7 +706,7 @@ mod test {
         assert_eq!(msg, msg2);
 
         let mut buf = vec![];
-        let msg = Message::resize((81, 25));
+        let msg = Message::resize(&crate::term::Size { rows: 25, cols: 81 });
         msg.write(&mut buf).unwrap();
         let msg2 = Message::read(buf.as_slice()).unwrap();
         assert_eq!(msg, msg2);
@@ -688,7 +717,11 @@ mod test {
         let (wres, rres) = tokio::sync::mpsc::channel(1);
         let wres2 = wres.clone();
         let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::login("doy", "screen", (80, 24));
+        let msg = Message::login(
+            "doy",
+            "screen",
+            &crate::term::Size { rows: 24, cols: 80 },
+        );
         let fut = msg
             .write_async(FramedWriter::new(buf))
             .and_then(|w| {
@@ -842,7 +875,7 @@ mod test {
             id: "some-session-id".to_string(),
             username: "doy".to_string(),
             term_type: "screen".to_string(),
-            size: (80, 24),
+            size: crate::term::Size { rows: 24, cols: 80 },
             idle_time: 123,
             title: "it's my terminal title".to_string(),
         }]);
@@ -920,7 +953,7 @@ mod test {
         let (wres, rres) = tokio::sync::mpsc::channel(1);
         let wres2 = wres.clone();
         let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::resize((81, 25));
+        let msg = Message::resize(&crate::term::Size { rows: 24, cols: 80 });
         let fut = msg
             .write_async(FramedWriter::new(buf))
             .and_then(|w| {

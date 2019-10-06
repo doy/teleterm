@@ -1,3 +1,16 @@
+use snafu::ResultExt as _;
+
+#[derive(Debug, snafu::Snafu)]
+pub enum Error {
+    #[snafu(display("failed to get terminal size: {}", source))]
+    GetTerminalSize { source: crossterm::ErrorKind },
+
+    #[snafu(display("failed to resize pty: {}", source))]
+    ResizePty { source: std::io::Error },
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
 const RESET: &[&[u8]] = &[
     b"\x1b[3J\x1b[H\x1b[2J",
     b"\x1b[H\x1b[J",
@@ -6,6 +19,33 @@ const RESET: &[&[u8]] = &[
 ];
 const WINDOW_TITLE: &[(&[u8], &[u8])] =
     &[(b"\x1b]0;", b"\x07"), (b"\x1b]2;", b"\x07")];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Size {
+    pub rows: u16,
+    pub cols: u16,
+}
+
+impl Size {
+    pub fn get() -> Result<Self> {
+        let (cols, rows) =
+            crossterm::terminal().size().context(GetTerminalSize)?;
+        Ok(Self { rows, cols })
+    }
+
+    pub fn resize_pty<T: tokio_pty_process::PtyMaster>(
+        &self,
+        pty: &T,
+    ) -> futures::Poll<(), Error> {
+        pty.resize(self.rows, self.cols).context(ResizePty)
+    }
+}
+
+impl std::fmt::Display for Size {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        std::fmt::Display::fmt(&format!("{}x{}", self.cols, self.rows), f)
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct Buffer {

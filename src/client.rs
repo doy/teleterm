@@ -10,6 +10,9 @@ pub enum Error {
     #[snafu(display("{}", source))]
     Common { source: crate::error::Error },
 
+    #[snafu(display("{}", source))]
+    Resize { source: crate::term::Error },
+
     #[snafu(display("failed to write message: {}", source))]
     Write { source: crate::protocol::Error },
 
@@ -82,8 +85,8 @@ enum WriteSocket {
 
 pub enum Event {
     ServerMessage(crate::protocol::Message),
-    Reconnect((u16, u16)),
-    Resize((u16, u16)),
+    Reconnect(crate::term::Size),
+    Resize(crate::term::Size),
 }
 
 pub struct Client {
@@ -254,14 +257,11 @@ impl Client {
 
                 let term =
                     std::env::var("TERM").unwrap_or_else(|_| "".to_string());
-                let size = crossterm::terminal()
-                    .size()
-                    .context(crate::error::GetTerminalSize)
-                    .context(Common)?;
+                let size = crate::term::Size::get().context(Resize)?;
                 let msg = crate::protocol::Message::login(
                     &self.username,
                     &term,
-                    (u32::from(size.0), u32::from(size.1)),
+                    &size,
                 );
                 self.to_send.push_back(msg);
 
@@ -269,9 +269,9 @@ impl Client {
                     self.to_send.push_back(msg.clone());
                 }
 
-                Ok(crate::component_future::Poll::Event(Event::Reconnect((
-                    size.1, size.0,
-                ))))
+                Ok(crate::component_future::Poll::Event(Event::Reconnect(
+                    size,
+                )))
             }
             WriteSocket::Connecting(ref mut fut) => match fut.poll() {
                 Ok(futures::Async::Ready(s)) => {
@@ -405,17 +405,13 @@ impl Client {
         if let Some(winches) = &mut self.winches {
             match winches.poll()? {
                 futures::Async::Ready(Some(_)) => {
-                    let (cols, rows) = crossterm::terminal()
-                        .size()
-                        .context(crate::error::GetTerminalSize)
-                        .context(Common)?;
-                    self.send_message(crate::protocol::Message::resize((
-                        u32::from(cols),
-                        u32::from(rows),
-                    )));
-                    Ok(crate::component_future::Poll::Event(Event::Resize((
-                        rows, cols,
-                    ))))
+                    let size = crate::term::Size::get().context(Resize)?;
+                    self.send_message(crate::protocol::Message::resize(
+                        &size,
+                    ));
+                    Ok(crate::component_future::Poll::Event(Event::Resize(
+                        size,
+                    )))
                 }
                 futures::Async::Ready(None) => unreachable!(),
                 futures::Async::NotReady => {

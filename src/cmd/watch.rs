@@ -244,6 +244,7 @@ impl SortedSessions {
             return None;
         }
 
+        // 'q' shouldn't be a list option, since it is bound to quit
         if i >= 16 {
             i += 1;
         }
@@ -264,6 +265,7 @@ impl SortedSessions {
         #[allow(clippy::cast_sign_loss)]
         let mut i = i as usize;
 
+        // 'q' shouldn't be a list option, since it is bound to quit
         if i > 16 {
             i -= 1;
         }
@@ -309,6 +311,9 @@ impl SortedSessions {
 
     fn limit(&self) -> usize {
         let limit = self.size.rows as usize - 6;
+
+        // enough for a-z except q - if we want to allow more than this, we'll
+        // need to come up with a better way of choosing streams
         if limit > 25 {
             25
         } else {

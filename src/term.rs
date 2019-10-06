@@ -39,6 +39,10 @@ impl Size {
     ) -> futures::Poll<(), Error> {
         pty.resize(self.rows, self.cols).context(ResizePty)
     }
+
+    pub fn fits_in(&self, other: &Self) -> bool {
+        self.rows <= other.rows && self.cols <= other.cols
+    }
 }
 
 impl std::fmt::Display for Size {

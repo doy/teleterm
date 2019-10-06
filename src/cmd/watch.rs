@@ -207,7 +207,14 @@ impl SortedSessions {
                 } else {
                     "".to_string()
                 };
-                let display_size = &session.size;
+                let display_size_plain = format!("{}", &session.size);
+                let display_size_full = if session.size.fits_in(&self.size) {
+                    display_size_plain.clone()
+                } else {
+                    // XXX i should be able to use crossterm::style here, but
+                    // it has bugs
+                    format!("\x1b[31m{}\x1b[m", display_size_plain)
+                };
                 let display_idle = format_time(session.idle_time);
                 let display_title = truncate(&session.title, max_title_width);
 
@@ -215,12 +222,14 @@ impl SortedSessions {
                     "{:5$} | {:6$} | {:7$} | {:8$} | {}\r",
                     display_char,
                     display_name,
-                    display_size,
+                    display_size_full,
                     display_idle,
                     display_title,
                     char_width,
                     name_width,
-                    size_width,
+                    size_width
+                        + (display_size_full.len()
+                            - display_size_plain.len()),
                     idle_width
                 );
 

@@ -140,24 +140,56 @@ impl SortedSessions {
     }
 
     fn print(&self) -> Result<()> {
-        let name_width = self.sessions.iter().map(|s| s.username.len()).max();
-        let name_width = if let Some(width) = name_width {
-            if width < 4 {
-                4
-            } else {
-                width
-            }
-        } else {
+        let char_width = 2;
+
+        let max_name_width = (self.size.1 / 3) as usize;
+        let name_width = self
+            .sessions
+            .iter()
+            .map(|s| s.username.len())
+            .max()
+            .unwrap_or(4);
+        // XXX unstable
+        // let name_width = name_width.clamp(4, max_name_width);
+        let name_width = if name_width < 4 {
             4
+        } else if name_width > max_name_width {
+            max_name_width
+        } else {
+            name_width
         };
+
+        let size_width = 7;
+
+        let max_idle_time =
+            self.sessions.iter().map(|s| s.idle_time).max().unwrap_or(4);
+        let idle_width = format_time(max_idle_time).len();
+        let idle_width = if idle_width < 4 { 4 } else { idle_width };
+
+        let max_title_width = (self.size.1 as usize)
+            - char_width
+            - 3
+            - name_width
+            - 3
+            - size_width
+            - 3
+            - idle_width
+            - 3;
 
         clear()?;
         println!("welcome to shellshare\r");
         println!("available sessions:\r");
         println!("\r");
         println!(
-            "   | {:3$} | {:7} | {:13} | title\r",
-            "name", "size", "idle", name_width
+            "{:4$} | {:5$} | {:6$} | {:7$} | title\r",
+            "",
+            "name",
+            "size",
+            "idle",
+            char_width,
+            name_width,
+            size_width,
+            idle_width
         );
         println!("{}\r", "-".repeat(self.size.1 as usize));
 
@@ -170,15 +202,31 @@ impl SortedSessions {
                 } else {
                     true
                 };
-                print!(
-                    "{})   {:2$} ",
-                    c,
-                    if first { &session.username } else { "" },
-                    name_width + 2,
-                );
-                print_session(session);
 
-                println!("\r");
+                let display_char = format!("{})", c);
+                let display_name = if first {
+                    truncate(&session.username, max_name_width)
+                } else {
+                    "".to_string()
+                };
+                let display_size =
+                    format!("{}x{}", session.size.0, session.size.1);
+                let display_idle = format_time(session.idle_time);
+                let display_title = truncate(&session.title, max_title_width);
+
+                println!(
+                    "{:5$} | {:6$} | {:7$} | {:8$} | {}\r",
+                    display_char,
+                    display_name,
+                    display_size,
+                    display_idle,
+                    display_title,
+                    char_width,
+                    name_width,
+                    size_width,
+                    idle_width
+                );
+
                 prev_name = Some(&session.username);
             } else {
                 break;
@@ -560,16 +608,6 @@ impl WatchSession {
     }
 }
 
-fn print_session(session: &crate::protocol::Session) {
-    let size = format!("{}x{}", session.size.0, session.size.1);
-    print!(
-        "{:7}   {:13}   {}",
-        size,
-        format_time(session.idle_time),
-        session.title
-    );
-}
-
 fn format_time(dur: u32) -> String {
     let secs = dur % 60;
     let dur = dur / 60;
@@ -580,17 +618,25 @@ fn format_time(dur: u32) -> String {
     let mins = dur % 60;
     let dur = dur / 60;
     if dur == 0 {
-        return format!("{}m{}s", mins, secs);
+        return format!("{}m{:02}s", mins, secs);
     }
 
     let hours = dur % 24;
     let dur = dur / 24;
     if dur == 0 {
-        return format!("{}h{}m{}s", hours, mins, secs);
+        return format!("{}h{:02}m{:02}s", hours, mins, secs);
     }
 
     let days = dur;
-    format!("{}d{}h{}m{}s", days, hours, mins, secs)
+    format!("{}d{:02}h{:02}m{:02}s", days, hours, mins, secs)
+}
+
+fn truncate(s: &str, len: usize) -> String {
+    if s.len() <= len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..(len - 3)])
+    }
 }
 
 fn clear() -> Result<()> {

@@ -511,18 +511,13 @@ impl WatchSession {
 
                         let sessions = SortedSessions::new(sessions)?;
 
+                        // TODO: async
+                        sessions.print()?;
+
                         self.state = State::Choosing {
                             sessions,
                             alternate_screen,
                         };
-
-                        if let State::Choosing { sessions, .. } = &self.state
-                        {
-                            // TODO: async
-                            sessions.print()?;
-                        } else {
-                            unreachable!();
-                        }
 
                         Ok(crate::component_future::Poll::DidWork)
                     }

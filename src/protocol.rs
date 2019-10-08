@@ -622,6 +622,36 @@ mod test {
         }
     }
 
+    #[test]
+    fn test_invalid_sync() {
+        for buf in invalid_messages() {
+            let res = Message::read(buf.as_slice());
+            assert!(res.is_err())
+        }
+    }
+
+    #[test]
+    fn test_invalid_async() {
+        for buf in invalid_messages() {
+            let (wres, rres) = tokio::sync::mpsc::channel(1);
+            let wres2 = wres.clone();
+            let buf = std::io::Cursor::new(buf);
+            let fut = Message::read_async(FramedReader::new(buf))
+                .and_then(move |(msg2, _)| {
+                    wres.wait().send(Ok(msg2)).unwrap();
+                    futures::future::ok(())
+                })
+                .map_err(|e| {
+                    wres2.wait().send(Err(e)).unwrap();
+                });
+            tokio::run(fut);
+            let res = rres.wait().next();
+            let res = res.unwrap();
+            let res = res.unwrap();
+            assert!(res.is_err());
+        }
+    }
+
     fn valid_messages() -> Vec<Message> {
         vec![
             Message::login(
@@ -665,6 +695,20 @@ mod test {
             Message::disconnected(),
             Message::error("error message"),
             Message::resize(&crate::term::Size { rows: 25, cols: 81 }),
+        ]
+    }
+
+    fn invalid_messages() -> Vec<Vec<u8>> {
+        vec![
+            b"".to_vec(),
+            b"\x04".to_vec(),
+            b"\x00\x00\x00\x00".to_vec(),
+            b"\x00\x00\x00\x04\x00\x00\x00\x00".to_vec(),
+            b"\x00\x00\x00\x04\x00\x00\x00\xff".to_vec(),
+            b"\x00\x00\x00\x03\x00\x00\x00\x01".to_vec(),
+            b"\x00\x00\x00\x05\x00\x00\x00\x01".to_vec(),
+            b"\xee\xee\xee\xee\x00\x00\x00\x01".to_vec(),
+            b"\x00\x00\x00\x09\x00\x00\x00\x08\x00\x00\x00\x01\xff".to_vec(),
         ]
     }
 }

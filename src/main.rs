@@ -15,6 +15,7 @@ mod key_reader;
 mod process;
 mod protocol;
 mod server;
+mod session_list;
 mod term;
 mod util;
 

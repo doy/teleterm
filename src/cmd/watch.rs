@@ -209,13 +209,30 @@ impl WatchSession {
             list_client,
             state: State::new(),
             raw_screen: None,
-            needs_redraw: false,
+            needs_redraw: true,
         })
     }
 
     fn reconnect(&mut self) {
         self.state.logging_in();
         self.list_client.reconnect();
+        self.needs_redraw = true;
+    }
+
+    fn loading_keypress(
+        &mut self,
+        e: &crossterm::InputEvent,
+    ) -> Result<bool> {
+        #[allow(clippy::single_match)]
+        match e {
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                'q',
+            )) => {
+                return Ok(true);
+            }
+            _ => {}
+        }
+        Ok(false)
     }
 
     fn list_server_message(
@@ -332,7 +349,7 @@ impl WatchSession {
         Ok(())
     }
 
-    fn watch_keypress(&mut self, e: &crossterm::InputEvent) -> Result<()> {
+    fn watch_keypress(&mut self, e: &crossterm::InputEvent) -> Result<bool> {
         #[allow(clippy::single_match)]
         match e {
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
@@ -342,7 +359,7 @@ impl WatchSession {
             }
             _ => {}
         }
-        Ok(())
+        Ok(false)
     }
 
     fn resize(&mut self) -> Result<()> {
@@ -355,12 +372,26 @@ impl WatchSession {
     fn redraw(&self) -> Result<()> {
         match &self.state {
             State::Temporary => unreachable!(),
-            State::LoggingIn { .. } => {}
+            State::LoggingIn { .. } => {
+                self.display_loading_message()?;
+            }
             State::Choosing { sessions, .. } => {
                 sessions.print().context(SessionList)?;
             }
             State::Watching { .. } => {}
         }
+        Ok(())
+    }
+
+    fn display_loading_message(&self) -> Result<()> {
+        crossterm::terminal()
+            .clear(crossterm::ClearType::All)
+            .context(WriteTerminalCrossterm)?;
+        let data = b"loading...\r\n(q to quit)";
+        let stdout = std::io::stdout();
+        let mut stdout = stdout.lock();
+        stdout.write(data).context(WriteTerminal)?;
+        stdout.flush().context(FlushTerminal)?;
         Ok(())
     }
 }
@@ -377,38 +408,23 @@ impl WatchSession {
     ];
 
     fn poll_input(&mut self) -> Result<crate::component_future::Poll<()>> {
-        match &mut self.state {
-            State::Temporary => unreachable!(),
-            State::LoggingIn { .. } => {
-                Ok(crate::component_future::Poll::NothingToDo)
-            }
-            State::Choosing { .. } => {
-                match self.key_reader.poll().context(ReadKey)? {
-                    futures::Async::Ready(Some(e)) => {
-                        let quit = self.list_keypress(&e)?;
-                        if quit {
-                            Ok(crate::component_future::Poll::Event(()))
-                        } else {
-                            Ok(crate::component_future::Poll::DidWork)
-                        }
-                    }
-                    futures::Async::Ready(None) => unreachable!(),
-                    futures::Async::NotReady => {
-                        Ok(crate::component_future::Poll::NotReady)
-                    }
+        match self.key_reader.poll().context(ReadKey)? {
+            futures::Async::Ready(Some(e)) => {
+                let quit = match &mut self.state {
+                    State::Temporary => unreachable!(),
+                    State::LoggingIn { .. } => self.loading_keypress(&e)?,
+                    State::Choosing { .. } => self.list_keypress(&e)?,
+                    State::Watching { .. } => self.watch_keypress(&e)?,
+                };
+                if quit {
+                    Ok(crate::component_future::Poll::Event(()))
+                } else {
+                    Ok(crate::component_future::Poll::DidWork)
                 }
             }
-            State::Watching { .. } => {
-                match self.key_reader.poll().context(ReadKey)? {
-                    futures::Async::Ready(Some(e)) => {
-                        self.watch_keypress(&e)?;
-                        Ok(crate::component_future::Poll::DidWork)
-                    }
-                    futures::Async::Ready(None) => unreachable!(),
-                    futures::Async::NotReady => {
-                        Ok(crate::component_future::Poll::NotReady)
-                    }
-                }
+            futures::Async::Ready(None) => unreachable!(),
+            futures::Async::NotReady => {
+                Ok(crate::component_future::Poll::NotReady)
             }
         }
     }

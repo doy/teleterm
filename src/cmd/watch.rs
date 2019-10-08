@@ -375,7 +375,7 @@ impl WatchSession {
         crossterm::terminal()
             .clear(crossterm::ClearType::All)
             .context(WriteTerminalCrossterm)?;
-        let data = b"loading...\r\n(q to quit)";
+        let data = b"loading...\r\nq: quit --> ";
         let stdout = std::io::stdout();
         let mut stdout = stdout.lock();
         stdout.write(data).context(WriteTerminal)?;

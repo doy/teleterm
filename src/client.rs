@@ -13,14 +13,8 @@ pub enum Error {
     #[snafu(display("{}", source))]
     Resize { source: crate::term::Error },
 
-    #[snafu(display("failed to write message: {}", source))]
-    Write { source: crate::protocol::Error },
-
     #[snafu(display("heartbeat timer failed: {}", source))]
     Timer { source: tokio::timer::Error },
-
-    #[snafu(display("sending heartbeat failed: {}", source))]
-    Heartbeat { source: crate::protocol::Error },
 
     #[snafu(display("failed to read message from server: {}", source))]
     ReadServer { source: crate::protocol::Error },

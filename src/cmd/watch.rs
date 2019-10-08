@@ -11,14 +11,8 @@ pub enum Error {
     #[snafu(display("{}", source))]
     SessionList { source: crate::session_list::Error },
 
-    #[snafu(display("failed to read message: {}", source))]
-    Read { source: crate::protocol::Error },
-
     #[snafu(display("failed to read key from terminal: {}", source))]
     ReadKey { source: crate::key_reader::Error },
-
-    #[snafu(display("failed to write message: {}", source))]
-    Write { source: crate::protocol::Error },
 
     #[snafu(display("failed to write to terminal: {}", source))]
     WriteTerminal { source: std::io::Error },

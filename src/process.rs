@@ -6,9 +6,6 @@ use tokio_pty_process::CommandExt as _;
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
     #[snafu(display("{}", source))]
-    Common { source: crate::error::Error },
-
-    #[snafu(display("{}", source))]
     Resize { source: crate::term::Error },
 
     #[snafu(display("failed to open a pty: {}", source))]
@@ -25,12 +22,6 @@ pub enum Error {
 
     #[snafu(display("failed to read from terminal: {}", source))]
     ReadFromTerminal { source: std::io::Error },
-
-    #[snafu(display(
-        "failed to clear ready state on pty for reading: {}",
-        source
-    ))]
-    PtyClearReadReady { source: std::io::Error },
 
     #[snafu(display("failed to poll for process exit: {}", source))]
     ProcessExitPoll { source: std::io::Error },

@@ -331,8 +331,13 @@ impl SortedSessions {
     }
 }
 
+// XXX https://github.com/rust-lang/rust/issues/64362
+#[allow(dead_code)]
 enum State {
-    LoggingIn,
+    Temporary,
+    LoggingIn {
+        alternate_screen: Option<crossterm::AlternateScreen>,
+    },
     Choosing {
         sessions: SortedSessions,
         alternate_screen: crossterm::AlternateScreen,
@@ -340,6 +345,76 @@ enum State {
     Watching {
         client: Box<crate::client::Client>,
     },
+}
+
+impl State {
+    fn new() -> Self {
+        Self::LoggingIn {
+            alternate_screen: None,
+        }
+    }
+
+    fn logging_in(&mut self) {
+        let prev_state = std::mem::replace(self, Self::Temporary);
+        *self = match prev_state {
+            Self::Temporary => unreachable!(),
+            Self::LoggingIn { alternate_screen } => {
+                Self::LoggingIn { alternate_screen }
+            }
+            Self::Choosing {
+                alternate_screen, ..
+            } => Self::LoggingIn {
+                alternate_screen: Some(alternate_screen),
+            },
+            _ => Self::LoggingIn {
+                alternate_screen: None,
+            },
+        }
+    }
+
+    fn choosing(&mut self, sessions: SortedSessions) -> Result<()> {
+        let prev_state = std::mem::replace(self, Self::Temporary);
+        *self = match prev_state {
+            Self::Temporary => unreachable!(),
+            Self::LoggingIn {
+                alternate_screen: Some(alternate_screen),
+            } => Self::Choosing {
+                alternate_screen,
+                sessions,
+            },
+            Self::LoggingIn {
+                alternate_screen: None,
+            } => Self::Choosing {
+                alternate_screen: self.new_alternate_screen()?,
+                sessions,
+            },
+            Self::Choosing {
+                alternate_screen, ..
+            } => Self::Choosing {
+                alternate_screen,
+                sessions,
+            },
+            _ => Self::Choosing {
+                alternate_screen: self.new_alternate_screen()?,
+                sessions,
+            },
+        };
+        Ok(())
+    }
+
+    fn watching(&mut self, client: crate::client::Client) {
+        if let Self::Temporary = self {
+            unreachable!()
+        }
+        *self = Self::Watching {
+            client: Box::new(client),
+        }
+    }
+
+    fn new_alternate_screen(&self) -> Result<crossterm::AlternateScreen> {
+        crossterm::AlternateScreen::to_alternate(false)
+            .context(ToAlternateScreen)
+    }
 }
 
 struct WatchSession {
@@ -374,13 +449,13 @@ impl WatchSession {
             key_reader: crate::key_reader::KeyReader::new(task)
                 .context(KeyReader)?,
             list_client,
-            state: State::LoggingIn,
+            state: State::new(),
             raw_screen: None,
         })
     }
 
     fn reconnect(&mut self) {
-        self.state = State::LoggingIn;
+        self.state.logging_in();
         self.list_client
             .send_message(crate::protocol::Message::list_sessions());
     }
@@ -399,7 +474,8 @@ impl WatchSession {
 
     fn poll_input(&mut self) -> Result<crate::component_future::Poll<()>> {
         match &mut self.state {
-            State::LoggingIn => {
+            State::Temporary => unreachable!(),
+            State::LoggingIn { .. } => {
                 Ok(crate::component_future::Poll::NothingToDo)
             }
             State::Choosing { sessions, .. } => {
@@ -442,9 +518,7 @@ impl WatchSession {
                                         self.heartbeat_duration,
                                         id,
                                     );
-                                    self.state = State::Watching {
-                                        client: Box::new(client),
-                                    };
+                                    self.state.watching(client);
                                     clear()?;
                                 }
                             }
@@ -485,59 +559,47 @@ impl WatchSession {
         &mut self,
     ) -> Result<crate::component_future::Poll<()>> {
         match self.list_client.poll().context(Client)? {
-            futures::Async::Ready(Some(e)) => match e {
-                crate::client::Event::Reconnect(_) => {
-                    self.reconnect();
-                    Ok(crate::component_future::Poll::DidWork)
-                }
-                crate::client::Event::ServerMessage(msg) => match msg {
-                    crate::protocol::Message::Sessions { sessions } => {
-                        // avoid dropping the alternate screen object if we
-                        // don't have to, because it causes flickering
-                        let old_state = std::mem::replace(
-                            &mut self.state,
-                            State::LoggingIn,
-                        );
-                        let alternate_screen = if let State::Choosing {
-                            alternate_screen,
-                            ..
-                        } = old_state
-                        {
-                            alternate_screen
-                        } else {
-                            crossterm::AlternateScreen::to_alternate(false)
-                                .context(ToAlternateScreen)?
-                        };
-
-                        let sessions = SortedSessions::new(sessions)?;
-
-                        // TODO: async
-                        sessions.print()?;
-
-                        self.state = State::Choosing {
-                            sessions,
-                            alternate_screen,
-                        };
-
+            futures::Async::Ready(Some(e)) => {
+                match e {
+                    crate::client::Event::Reconnect(_) => {
+                        self.reconnect();
                         Ok(crate::component_future::Poll::DidWork)
                     }
-                    msg => Err(crate::error::Error::UnexpectedMessage {
-                        message: msg,
-                    })
-                    .context(Common),
-                },
-                crate::client::Event::Resize(_) => {
-                    match &self.state {
-                        State::LoggingIn | State::Choosing { .. } => {
-                            self.list_client.send_message(
-                                crate::protocol::Message::list_sessions(),
-                            );
+                    crate::client::Event::ServerMessage(msg) => match msg {
+                        crate::protocol::Message::Sessions { sessions } => {
+                            self.state
+                                .choosing(SortedSessions::new(sessions)?)?;
+                            if let State::Choosing { sessions, .. } =
+                                &self.state
+                            {
+                                // TODO: async
+                                sessions.print()?;
+                            } else {
+                                unreachable!()
+                            }
+
+                            Ok(crate::component_future::Poll::DidWork)
                         }
-                        State::Watching { .. } => {}
+                        msg => Err(crate::error::Error::UnexpectedMessage {
+                            message: msg,
+                        })
+                        .context(Common),
+                    },
+                    crate::client::Event::Resize(_) => {
+                        match &self.state {
+                            State::Temporary => unreachable!(),
+                            State::LoggingIn { .. }
+                            | State::Choosing { .. } => {
+                                self.list_client.send_message(
+                                    crate::protocol::Message::list_sessions(),
+                                );
+                            }
+                            State::Watching { .. } => {}
+                        }
+                        Ok(crate::component_future::Poll::DidWork)
                     }
-                    Ok(crate::component_future::Poll::DidWork)
                 }
-            },
+            }
             futures::Async::Ready(None) => {
                 // the client should never exit on its own
                 unreachable!()

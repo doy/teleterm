@@ -459,6 +459,140 @@ impl WatchSession {
         self.list_client
             .send_message(crate::protocol::Message::list_sessions());
     }
+
+    fn list_server_message(
+        &mut self,
+        msg: crate::protocol::Message,
+    ) -> Result<()> {
+        match msg {
+            crate::protocol::Message::Sessions { sessions } => {
+                self.state.choosing(SortedSessions::new(sessions)?)?;
+                if let State::Choosing { sessions, .. } = &self.state {
+                    // TODO: async
+                    sessions.print()?;
+                } else {
+                    unreachable!();
+                }
+            }
+            msg => {
+                return Err(crate::error::Error::UnexpectedMessage {
+                    message: msg,
+                })
+                .context(Common);
+            }
+        }
+        Ok(())
+    }
+
+    fn list_keypress(&mut self, e: &crossterm::InputEvent) -> Result<bool> {
+        let sessions =
+            if let State::Choosing { sessions, .. } = &mut self.state {
+                sessions
+            } else {
+                unreachable!()
+            };
+
+        match e {
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                ' ',
+            )) => {
+                self.list_client
+                    .send_message(crate::protocol::Message::list_sessions());
+            }
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                'q',
+            )) => {
+                return Ok(true);
+            }
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                '<',
+            )) => {
+                sessions.prev_page();
+                sessions.print()?;
+            }
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                '>',
+            )) => {
+                sessions.next_page();
+                sessions.print()?;
+            }
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(c)) => {
+                if let Some(id) = sessions.id_for(*c) {
+                    let client = crate::client::Client::watch(
+                        &self.address,
+                        &self.username,
+                        self.heartbeat_duration,
+                        id,
+                    );
+                    self.state.watching(client);
+                    clear()?;
+                }
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    fn watch_server_message(
+        &mut self,
+        msg: crate::protocol::Message,
+    ) -> Result<()> {
+        match msg {
+            crate::protocol::Message::TerminalOutput { data } => {
+                let data: Vec<_> = data
+                    .iter()
+                    // replace \n with \r\n since we're writing to a
+                    // raw terminal
+                    .fold(vec![], |mut acc, &c| {
+                        if c == b'\n' {
+                            acc.push(b'\r');
+                            acc.push(b'\n');
+                        } else {
+                            acc.push(c);
+                        }
+                        acc
+                    });
+                // TODO async
+                let stdout = std::io::stdout();
+                let mut stdout = stdout.lock();
+                stdout.write(&data).context(WriteTerminal)?;
+                stdout.flush().context(FlushTerminal)?;
+            }
+            crate::protocol::Message::Disconnected => {
+                self.reconnect();
+            }
+            crate::protocol::Message::Error { msg } => {
+                return Err(Error::Server { message: msg });
+            }
+            msg => {
+                return Err(crate::error::Error::UnexpectedMessage {
+                    message: msg,
+                })
+                .context(Common);
+            }
+        }
+        Ok(())
+    }
+
+    fn watch_keypress(&mut self, e: &crossterm::InputEvent) -> Result<()> {
+        #[allow(clippy::single_match)]
+        match e {
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                'q',
+            )) => {
+                self.reconnect();
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn resize(&self) -> Result<()> {
+        if let State::Choosing { sessions, .. } = &self.state {
+            sessions.print()?;
+        }
+        Ok(())
+    }
 }
 
 impl WatchSession {
@@ -478,53 +612,15 @@ impl WatchSession {
             State::LoggingIn { .. } => {
                 Ok(crate::component_future::Poll::NothingToDo)
             }
-            State::Choosing { sessions, .. } => {
+            State::Choosing { .. } => {
                 match self.key_reader.poll().context(ReadKey)? {
                     futures::Async::Ready(Some(e)) => {
-                        match e {
-                            crossterm::InputEvent::Keyboard(
-                                crossterm::KeyEvent::Char(' '),
-                            ) => {
-                                self.list_client.send_message(
-                                    crate::protocol::Message::list_sessions(),
-                                );
-                            }
-                            crossterm::InputEvent::Keyboard(
-                                crossterm::KeyEvent::Char('q'),
-                            ) => {
-                                return Ok(
-                                    crate::component_future::Poll::Event(()),
-                                );
-                            }
-                            crossterm::InputEvent::Keyboard(
-                                crossterm::KeyEvent::Char('<'),
-                            ) => {
-                                sessions.prev_page();
-                                sessions.print()?;
-                            }
-                            crossterm::InputEvent::Keyboard(
-                                crossterm::KeyEvent::Char('>'),
-                            ) => {
-                                sessions.next_page();
-                                sessions.print()?;
-                            }
-                            crossterm::InputEvent::Keyboard(
-                                crossterm::KeyEvent::Char(c),
-                            ) => {
-                                if let Some(id) = sessions.id_for(c) {
-                                    let client = crate::client::Client::watch(
-                                        &self.address,
-                                        &self.username,
-                                        self.heartbeat_duration,
-                                        id,
-                                    );
-                                    self.state.watching(client);
-                                    clear()?;
-                                }
-                            }
-                            _ => {}
+                        let quit = self.list_keypress(&e)?;
+                        if quit {
+                            Ok(crate::component_future::Poll::Event(()))
+                        } else {
+                            Ok(crate::component_future::Poll::DidWork)
                         }
-                        Ok(crate::component_future::Poll::DidWork)
                     }
                     futures::Async::Ready(None) => unreachable!(),
                     futures::Async::NotReady => {
@@ -535,15 +631,7 @@ impl WatchSession {
             State::Watching { .. } => {
                 match self.key_reader.poll().context(ReadKey)? {
                     futures::Async::Ready(Some(e)) => {
-                        #[allow(clippy::single_match)]
-                        match e {
-                            crossterm::InputEvent::Keyboard(
-                                crossterm::KeyEvent::Char('q'),
-                            ) => {
-                                self.reconnect();
-                            }
-                            _ => {}
-                        }
+                        self.watch_keypress(&e)?;
                         Ok(crate::component_future::Poll::DidWork)
                     }
                     futures::Async::Ready(None) => unreachable!(),
@@ -563,42 +651,15 @@ impl WatchSession {
                 match e {
                     crate::client::Event::Reconnect(_) => {
                         self.reconnect();
-                        Ok(crate::component_future::Poll::DidWork)
                     }
-                    crate::client::Event::ServerMessage(msg) => match msg {
-                        crate::protocol::Message::Sessions { sessions } => {
-                            self.state
-                                .choosing(SortedSessions::new(sessions)?)?;
-                            if let State::Choosing { sessions, .. } =
-                                &self.state
-                            {
-                                // TODO: async
-                                sessions.print()?;
-                            } else {
-                                unreachable!()
-                            }
-
-                            Ok(crate::component_future::Poll::DidWork)
-                        }
-                        msg => Err(crate::error::Error::UnexpectedMessage {
-                            message: msg,
-                        })
-                        .context(Common),
-                    },
+                    crate::client::Event::ServerMessage(msg) => {
+                        self.list_server_message(msg)?;
+                    }
                     crate::client::Event::Resize(_) => {
-                        match &self.state {
-                            State::Temporary => unreachable!(),
-                            State::LoggingIn { .. }
-                            | State::Choosing { .. } => {
-                                self.list_client.send_message(
-                                    crate::protocol::Message::list_sessions(),
-                                );
-                            }
-                            State::Watching { .. } => {}
-                        }
-                        Ok(crate::component_future::Poll::DidWork)
+                        self.resize()?;
                     }
                 }
+                Ok(crate::component_future::Poll::DidWork)
             }
             futures::Async::Ready(None) => {
                 // the client should never exit on its own
@@ -620,50 +681,21 @@ impl WatchSession {
         };
 
         match client.poll().context(Client)? {
-            futures::Async::Ready(Some(e)) => match e {
-                crate::client::Event::Reconnect(_) => {
-                    Ok(crate::component_future::Poll::DidWork)
+            futures::Async::Ready(Some(e)) => {
+                match e {
+                    crate::client::Event::Reconnect(_) => {
+                        // XXX this should do something, i think?
+                    }
+                    crate::client::Event::ServerMessage(msg) => {
+                        self.watch_server_message(msg)?;
+                    }
+                    crate::client::Event::Resize(_) => {
+                        // watch clients don't respond to resize events
+                        unreachable!();
+                    }
                 }
-                crate::client::Event::ServerMessage(msg) => match msg {
-                    crate::protocol::Message::TerminalOutput { data } => {
-                        let data: Vec<_> = data
-                            .iter()
-                            // replace \n with \r\n since we're writing to a
-                            // raw terminal
-                            .fold(vec![], |mut acc, &c| {
-                                if c == b'\n' {
-                                    acc.push(b'\r');
-                                    acc.push(b'\n');
-                                } else {
-                                    acc.push(c);
-                                }
-                                acc
-                            });
-                        // TODO async
-                        let stdout = std::io::stdout();
-                        let mut stdout = stdout.lock();
-                        stdout.write(&data).context(WriteTerminal)?;
-                        stdout.flush().context(FlushTerminal)?;
-                        Ok(crate::component_future::Poll::DidWork)
-                    }
-                    crate::protocol::Message::Disconnected => {
-                        self.reconnect();
-                        Ok(crate::component_future::Poll::DidWork)
-                    }
-                    crate::protocol::Message::Error { msg } => {
-                        eprintln!("server error: {}", msg);
-                        Ok(crate::component_future::Poll::Event(()))
-                    }
-                    msg => Err(crate::error::Error::UnexpectedMessage {
-                        message: msg,
-                    })
-                    .context(Common),
-                },
-                crate::client::Event::Resize(_) => {
-                    // watch clients don't respond to resize events
-                    unreachable!()
-                }
-            },
+                Ok(crate::component_future::Poll::DidWork)
+            }
             futures::Async::Ready(None) => {
                 // the client should never exit on its own
                 unreachable!()

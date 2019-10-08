@@ -576,403 +576,75 @@ mod test {
 
     #[test]
     fn test_serialize_deserialize() {
-        let msg = Message::login(
-            "doy",
-            "screen",
-            &crate::term::Size { rows: 24, cols: 80 },
-        );
-        let packet = Packet::from(&msg);
-        let msg2 = Message::try_from(packet).unwrap();
-        assert_eq!(msg, msg2);
-
-        let msg = Message::start_streaming();
-        let packet = Packet::from(&msg);
-        let msg2 = Message::try_from(packet).unwrap();
-        assert_eq!(msg, msg2);
-
-        let msg = Message::start_watching("some-session-id");
-        let packet = Packet::from(&msg);
-        let msg2 = Message::try_from(packet).unwrap();
-        assert_eq!(msg, msg2);
-
-        let msg = Message::heartbeat();
-        let packet = Packet::from(&msg);
-        let msg2 = Message::try_from(packet).unwrap();
-        assert_eq!(msg, msg2);
-
-        let msg = Message::terminal_output(b"foobar");
-        let packet = Packet::from(&msg);
-        let msg2 = Message::try_from(packet).unwrap();
-        assert_eq!(msg, msg2);
-
-        let msg = Message::list_sessions();
-        let packet = Packet::from(&msg);
-        let msg2 = Message::try_from(packet).unwrap();
-        assert_eq!(msg, msg2);
-
-        let msg = Message::sessions(&[Session {
-            id: "some-session-id".to_string(),
-            username: "doy".to_string(),
-            term_type: "screen".to_string(),
-            size: crate::term::Size { rows: 24, cols: 80 },
-            idle_time: 123,
-            title: "it's my terminal title".to_string(),
-        }]);
-        let packet = Packet::from(&msg);
-        let msg2 = Message::try_from(packet).unwrap();
-        assert_eq!(msg, msg2);
-
-        let msg = Message::disconnected();
-        let packet = Packet::from(&msg);
-        let msg2 = Message::try_from(packet).unwrap();
-        assert_eq!(msg, msg2);
-
-        let msg = Message::error("error message");
-        let packet = Packet::from(&msg);
-        let msg2 = Message::try_from(packet).unwrap();
-        assert_eq!(msg, msg2);
-
-        let msg = Message::resize(&crate::term::Size { rows: 25, cols: 81 });
-        let packet = Packet::from(&msg);
-        let msg2 = Message::try_from(packet).unwrap();
-        assert_eq!(msg, msg2);
+        for msg in valid_messages() {
+            let packet = Packet::from(&msg);
+            let msg2 = Message::try_from(packet).unwrap();
+            assert_eq!(msg, msg2);
+        }
     }
 
     #[test]
     fn test_read_write() {
-        let mut buf = vec![];
-        let msg = Message::login(
-            "doy",
-            "screen",
-            &crate::term::Size { rows: 24, cols: 80 },
-        );
-        msg.write(&mut buf).unwrap();
-        let msg2 = Message::read(buf.as_slice()).unwrap();
-        assert_eq!(msg, msg2);
-
-        let mut buf = vec![];
-        let msg = Message::start_streaming();
-        msg.write(&mut buf).unwrap();
-        let msg2 = Message::read(buf.as_slice()).unwrap();
-        assert_eq!(msg, msg2);
-
-        let mut buf = vec![];
-        let msg = Message::start_watching("some-session-id");
-        msg.write(&mut buf).unwrap();
-        let msg2 = Message::read(buf.as_slice()).unwrap();
-        assert_eq!(msg, msg2);
-
-        let mut buf = vec![];
-        let msg = Message::heartbeat();
-        msg.write(&mut buf).unwrap();
-        let msg2 = Message::read(buf.as_slice()).unwrap();
-        assert_eq!(msg, msg2);
-
-        let mut buf = vec![];
-        let msg = Message::terminal_output(b"foobar");
-        msg.write(&mut buf).unwrap();
-        let msg2 = Message::read(buf.as_slice()).unwrap();
-        assert_eq!(msg, msg2);
-
-        let mut buf = vec![];
-        let msg = Message::list_sessions();
-        msg.write(&mut buf).unwrap();
-        let msg2 = Message::read(buf.as_slice()).unwrap();
-        assert_eq!(msg, msg2);
-
-        let mut buf = vec![];
-        let msg = Message::sessions(&[Session {
-            id: "some-session-id".to_string(),
-            username: "doy".to_string(),
-            term_type: "screen".to_string(),
-            size: crate::term::Size { rows: 24, cols: 80 },
-            idle_time: 123,
-            title: "it's my terminal title".to_string(),
-        }]);
-        msg.write(&mut buf).unwrap();
-        let msg2 = Message::read(buf.as_slice()).unwrap();
-        assert_eq!(msg, msg2);
-
-        let mut buf = vec![];
-        let msg = Message::disconnected();
-        msg.write(&mut buf).unwrap();
-        let msg2 = Message::read(buf.as_slice()).unwrap();
-        assert_eq!(msg, msg2);
-
-        let mut buf = vec![];
-        let msg = Message::error("error message");
-        msg.write(&mut buf).unwrap();
-        let msg2 = Message::read(buf.as_slice()).unwrap();
-        assert_eq!(msg, msg2);
-
-        let mut buf = vec![];
-        let msg = Message::resize(&crate::term::Size { rows: 25, cols: 81 });
-        msg.write(&mut buf).unwrap();
-        let msg2 = Message::read(buf.as_slice()).unwrap();
-        assert_eq!(msg, msg2);
+        for msg in valid_messages() {
+            let mut buf = vec![];
+            msg.write(&mut buf).unwrap();
+            let msg2 = Message::read(buf.as_slice()).unwrap();
+            assert_eq!(msg, msg2);
+        }
     }
 
     #[test]
     fn test_read_write_async() {
-        let (wres, rres) = tokio::sync::mpsc::channel(1);
-        let wres2 = wres.clone();
-        let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::login(
-            "doy",
-            "screen",
-            &crate::term::Size { rows: 24, cols: 80 },
-        );
-        let fut = msg
-            .write_async(FramedWriter::new(buf))
-            .and_then(|w| {
-                let mut buf = w.0.into_inner();
-                buf.set_position(0);
-                Message::read_async(FramedReader::new(buf))
-            })
-            .and_then(move |(msg2, _)| {
-                wres.wait().send(Ok(msg2)).unwrap();
-                futures::future::ok(())
-            })
-            .map_err(|e| {
-                wres2.wait().send(Err(e)).unwrap();
-            });
-        tokio::run(fut);
-        let msg2 = rres.wait().next();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        assert_eq!(msg, msg2);
+        for msg in valid_messages() {
+            let (wres, rres) = tokio::sync::mpsc::channel(1);
+            let wres2 = wres.clone();
+            let buf = std::io::Cursor::new(vec![]);
+            let fut = msg
+                .write_async(FramedWriter::new(buf))
+                .and_then(|w| {
+                    let mut buf = w.0.into_inner();
+                    buf.set_position(0);
+                    Message::read_async(FramedReader::new(buf))
+                })
+                .and_then(move |(msg2, _)| {
+                    wres.wait().send(Ok(msg2)).unwrap();
+                    futures::future::ok(())
+                })
+                .map_err(|e| {
+                    wres2.wait().send(Err(e)).unwrap();
+                });
+            tokio::run(fut);
+            let msg2 = rres.wait().next();
+            let msg2 = msg2.unwrap();
+            let msg2 = msg2.unwrap();
+            let msg2 = msg2.unwrap();
+            assert_eq!(msg, msg2);
+        }
+    }
 
-        let (wres, rres) = tokio::sync::mpsc::channel(1);
-        let wres2 = wres.clone();
-        let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::start_streaming();
-        let fut = msg
-            .write_async(FramedWriter::new(buf))
-            .and_then(|w| {
-                let mut buf = w.0.into_inner();
-                buf.set_position(0);
-                Message::read_async(FramedReader::new(buf))
-            })
-            .and_then(move |(msg2, _)| {
-                wres.wait().send(Ok(msg2)).unwrap();
-                futures::future::ok(())
-            })
-            .map_err(|e| {
-                wres2.wait().send(Err(e)).unwrap();
-            });
-        tokio::run(fut);
-        let msg2 = rres.wait().next();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        assert_eq!(msg, msg2);
-
-        let (wres, rres) = tokio::sync::mpsc::channel(1);
-        let wres2 = wres.clone();
-        let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::start_watching("some-session-id");
-        let fut = msg
-            .write_async(FramedWriter::new(buf))
-            .and_then(|w| {
-                let mut buf = w.0.into_inner();
-                buf.set_position(0);
-                Message::read_async(FramedReader::new(buf))
-            })
-            .and_then(move |(msg2, _)| {
-                wres.wait().send(Ok(msg2)).unwrap();
-                futures::future::ok(())
-            })
-            .map_err(|e| {
-                wres2.wait().send(Err(e)).unwrap();
-            });
-        tokio::run(fut);
-        let msg2 = rres.wait().next();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        assert_eq!(msg, msg2);
-
-        let (wres, rres) = tokio::sync::mpsc::channel(1);
-        let wres2 = wres.clone();
-        let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::heartbeat();
-        let fut = msg
-            .write_async(FramedWriter::new(buf))
-            .and_then(|w| {
-                let mut buf = w.0.into_inner();
-                buf.set_position(0);
-                Message::read_async(FramedReader::new(buf))
-            })
-            .and_then(move |(msg2, _)| {
-                wres.wait().send(Ok(msg2)).unwrap();
-                futures::future::ok(())
-            })
-            .map_err(|e| {
-                wres2.wait().send(Err(e)).unwrap();
-            });
-        tokio::run(fut);
-        let msg2 = rres.wait().next();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        assert_eq!(msg, msg2);
-
-        let (wres, rres) = tokio::sync::mpsc::channel(1);
-        let wres2 = wres.clone();
-        let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::terminal_output(b"foobar");
-        let fut = msg
-            .write_async(FramedWriter::new(buf))
-            .and_then(|w| {
-                let mut buf = w.0.into_inner();
-                buf.set_position(0);
-                Message::read_async(FramedReader::new(buf))
-            })
-            .and_then(move |(msg2, _)| {
-                wres.wait().send(Ok(msg2)).unwrap();
-                futures::future::ok(())
-            })
-            .map_err(|e| {
-                wres2.wait().send(Err(e)).unwrap();
-            });
-        tokio::run(fut);
-        let msg2 = rres.wait().next();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        assert_eq!(msg, msg2);
-
-        let (wres, rres) = tokio::sync::mpsc::channel(1);
-        let wres2 = wres.clone();
-        let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::list_sessions();
-        let fut = msg
-            .write_async(FramedWriter::new(buf))
-            .and_then(|w| {
-                let mut buf = w.0.into_inner();
-                buf.set_position(0);
-                Message::read_async(FramedReader::new(buf))
-            })
-            .and_then(move |(msg2, _)| {
-                wres.wait().send(Ok(msg2)).unwrap();
-                futures::future::ok(())
-            })
-            .map_err(|e| {
-                wres2.wait().send(Err(e)).unwrap();
-            });
-        tokio::run(fut);
-        let msg2 = rres.wait().next();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        assert_eq!(msg, msg2);
-
-        let (wres, rres) = tokio::sync::mpsc::channel(1);
-        let wres2 = wres.clone();
-        let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::sessions(&[Session {
-            id: "some-session-id".to_string(),
-            username: "doy".to_string(),
-            term_type: "screen".to_string(),
-            size: crate::term::Size { rows: 24, cols: 80 },
-            idle_time: 123,
-            title: "it's my terminal title".to_string(),
-        }]);
-        let fut = msg
-            .write_async(FramedWriter::new(buf))
-            .and_then(|w| {
-                let mut buf = w.0.into_inner();
-                buf.set_position(0);
-                Message::read_async(FramedReader::new(buf))
-            })
-            .and_then(move |(msg2, _)| {
-                wres.wait().send(Ok(msg2)).unwrap();
-                futures::future::ok(())
-            })
-            .map_err(|e| {
-                wres2.wait().send(Err(e)).unwrap();
-            });
-        tokio::run(fut);
-        let msg2 = rres.wait().next();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        assert_eq!(msg, msg2);
-
-        let (wres, rres) = tokio::sync::mpsc::channel(1);
-        let wres2 = wres.clone();
-        let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::disconnected();
-        let fut = msg
-            .write_async(FramedWriter::new(buf))
-            .and_then(|w| {
-                let mut buf = w.0.into_inner();
-                buf.set_position(0);
-                Message::read_async(FramedReader::new(buf))
-            })
-            .and_then(move |(msg2, _)| {
-                wres.wait().send(Ok(msg2)).unwrap();
-                futures::future::ok(())
-            })
-            .map_err(|e| {
-                wres2.wait().send(Err(e)).unwrap();
-            });
-        tokio::run(fut);
-        let msg2 = rres.wait().next();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        assert_eq!(msg, msg2);
-
-        let (wres, rres) = tokio::sync::mpsc::channel(1);
-        let wres2 = wres.clone();
-        let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::error("error message");
-        let fut = msg
-            .write_async(FramedWriter::new(buf))
-            .and_then(|w| {
-                let mut buf = w.0.into_inner();
-                buf.set_position(0);
-                Message::read_async(FramedReader::new(buf))
-            })
-            .and_then(move |(msg2, _)| {
-                wres.wait().send(Ok(msg2)).unwrap();
-                futures::future::ok(())
-            })
-            .map_err(|e| {
-                wres2.wait().send(Err(e)).unwrap();
-            });
-        tokio::run(fut);
-        let msg2 = rres.wait().next();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        assert_eq!(msg, msg2);
-
-        let (wres, rres) = tokio::sync::mpsc::channel(1);
-        let wres2 = wres.clone();
-        let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::resize(&crate::term::Size { rows: 24, cols: 80 });
-        let fut = msg
-            .write_async(FramedWriter::new(buf))
-            .and_then(|w| {
-                let mut buf = w.0.into_inner();
-                buf.set_position(0);
-                Message::read_async(FramedReader::new(buf))
-            })
-            .and_then(move |(msg2, _)| {
-                wres.wait().send(Ok(msg2)).unwrap();
-                futures::future::ok(())
-            })
-            .map_err(|e| {
-                wres2.wait().send(Err(e)).unwrap();
-            });
-        tokio::run(fut);
-        let msg2 = rres.wait().next();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        let msg2 = msg2.unwrap();
-        assert_eq!(msg, msg2);
+    fn valid_messages() -> Vec<Message> {
+        vec![
+            Message::login(
+                "doy",
+                "screen",
+                &crate::term::Size { rows: 24, cols: 80 },
+            ),
+            Message::start_streaming(),
+            Message::start_watching("some-session-id"),
+            Message::heartbeat(),
+            Message::terminal_output(b"foobar"),
+            Message::list_sessions(),
+            Message::sessions(&[Session {
+                id: "some-session-id".to_string(),
+                username: "doy".to_string(),
+                term_type: "screen".to_string(),
+                size: crate::term::Size { rows: 24, cols: 80 },
+                idle_time: 123,
+                title: "it's my terminal title".to_string(),
+            }]),
+            Message::disconnected(),
+            Message::error("error message"),
+            Message::resize(&crate::term::Size { rows: 25, cols: 81 }),
+        ]
     }
 }

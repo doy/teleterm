@@ -183,6 +183,7 @@ struct WatchSession {
     list_client: crate::client::Client,
     state: State,
     raw_screen: Option<crossterm::RawScreen>,
+    needs_redraw: bool,
 }
 
 impl WatchSession {
@@ -208,6 +209,7 @@ impl WatchSession {
             list_client,
             state: State::new(),
             raw_screen: None,
+            needs_redraw: false,
         })
     }
 
@@ -226,12 +228,7 @@ impl WatchSession {
                     crate::session_list::SessionList::new(sessions)
                         .context(SessionList)?,
                 )?;
-                if let State::Choosing { sessions, .. } = &self.state {
-                    // TODO: async
-                    sessions.print().context(SessionList)?;
-                } else {
-                    unreachable!();
-                }
+                self.needs_redraw = true;
             }
             msg => {
                 return Err(crate::error::Error::UnexpectedMessage {
@@ -267,13 +264,13 @@ impl WatchSession {
                 '<',
             )) => {
                 sessions.prev_page();
-                sessions.print().context(SessionList)?;
+                self.needs_redraw = true;
             }
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
                 '>',
             )) => {
                 sessions.next_page();
-                sessions.print().context(SessionList)?;
+                self.needs_redraw = true;
             }
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(c)) => {
                 if let Some(id) = sessions.id_for(*c) {
@@ -348,9 +345,21 @@ impl WatchSession {
         Ok(())
     }
 
-    fn resize(&self) -> Result<()> {
-        if let State::Choosing { sessions, .. } = &self.state {
-            sessions.print().context(SessionList)?;
+    fn resize(&mut self) -> Result<()> {
+        if let State::Choosing { .. } = &self.state {
+            self.needs_redraw = true;
+        }
+        Ok(())
+    }
+
+    fn redraw(&self) -> Result<()> {
+        match &self.state {
+            State::Temporary => unreachable!(),
+            State::LoggingIn { .. } => {}
+            State::Choosing { sessions, .. } => {
+                sessions.print().context(SessionList)?;
+            }
+            State::Watching { .. } => {}
         }
         Ok(())
     }
@@ -487,6 +496,11 @@ impl futures::future::Future for WatchSession {
                     .context(Common)?,
             );
         }
-        crate::component_future::poll_future(self, Self::POLL_FNS)
+        let res = crate::component_future::poll_future(self, Self::POLL_FNS);
+        if self.needs_redraw {
+            self.redraw()?;
+            self.needs_redraw = false;
+        }
+        res
     }
 }

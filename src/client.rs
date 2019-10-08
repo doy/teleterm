@@ -103,7 +103,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn cast(
+    pub fn stream(
         address: &str,
         username: &str,
         heartbeat_duration: std::time::Duration,
@@ -112,7 +112,7 @@ impl Client {
             address,
             username,
             heartbeat_duration,
-            &[crate::protocol::Message::start_casting()],
+            &[crate::protocol::Message::start_streaming()],
             true,
         )
     }

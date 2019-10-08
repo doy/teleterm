@@ -61,7 +61,7 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
             input: buffer_size_str,
         })
         .context(Common)
-        .context(super::Cast)?;
+        .context(super::Stream)?;
     run_impl(
         &matches
             .value_of("username")
@@ -69,7 +69,7 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
             .or_else(|| std::env::var("USER").ok())
             .context(crate::error::CouldntFindUsername)
             .context(Common)
-            .context(super::Cast)?,
+            .context(super::Stream)?,
         matches.value_of("address").unwrap_or("127.0.0.1:4144"),
         buffer_size,
         &matches.value_of("command").map_or_else(
@@ -81,7 +81,7 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
         ),
         &args,
     )
-    .context(super::Cast)
+    .context(super::Stream)
 }
 
 fn run_impl(
@@ -92,7 +92,7 @@ fn run_impl(
     args: &[String],
 ) -> Result<()> {
     tokio::run(
-        CastSession::new(
+        StreamSession::new(
             command,
             args,
             address,
@@ -108,7 +108,7 @@ fn run_impl(
     Ok(())
 }
 
-struct CastSession {
+struct StreamSession {
     client: crate::client::Client,
     process: crate::process::Process<crate::async_stdin::Stdin>,
     stdout: tokio::io::Stdout,
@@ -120,7 +120,7 @@ struct CastSession {
     raw_screen: Option<crossterm::RawScreen>,
 }
 
-impl CastSession {
+impl StreamSession {
     fn new(
         cmd: &str,
         args: &[String],
@@ -129,7 +129,7 @@ impl CastSession {
         username: &str,
         heartbeat_duration: std::time::Duration,
     ) -> Result<Self> {
-        let client = crate::client::Client::cast(
+        let client = crate::client::Client::stream(
             address,
             username,
             heartbeat_duration,
@@ -171,7 +171,7 @@ impl CastSession {
     }
 }
 
-impl CastSession {
+impl StreamSession {
     const POLL_FNS: &'static [&'static dyn for<'a> Fn(
         &'a mut Self,
     ) -> Result<
@@ -198,7 +198,7 @@ impl CastSession {
                 }
                 crate::client::Event::ServerMessage(..) => {
                     // we don't expect to ever see a server message once we
-                    // start casting, so if one comes through, assume
+                    // start streaming, so if one comes through, assume
                     // something is messed up and try again
                     self.client.reconnect();
                     Ok(crate::component_future::Poll::DidWork)
@@ -315,7 +315,7 @@ impl CastSession {
 }
 
 #[must_use = "futures do nothing unless polled"]
-impl futures::future::Future for CastSession {
+impl futures::future::Future for StreamSession {
     type Item = ();
     type Error = Error;
 

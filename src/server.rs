@@ -96,7 +96,7 @@ enum ConnectionState {
         username: String,
         term_info: TerminalInfo,
     },
-    Casting {
+    Streaming {
         username: String,
         term_info: TerminalInfo,
         saved_data: crate::term::Buffer,
@@ -131,12 +131,12 @@ impl ConnectionState {
         }
     }
 
-    fn cast(&self, buffer_size: usize) -> Self {
+    fn stream(&self, buffer_size: usize) -> Self {
         match self {
             Self::LoggedIn {
                 username,
                 term_info,
-            } => Self::Casting {
+            } => Self::Streaming {
                 username: username.clone(),
                 term_info: term_info.clone(),
                 saved_data: crate::term::Buffer::new(buffer_size),
@@ -195,7 +195,7 @@ impl Connection {
                 username,
                 term_info,
             } => (username, term_info),
-            ConnectionState::Casting {
+            ConnectionState::Streaming {
                 username,
                 term_info,
                 ..
@@ -206,7 +206,7 @@ impl Connection {
                 ..
             } => (username, term_info),
         };
-        let title = if let ConnectionState::Casting { saved_data, .. } =
+        let title = if let ConnectionState::Streaming { saved_data, .. } =
             &self.state
         {
             saved_data.title()
@@ -273,8 +273,8 @@ impl Server {
             ConnectionState::LoggedIn { .. } => {
                 self.handle_other_message(conn, message)
             }
-            ConnectionState::Casting { .. } => {
-                self.handle_cast_message(conn, message)
+            ConnectionState::Streaming { .. } => {
+                self.handle_stream_message(conn, message)
             }
             ConnectionState::Watching { .. } => {
                 self.handle_watch_message(conn, message)
@@ -305,13 +305,13 @@ impl Server {
         }
     }
 
-    fn handle_cast_message(
+    fn handle_stream_message(
         &mut self,
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
         let (username, term_info, saved_data) =
-            if let ConnectionState::Casting {
+            if let ConnectionState::Streaming {
                 username,
                 term_info,
                 saved_data,
@@ -335,7 +335,7 @@ impl Server {
                 Ok(())
             }
             crate::protocol::Message::TerminalOutput { data } => {
-                println!("got {} bytes of cast data", data.len());
+                println!("got {} bytes of stream data", data.len());
                 saved_data.append(&data);
                 for watch_conn in self.watchers_mut() {
                     match &watch_conn.state {
@@ -418,22 +418,22 @@ impl Server {
             }
             crate::protocol::Message::ListSessions => {
                 let sessions: Vec<_> =
-                    self.casters().flat_map(Connection::session).collect();
+                    self.streamers().flat_map(Connection::session).collect();
                 conn.to_send
                     .push_back(crate::protocol::Message::sessions(&sessions));
                 Ok(())
             }
-            crate::protocol::Message::StartCasting => {
-                conn.state = conn.state.cast(self.buffer_size);
+            crate::protocol::Message::StartStreaming => {
+                conn.state = conn.state.stream(self.buffer_size);
                 Ok(())
             }
             crate::protocol::Message::StartWatching { id } => {
-                if let Some(cast_conn) = self.connections.get(&id) {
+                if let Some(stream_conn) = self.connections.get(&id) {
                     conn.state = conn.state.watch(&id);
-                    let data = if let ConnectionState::Casting {
+                    let data = if let ConnectionState::Streaming {
                         saved_data,
                         ..
-                    } = &cast_conn.state
+                    } = &stream_conn.state
                     {
                         saved_data.contents().to_vec()
                     } else {
@@ -587,9 +587,9 @@ impl Server {
         }
     }
 
-    fn casters(&self) -> impl Iterator<Item = &Connection> {
+    fn streamers(&self) -> impl Iterator<Item = &Connection> {
         self.connections.values().filter(|conn| match conn.state {
-            ConnectionState::Casting { .. } => true,
+            ConnectionState::Streaming { .. } => true,
             _ => false,
         })
     }

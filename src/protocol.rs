@@ -109,7 +109,7 @@ pub enum Message {
         term_type: String,
         size: crate::term::Size,
     },
-    StartCasting,
+    StartStreaming,
     StartWatching {
         id: String,
     },
@@ -131,7 +131,7 @@ pub enum Message {
 }
 
 const MSG_LOGIN: u32 = 0;
-const MSG_START_CASTING: u32 = 1;
+const MSG_START_STREAMING: u32 = 1;
 const MSG_START_WATCHING: u32 = 2;
 const MSG_HEARTBEAT: u32 = 3;
 const MSG_TERMINAL_OUTPUT: u32 = 4;
@@ -155,8 +155,8 @@ impl Message {
         }
     }
 
-    pub fn start_casting() -> Self {
-        Self::StartCasting
+    pub fn start_streaming() -> Self {
+        Self::StartStreaming
     }
 
     pub fn start_watching(id: &str) -> Self {
@@ -363,8 +363,8 @@ impl From<&Message> for Packet {
                     data,
                 }
             }
-            Message::StartCasting => Self {
-                ty: MSG_START_CASTING,
+            Message::StartStreaming => Self {
+                ty: MSG_START_STREAMING,
                 data: vec![],
             },
             Message::StartWatching { id } => {
@@ -529,7 +529,7 @@ impl std::convert::TryFrom<Packet> for Message {
                     data,
                 )
             }
-            MSG_START_CASTING => (Self::StartCasting, data),
+            MSG_START_STREAMING => (Self::StartStreaming, data),
             MSG_START_WATCHING => {
                 let (id, data) = read_str(data)?;
 
@@ -585,7 +585,7 @@ mod test {
         let msg2 = Message::try_from(packet).unwrap();
         assert_eq!(msg, msg2);
 
-        let msg = Message::start_casting();
+        let msg = Message::start_streaming();
         let packet = Packet::from(&msg);
         let msg2 = Message::try_from(packet).unwrap();
         assert_eq!(msg, msg2);
@@ -651,7 +651,7 @@ mod test {
         assert_eq!(msg, msg2);
 
         let mut buf = vec![];
-        let msg = Message::start_casting();
+        let msg = Message::start_streaming();
         msg.write(&mut buf).unwrap();
         let msg2 = Message::read(buf.as_slice()).unwrap();
         assert_eq!(msg, msg2);
@@ -746,7 +746,7 @@ mod test {
         let (wres, rres) = tokio::sync::mpsc::channel(1);
         let wres2 = wres.clone();
         let buf = std::io::Cursor::new(vec![]);
-        let msg = Message::start_casting();
+        let msg = Message::start_streaming();
         let fut = msg
             .write_async(FramedWriter::new(buf))
             .and_then(|w| {

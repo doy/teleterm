@@ -1,5 +1,5 @@
-mod cast;
 mod server;
+mod stream;
 mod watch;
 
 use snafu::ResultExt as _;
@@ -13,7 +13,7 @@ pub enum Error {
     Parse { source: clap::Error },
 
     #[snafu(display("{}", source))]
-    Cast { source: crate::cmd::cast::Error },
+    Stream { source: crate::cmd::stream::Error },
 
     #[snafu(display("{}", source))]
     Server { source: crate::cmd::server::Error },
@@ -32,9 +32,9 @@ struct Command {
 
 const COMMANDS: &[Command] = &[
     Command {
-        name: "cast",
-        cmd: &cast::cmd,
-        run: &cast::run,
+        name: "stream",
+        cmd: &stream::cmd,
+        run: &stream::run,
     },
     Command {
         name: "server",
@@ -51,7 +51,7 @@ const COMMANDS: &[Command] = &[
 pub fn parse<'a>() -> Result<clap::ArgMatches<'a>> {
     let mut app =
         clap::App::new(crate::util::program_name().context(FindProgramName)?)
-            .about("Broadcast your terminal for other people to watch")
+            .about("Stream your terminal for other people to watch")
             .author(clap::crate_authors!())
             .version(clap::crate_version!());
 

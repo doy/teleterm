@@ -90,7 +90,7 @@ fn run_impl(username: &str, address: &str) -> Result<()> {
 enum State {
     Temporary,
     LoggingIn {
-        alternate_screen: Option<crossterm::AlternateScreen>,
+        alternate_screen: crossterm::AlternateScreen,
     },
     Choosing {
         sessions: crate::session_list::SessionList,
@@ -102,13 +102,13 @@ enum State {
 }
 
 impl State {
-    fn new() -> Self {
-        Self::LoggingIn {
-            alternate_screen: None,
-        }
+    fn new() -> Result<Self> {
+        Ok(Self::LoggingIn {
+            alternate_screen: new_alternate_screen()?,
+        })
     }
 
-    fn logging_in(&mut self) {
+    fn logging_in(&mut self) -> Result<()> {
         let prev_state = std::mem::replace(self, Self::Temporary);
         *self = match prev_state {
             Self::Temporary => unreachable!(),
@@ -117,13 +117,12 @@ impl State {
             }
             Self::Choosing {
                 alternate_screen, ..
-            } => Self::LoggingIn {
-                alternate_screen: Some(alternate_screen),
-            },
+            } => Self::LoggingIn { alternate_screen },
             _ => Self::LoggingIn {
-                alternate_screen: None,
+                alternate_screen: new_alternate_screen()?,
             },
-        }
+        };
+        Ok(())
     }
 
     fn choosing(
@@ -133,16 +132,8 @@ impl State {
         let prev_state = std::mem::replace(self, Self::Temporary);
         *self = match prev_state {
             Self::Temporary => unreachable!(),
-            Self::LoggingIn {
-                alternate_screen: Some(alternate_screen),
-            } => Self::Choosing {
+            Self::LoggingIn { alternate_screen } => Self::Choosing {
                 alternate_screen,
-                sessions,
-            },
-            Self::LoggingIn {
-                alternate_screen: None,
-            } => Self::Choosing {
-                alternate_screen: self.new_alternate_screen()?,
                 sessions,
             },
             Self::Choosing {
@@ -152,7 +143,7 @@ impl State {
                 sessions,
             },
             _ => Self::Choosing {
-                alternate_screen: self.new_alternate_screen()?,
+                alternate_screen: new_alternate_screen()?,
                 sessions,
             },
         };
@@ -166,11 +157,6 @@ impl State {
         *self = Self::Watching {
             client: Box::new(client),
         }
-    }
-
-    fn new_alternate_screen(&self) -> Result<crossterm::AlternateScreen> {
-        crossterm::AlternateScreen::to_alternate(false)
-            .context(ToAlternateScreen)
     }
 }
 
@@ -207,16 +193,17 @@ impl WatchSession {
             key_reader: crate::key_reader::KeyReader::new(task)
                 .context(KeyReader)?,
             list_client,
-            state: State::new(),
+            state: State::new()?,
             raw_screen: None,
             needs_redraw: true,
         })
     }
 
-    fn reconnect(&mut self) {
-        self.state.logging_in();
+    fn reconnect(&mut self) -> Result<()> {
+        self.state.logging_in()?;
         self.list_client.reconnect();
         self.needs_redraw = true;
+        Ok(())
     }
 
     fn loading_keypress(
@@ -334,7 +321,7 @@ impl WatchSession {
                 stdout.flush().context(FlushTerminal)?;
             }
             crate::protocol::Message::Disconnected => {
-                self.reconnect();
+                self.reconnect()?;
             }
             crate::protocol::Message::Error { msg } => {
                 return Err(Error::Server { message: msg });
@@ -355,7 +342,7 @@ impl WatchSession {
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
                 'q',
             )) => {
-                self.reconnect();
+                self.reconnect()?;
             }
             _ => {}
         }
@@ -436,7 +423,7 @@ impl WatchSession {
             futures::Async::Ready(Some(e)) => {
                 match e {
                     crate::client::Event::Disconnect => {
-                        self.reconnect();
+                        self.reconnect()?;
                     }
                     crate::client::Event::Connect(_) => {
                         self.list_client.send_message(
@@ -475,7 +462,7 @@ impl WatchSession {
             futures::Async::Ready(Some(e)) => {
                 match e {
                     crate::client::Event::Disconnect => {
-                        self.reconnect();
+                        self.reconnect()?;
                     }
                     crate::client::Event::Connect(_) => {}
                     crate::client::Event::ServerMessage(msg) => {
@@ -497,6 +484,10 @@ impl WatchSession {
             }
         }
     }
+}
+
+fn new_alternate_screen() -> Result<crossterm::AlternateScreen> {
+    crossterm::AlternateScreen::to_alternate(false).context(ToAlternateScreen)
 }
 
 #[must_use = "futures do nothing unless polled"]

@@ -213,8 +213,7 @@ impl WatchSession {
 
     fn reconnect(&mut self) {
         self.state.logging_in();
-        self.list_client
-            .send_message(crate::protocol::Message::list_sessions());
+        self.list_client.reconnect();
     }
 
     fn list_server_message(
@@ -411,8 +410,13 @@ impl WatchSession {
         match self.list_client.poll().context(Client)? {
             futures::Async::Ready(Some(e)) => {
                 match e {
-                    crate::client::Event::Reconnect(_) => {
+                    crate::client::Event::Disconnect => {
                         self.reconnect();
+                    }
+                    crate::client::Event::Connect(_) => {
+                        self.list_client.send_message(
+                            crate::protocol::Message::list_sessions(),
+                        );
                     }
                     crate::client::Event::ServerMessage(msg) => {
                         self.list_server_message(msg)?;
@@ -445,9 +449,10 @@ impl WatchSession {
         match client.poll().context(Client)? {
             futures::Async::Ready(Some(e)) => {
                 match e {
-                    crate::client::Event::Reconnect(_) => {
-                        // XXX this should do something, i think?
+                    crate::client::Event::Disconnect => {
+                        self.reconnect();
                     }
+                    crate::client::Event::Connect(_) => {}
                     crate::client::Event::ServerMessage(msg) => {
                         self.watch_server_message(msg)?;
                     }

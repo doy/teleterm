@@ -191,7 +191,10 @@ impl StreamSession {
     ) -> Result<crate::component_future::Poll<()>> {
         match self.client.poll().context(Client) {
             Ok(futures::Async::Ready(Some(e))) => match e {
-                crate::client::Event::Reconnect(size) => {
+                crate::client::Event::Disconnect => {
+                    Ok(crate::component_future::Poll::DidWork)
+                }
+                crate::client::Event::Connect(size) => {
                     self.sent_remote = 0;
                     self.process.resize(size);
                     Ok(crate::component_future::Poll::DidWork)

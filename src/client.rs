@@ -79,7 +79,8 @@ enum WriteSocket {
 
 pub enum Event {
     ServerMessage(crate::protocol::Message),
-    Reconnect(crate::term::Size),
+    Disconnect,
+    Connect(crate::term::Size),
     Resize(crate::term::Size),
 }
 
@@ -215,7 +216,9 @@ impl Client {
                     .duration_since(self.last_server_time);
                 if since_last_server > self.heartbeat_duration * 2 {
                     self.reconnect();
-                    return Ok(crate::component_future::Poll::DidWork);
+                    return Ok(crate::component_future::Poll::Event(
+                        Event::Disconnect,
+                    ));
                 }
             }
         }
@@ -247,25 +250,7 @@ impl Client {
                     .context(Common),
                 ));
 
-                self.to_send.clear();
-
-                let term =
-                    std::env::var("TERM").unwrap_or_else(|_| "".to_string());
-                let size = crate::term::Size::get().context(Resize)?;
-                let msg = crate::protocol::Message::login(
-                    &self.username,
-                    &term,
-                    &size,
-                );
-                self.to_send.push_back(msg);
-
-                for msg in &self.on_connect {
-                    self.to_send.push_back(msg.clone());
-                }
-
-                Ok(crate::component_future::Poll::Event(Event::Reconnect(
-                    size,
-                )))
+                Ok(crate::component_future::Poll::DidWork)
             }
             WriteSocket::Connecting(ref mut fut) => match fut.poll() {
                 Ok(futures::Async::Ready(s)) => {
@@ -277,7 +262,26 @@ impl Client {
                     self.wsock = WriteSocket::Connected(
                         crate::protocol::FramedWriter::new(ws),
                     );
-                    Ok(crate::component_future::Poll::DidWork)
+
+                    self.to_send.clear();
+
+                    let term = std::env::var("TERM")
+                        .unwrap_or_else(|_| "".to_string());
+                    let size = crate::term::Size::get().context(Resize)?;
+                    let msg = crate::protocol::Message::login(
+                        &self.username,
+                        &term,
+                        &size,
+                    );
+                    self.to_send.push_back(msg);
+
+                    for msg in &self.on_connect {
+                        self.to_send.push_back(msg.clone());
+                    }
+
+                    Ok(crate::component_future::Poll::Event(Event::Connect(
+                        size,
+                    )))
                 }
                 Ok(futures::Async::NotReady) => {
                     Ok(crate::component_future::Poll::NotReady)
@@ -334,7 +338,9 @@ impl Client {
                 }
                 Err(..) => {
                     self.reconnect();
-                    Ok(crate::component_future::Poll::DidWork)
+                    Ok(crate::component_future::Poll::Event(
+                        Event::Disconnect,
+                    ))
                 }
             },
         }

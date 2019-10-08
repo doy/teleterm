@@ -349,8 +349,9 @@ impl WatchSession {
         Ok(false)
     }
 
-    fn resize(&mut self) -> Result<()> {
-        if let State::Choosing { .. } = &self.state {
+    fn resize(&mut self, size: crate::term::Size) -> Result<()> {
+        if let State::Choosing { sessions, .. } = &mut self.state {
+            sessions.resize(size);
             self.needs_redraw = true;
         }
         Ok(())
@@ -433,8 +434,8 @@ impl WatchSession {
                     crate::client::Event::ServerMessage(msg) => {
                         self.list_server_message(msg)?;
                     }
-                    crate::client::Event::Resize(_) => {
-                        self.resize()?;
+                    crate::client::Event::Resize(size) => {
+                        self.resize(size)?;
                     }
                 }
                 Ok(crate::component_future::Poll::DidWork)

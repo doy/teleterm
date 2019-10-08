@@ -174,6 +174,10 @@ impl SessionList {
         Ok(())
     }
 
+    pub fn resize(&mut self, size: crate::term::Size) {
+        self.size = size;
+    }
+
     pub fn id_for(&self, c: char) -> Option<&str> {
         self.char_to_idx(c).and_then(|i| {
             self.sessions.get(i + self.offset).map(|s| s.id.as_ref())

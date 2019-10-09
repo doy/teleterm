@@ -199,10 +199,15 @@ impl WatchSession {
         })
     }
 
-    fn reconnect(&mut self) -> Result<()> {
+    fn reconnect(&mut self, hard: bool) -> Result<()> {
         self.state.logging_in()?;
-        self.list_client.reconnect();
         self.needs_redraw = true;
+        if hard {
+            self.list_client.reconnect();
+        } else {
+            self.list_client
+                .send_message(crate::protocol::Message::list_sessions());
+        }
         Ok(())
     }
 
@@ -323,7 +328,7 @@ impl WatchSession {
                 stdout.flush().context(FlushTerminal)?;
             }
             crate::protocol::Message::Disconnected => {
-                self.reconnect()?;
+                self.reconnect(true)?;
             }
             crate::protocol::Message::Error { msg } => {
                 return Err(Error::Server { message: msg });
@@ -344,7 +349,7 @@ impl WatchSession {
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
                 'q',
             )) => {
-                self.reconnect()?;
+                self.reconnect(false)?;
             }
             _ => {}
         }
@@ -547,7 +552,7 @@ impl WatchSession {
             futures::Async::Ready(Some(e)) => {
                 match e {
                     crate::client::Event::Disconnect => {
-                        self.reconnect()?;
+                        self.reconnect(true)?;
                     }
                     crate::client::Event::Connect(_) => {
                         self.list_client.send_message(
@@ -586,7 +591,7 @@ impl WatchSession {
             futures::Async::Ready(Some(e)) => {
                 match e {
                     crate::client::Event::Disconnect => {
-                        self.reconnect()?;
+                        self.reconnect(true)?;
                     }
                     crate::client::Event::Connect(_) => {}
                     crate::client::Event::ServerMessage(msg) => {

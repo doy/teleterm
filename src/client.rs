@@ -1,5 +1,6 @@
 use futures::future::Future as _;
 use futures::stream::Stream as _;
+use rand::Rng as _;
 use snafu::futures01::stream::StreamExt as _;
 use snafu::futures01::FutureExt as _;
 use snafu::ResultExt as _;
@@ -91,6 +92,7 @@ pub struct Client {
 
     heartbeat_timer: tokio::timer::Interval,
     reconnect_timer: Option<tokio::timer::Delay>,
+    reconnect_backoff_amount: u64,
     last_server_time: std::time::Instant,
     winches: Option<
         Box<dyn futures::stream::Stream<Item = (), Error = Error> + Send>,
@@ -171,6 +173,7 @@ impl Client {
 
             heartbeat_timer,
             reconnect_timer: None,
+            reconnect_backoff_amount: 1,
             last_server_time: std::time::Instant::now(),
             winches,
 
@@ -189,6 +192,24 @@ impl Client {
     pub fn reconnect(&mut self) {
         self.rsock = ReadSocket::NotConnected;
         self.wsock = WriteSocket::NotConnected;
+    }
+
+    fn set_reconnect_timer(&mut self) {
+        let secs = rand::thread_rng().gen_range(
+            self.reconnect_backoff_amount / 2,
+            self.reconnect_backoff_amount,
+        );
+        let secs = secs.max(1);
+        self.reconnect_timer = Some(tokio::timer::Delay::new(
+            std::time::Instant::now() + std::time::Duration::from_secs(secs),
+        ));
+        self.reconnect_backoff_amount *= 2;
+        self.reconnect_backoff_amount = self.reconnect_backoff_amount.min(60);
+    }
+
+    fn reset_reconnect_timer(&mut self) {
+        self.reconnect_timer = None;
+        self.reconnect_backoff_amount = 1;
     }
 }
 
@@ -238,6 +259,7 @@ impl Client {
                     }
                 }
 
+                self.set_reconnect_timer();
                 self.wsock = WriteSocket::Connecting(Box::new(
                     tokio::net::tcp::TcpStream::connect(
                         &self
@@ -279,6 +301,8 @@ impl Client {
                         self.to_send.push_back(msg.clone());
                     }
 
+                    self.reset_reconnect_timer();
+
                     Ok(crate::component_future::Poll::Event(Event::Connect(
                         size,
                     )))
@@ -288,10 +312,6 @@ impl Client {
                 }
                 Err(..) => {
                     self.wsock = WriteSocket::NotConnected;
-                    self.reconnect_timer = Some(tokio::timer::Delay::new(
-                        std::time::Instant::now()
-                            + std::time::Duration::from_secs(1),
-                    ));
                     Ok(crate::component_future::Poll::DidWork)
                 }
             },

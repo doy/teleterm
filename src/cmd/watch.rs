@@ -11,9 +11,6 @@ pub enum Error {
     #[snafu(display("{}", source))]
     Resize { source: crate::term::Error },
 
-    #[snafu(display("{}", source))]
-    SessionList { source: crate::session_list::Error },
-
     #[snafu(display("failed to read key from terminal: {}", source))]
     ReadKey { source: crate::key_reader::Error },
 
@@ -366,17 +363,17 @@ impl WatchSession {
         match &self.state {
             State::Temporary => unreachable!(),
             State::LoggingIn { .. } => {
-                self.display_loading_message()?;
+                self.display_loading_screen()?;
             }
-            State::Choosing { sessions, .. } => {
-                sessions.print().context(SessionList)?;
+            State::Choosing { .. } => {
+                self.display_choosing_screen()?;
             }
             State::Watching { .. } => {}
         }
         Ok(())
     }
 
-    fn display_loading_message(&self) -> Result<()> {
+    fn display_loading_screen(&self) -> Result<()> {
         crossterm::terminal()
             .clear(crossterm::ClearType::All)
             .context(WriteTerminalCrossterm)?;
@@ -385,6 +382,127 @@ impl WatchSession {
         let mut stdout = stdout.lock();
         stdout.write(data).context(WriteTerminal)?;
         stdout.flush().context(FlushTerminal)?;
+        Ok(())
+    }
+
+    fn display_choosing_screen(&self) -> Result<()> {
+        let sessions = if let State::Choosing { sessions, .. } = &self.state {
+            sessions
+        } else {
+            unreachable!()
+        };
+
+        let char_width = 2;
+
+        let max_name_width = (sessions.size().cols / 3) as usize;
+        let name_width = sessions
+            .visible_sessions()
+            .iter()
+            .map(|s| s.username.len())
+            .max()
+            .unwrap_or(4);
+        // XXX unstable
+        // let name_width = name_width.clamp(4, max_name_width);
+        let name_width = if name_width < 4 {
+            4
+        } else if name_width > max_name_width {
+            max_name_width
+        } else {
+            name_width
+        };
+
+        let size_width = 7;
+
+        let max_idle_time = sessions
+            .visible_sessions()
+            .iter()
+            .map(|s| s.idle_time)
+            .max()
+            .unwrap_or(4);
+        let idle_width = format_time(max_idle_time).len();
+        let idle_width = if idle_width < 4 { 4 } else { idle_width };
+
+        let max_title_width = (sessions.size().cols as usize)
+            - char_width
+            - 3
+            - name_width
+            - 3
+            - size_width
+            - 3
+            - idle_width
+            - 3;
+
+        crossterm::terminal()
+            .clear(crossterm::ClearType::All)
+            .context(WriteTerminalCrossterm)?;
+        println!("welcome to shellshare\r");
+        println!("available sessions:\r");
+        println!("\r");
+        println!(
+            "{:4$} | {:5$} | {:6$} | {:7$} | title\r",
+            "",
+            "name",
+            "size",
+            "idle",
+            char_width,
+            name_width,
+            size_width,
+            idle_width
+        );
+        println!("{}\r", "-".repeat(sessions.size().cols as usize));
+
+        let mut prev_name: Option<&str> = None;
+        for (c, session) in sessions.visible_sessions_with_chars() {
+            let first = if let Some(name) = prev_name {
+                name != session.username
+            } else {
+                true
+            };
+
+            let display_char = format!("{})", c);
+            let display_name = if first {
+                truncate(&session.username, max_name_width)
+            } else {
+                "".to_string()
+            };
+            let display_size_plain = format!("{}", &session.size);
+            let display_size_full = if &session.size == sessions.size() {
+                // XXX i should be able to use crossterm::style here, but
+                // it has bugs
+                format!("\x1b[32m{}\x1b[m", display_size_plain)
+            } else if session.size.fits_in(sessions.size()) {
+                display_size_plain.clone()
+            } else {
+                // XXX i should be able to use crossterm::style here, but
+                // it has bugs
+                format!("\x1b[31m{}\x1b[m", display_size_plain)
+            };
+            let display_idle = format_time(session.idle_time);
+            let display_title = truncate(&session.title, max_title_width);
+
+            println!(
+                "{:5$} | {:6$} | {:7$} | {:8$} | {}\r",
+                display_char,
+                display_name,
+                display_size_full,
+                display_idle,
+                display_title,
+                char_width,
+                name_width,
+                size_width
+                    + (display_size_full.len() - display_size_plain.len()),
+                idle_width
+            );
+
+            prev_name = Some(&session.username);
+        }
+        print!(
+            "({}/{}) space: refresh, q: quit, <: prev page, >: next page --> ",
+            sessions.current_page(),
+            sessions.total_pages(),
+        );
+        std::io::stdout().flush().context(FlushTerminal)?;
+
         Ok(())
     }
 }
@@ -515,5 +633,91 @@ impl futures::future::Future for WatchSession {
             self.needs_redraw = false;
         }
         res
+    }
+}
+
+fn format_time(dur: u32) -> String {
+    let secs = dur % 60;
+    let dur = dur / 60;
+    if dur == 0 {
+        return format!("{}s", secs);
+    }
+
+    let mins = dur % 60;
+    let dur = dur / 60;
+    if dur == 0 {
+        return format!("{}m{:02}s", mins, secs);
+    }
+
+    let hours = dur % 24;
+    let dur = dur / 24;
+    if dur == 0 {
+        return format!("{}h{:02}m{:02}s", hours, mins, secs);
+    }
+
+    let days = dur;
+    format!("{}d{:02}h{:02}m{:02}s", days, hours, mins, secs)
+}
+
+fn truncate(s: &str, len: usize) -> String {
+    if s.len() <= len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..(len - 3)])
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_truncate() {
+        assert_eq!(truncate("abcdefghij", 12), "abcdefghij");
+        assert_eq!(truncate("abcdefghij", 11), "abcdefghij");
+        assert_eq!(truncate("abcdefghij", 10), "abcdefghij");
+        assert_eq!(truncate("abcdefghij", 9), "abcdef...");
+        assert_eq!(truncate("abcdefghij", 8), "abcde...");
+        assert_eq!(truncate("abcdefghij", 7), "abcd...");
+
+        assert_eq!(truncate("", 7), "");
+        assert_eq!(truncate("a", 7), "a");
+        assert_eq!(truncate("ab", 7), "ab");
+        assert_eq!(truncate("abc", 7), "abc");
+        assert_eq!(truncate("abcd", 7), "abcd");
+        assert_eq!(truncate("abcde", 7), "abcde");
+        assert_eq!(truncate("abcdef", 7), "abcdef");
+        assert_eq!(truncate("abcdefg", 7), "abcdefg");
+        assert_eq!(truncate("abcdefgh", 7), "abcd...");
+        assert_eq!(truncate("abcdefghi", 7), "abcd...");
+        assert_eq!(truncate("abcdefghij", 7), "abcd...");
+    }
+
+    #[test]
+    fn test_format_time() {
+        assert_eq!(format_time(0), "0s");
+        assert_eq!(format_time(5), "5s");
+        assert_eq!(format_time(10), "10s");
+        assert_eq!(format_time(60), "1m00s");
+        assert_eq!(format_time(61), "1m01s");
+        assert_eq!(format_time(601), "10m01s");
+        assert_eq!(format_time(610), "10m10s");
+        assert_eq!(format_time(3599), "59m59s");
+        assert_eq!(format_time(3600), "1h00m00s");
+        assert_eq!(format_time(3601), "1h00m01s");
+        assert_eq!(format_time(3610), "1h00m10s");
+        assert_eq!(format_time(3660), "1h01m00s");
+        assert_eq!(format_time(3661), "1h01m01s");
+        assert_eq!(format_time(3670), "1h01m10s");
+        assert_eq!(format_time(4200), "1h10m00s");
+        assert_eq!(format_time(4201), "1h10m01s");
+        assert_eq!(format_time(4210), "1h10m10s");
+        assert_eq!(format_time(36000), "10h00m00s");
+        assert_eq!(format_time(86399), "23h59m59s");
+        assert_eq!(format_time(86400), "1d00h00m00s");
+        assert_eq!(format_time(86401), "1d00h00m01s");
+        assert_eq!(format_time(864_000), "10d00h00m00s");
+        assert_eq!(format_time(8_640_000), "100d00h00m00s");
+        assert_eq!(format_time(86_400_000), "1000d00h00m00s");
     }
 }

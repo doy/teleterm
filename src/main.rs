@@ -20,6 +20,10 @@ mod term;
 mod util;
 
 fn main() {
+    env_logger::from_env(
+        env_logger::Env::default().default_filter_or("info"),
+    )
+    .init();
     match crate::cmd::parse().and_then(|m| crate::cmd::run(&m)) {
         Ok(_) => {}
         Err(err) => {

@@ -187,7 +187,7 @@ impl Connection {
     fn new(s: tokio::net::tcp::TcpStream, buffer_size: usize) -> Self {
         let (rs, ws) = s.split();
         let id = format!("{}", uuid::Uuid::new_v4());
-        println!("{}: new connection", id);
+        log::info!("{}: new connection", id);
 
         Self {
             id,
@@ -296,7 +296,7 @@ impl Server {
             if self.rate_limiter.check(username).is_err() {
                 let display_name =
                     conn.state.username().unwrap_or("(non-logged-in users)");
-                println!("{}: ratelimit({})", conn.id, display_name);
+                log::info!("{}: ratelimit({})", conn.id, display_name);
                 return Err(Error::RateLimited);
             }
         }
@@ -332,7 +332,7 @@ impl Server {
                 if size.rows >= 1000 || size.cols >= 1000 {
                     return Err(Error::TermTooBig { size });
                 }
-                println!("{}: login({})", conn.id, username);
+                log::info!("{}: login({})", conn.id, username);
                 conn.state = conn.state.login(&username, &term_type, &size);
                 Ok(())
             }
@@ -453,13 +453,13 @@ impl Server {
                 Ok(())
             }
             crate::protocol::Message::StartStreaming => {
-                println!("{}: stream({})", conn.id, username);
+                log::info!("{}: stream({})", conn.id, username);
                 conn.state = conn.state.stream(self.buffer_size);
                 Ok(())
             }
             crate::protocol::Message::StartWatching { id } => {
                 if let Some(stream_conn) = self.connections.get(&id) {
-                    println!("{}: watch({}, {})", conn.id, username, id);
+                    log::info!("{}: watch({}, {})", conn.id, username, id);
                     conn.state = conn.state.watch(&id);
                     let data = if let ConnectionState::Streaming {
                         saved_data,
@@ -485,9 +485,9 @@ impl Server {
 
     fn handle_disconnect(&mut self, conn: &mut Connection) {
         if let Some(username) = conn.state.username() {
-            println!("{}: disconnect({})", conn.id, username);
+            log::info!("{}: disconnect({})", conn.id, username);
         } else {
-            println!("{}: disconnect", conn.id);
+            log::info!("{}: disconnect", conn.id);
         }
 
         for watch_conn in self.watchers_mut() {
@@ -687,7 +687,10 @@ impl Server {
                     not_ready = true;
                 }
                 Err(e) => {
-                    println!("error reading from active connection: {}", e);
+                    log::error!(
+                        "error reading from active connection: {}",
+                        e
+                    );
                     continue;
                 }
                 _ => {}
@@ -723,7 +726,10 @@ impl Server {
                     not_ready = true;
                 }
                 Err(e) => {
-                    println!("error reading from active connection: {}", e);
+                    log::error!(
+                        "error reading from active connection: {}",
+                        e
+                    );
                     continue;
                 }
                 _ => {}

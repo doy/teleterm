@@ -113,6 +113,15 @@ impl ConnectionState {
         Self::Accepted
     }
 
+    fn username(&self) -> Option<&str> {
+        match self {
+            Self::Accepted => None,
+            Self::LoggedIn { username, .. } => Some(username),
+            Self::Streaming { username, .. } => Some(username),
+            Self::Watching { username, .. } => Some(username),
+        }
+    }
+
     fn login(
         &self,
         username: &str,
@@ -173,8 +182,11 @@ struct Connection {
 impl Connection {
     fn new(s: tokio::net::tcp::TcpStream) -> Self {
         let (rs, ws) = s.split();
+        let id = format!("{}", uuid::Uuid::new_v4());
+        println!("{}: new connection", id);
+
         Self {
-            id: format!("{}", uuid::Uuid::new_v4()),
+            id,
             rsock: Some(ReadSocket::Connected(
                 crate::protocol::FramedReader::new(rs),
             )),
@@ -297,7 +309,7 @@ impl Server {
                 if size.rows >= 1000 || size.cols >= 1000 {
                     return Err(Error::TermTooBig { size });
                 }
-                println!("got a connection from {}", username);
+                println!("{}: login({})", conn.id, username);
                 conn.state = conn.state.login(&username, &term_type, &size);
                 Ok(())
             }
@@ -310,22 +322,19 @@ impl Server {
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let (username, term_info, saved_data) =
-            if let ConnectionState::Streaming {
-                username,
-                term_info,
-                saved_data,
-                ..
-            } = &mut conn.state
-            {
-                (username, term_info, saved_data)
-            } else {
-                unreachable!()
-            };
+        let (term_info, saved_data) = if let ConnectionState::Streaming {
+            term_info,
+            saved_data,
+            ..
+        } = &mut conn.state
+        {
+            (term_info, saved_data)
+        } else {
+            unreachable!()
+        };
 
         match message {
             crate::protocol::Message::Heartbeat => {
-                println!("got a heartbeat from {}", username);
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
                 Ok(())
@@ -335,7 +344,6 @@ impl Server {
                 Ok(())
             }
             crate::protocol::Message::TerminalOutput { data } => {
-                println!("got {} bytes of stream data", data.len());
                 saved_data.append(&data);
                 for watch_conn in self.watchers_mut() {
                     match &watch_conn.state {
@@ -364,19 +372,17 @@ impl Server {
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let (username, term_info) = if let ConnectionState::Watching {
-            username,
-            term_info,
-            ..
-        } = &mut conn.state
-        {
-            (username, term_info)
-        } else {
-            unreachable!()
-        };
+        let term_info =
+            if let ConnectionState::Watching { term_info, .. } =
+                &mut conn.state
+            {
+                term_info
+            } else {
+                unreachable!()
+            };
+
         match message {
             crate::protocol::Message::Heartbeat => {
-                println!("got a heartbeat from {}", username);
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
                 Ok(())
@@ -405,9 +411,9 @@ impl Server {
         } else {
             unreachable!()
         };
+
         match message {
             crate::protocol::Message::Heartbeat => {
-                println!("got a heartbeat from {}", username);
                 conn.to_send
                     .push_back(crate::protocol::Message::heartbeat());
                 Ok(())
@@ -424,11 +430,13 @@ impl Server {
                 Ok(())
             }
             crate::protocol::Message::StartStreaming => {
+                println!("{}: stream({})", conn.id, username);
                 conn.state = conn.state.stream(self.buffer_size);
                 Ok(())
             }
             crate::protocol::Message::StartWatching { id } => {
                 if let Some(stream_conn) = self.connections.get(&id) {
+                    println!("{}: watch({}, {})", conn.id, username, id);
                     conn.state = conn.state.watch(&id);
                     let data = if let ConnectionState::Streaming {
                         saved_data,
@@ -453,7 +461,11 @@ impl Server {
     }
 
     fn handle_disconnect(&mut self, conn: &mut Connection) {
-        println!("disconnect");
+        if let Some(username) = conn.state.username() {
+            println!("{}: disconnect({})", conn.id, username);
+        } else {
+            println!("{}: disconnect", conn.id);
+        }
 
         for watch_conn in self.watchers_mut() {
             if let ConnectionState::Watching { watch_id, .. } =

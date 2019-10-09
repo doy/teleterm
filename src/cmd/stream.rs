@@ -54,7 +54,7 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
         vec![]
     };
     let buffer_size_str =
-        matches.value_of("buffer-size").unwrap_or("10000000");
+        matches.value_of("buffer-size").unwrap_or("4194304");
     let buffer_size: usize = buffer_size_str
         .parse()
         .context(crate::error::ParseBufferSize {
@@ -133,6 +133,7 @@ impl StreamSession {
             address,
             username,
             heartbeat_duration,
+            buffer_size,
         );
 
         // TODO: tokio::io::stdin is broken (it's blocking)

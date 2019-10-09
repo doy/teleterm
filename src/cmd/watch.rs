@@ -183,6 +183,7 @@ impl WatchSession {
             address,
             username,
             heartbeat_duration,
+            4_194_304,
         );
 
         Ok(Self {
@@ -289,6 +290,7 @@ impl WatchSession {
                         &self.address,
                         &self.username,
                         self.heartbeat_duration,
+                        4_194_304,
                         id,
                     );
                     self.state.watching(client);

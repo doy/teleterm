@@ -89,6 +89,7 @@ pub struct Client {
     address: String,
     username: String,
     heartbeat_duration: std::time::Duration,
+    buffer_size: usize,
 
     heartbeat_timer: tokio::timer::Interval,
     reconnect_timer: Option<tokio::timer::Delay>,
@@ -110,11 +111,13 @@ impl Client {
         address: &str,
         username: &str,
         heartbeat_duration: std::time::Duration,
+        buffer_size: usize,
     ) -> Self {
         Self::new(
             address,
             username,
             heartbeat_duration,
+            buffer_size,
             &[crate::protocol::Message::start_streaming()],
             true,
         )
@@ -124,12 +127,14 @@ impl Client {
         address: &str,
         username: &str,
         heartbeat_duration: std::time::Duration,
+        buffer_size: usize,
         id: &str,
     ) -> Self {
         Self::new(
             address,
             username,
             heartbeat_duration,
+            buffer_size,
             &[crate::protocol::Message::start_watching(id)],
             false,
         )
@@ -139,14 +144,23 @@ impl Client {
         address: &str,
         username: &str,
         heartbeat_duration: std::time::Duration,
+        buffer_size: usize,
     ) -> Self {
-        Self::new(address, username, heartbeat_duration, &[], true)
+        Self::new(
+            address,
+            username,
+            heartbeat_duration,
+            buffer_size,
+            &[],
+            true,
+        )
     }
 
     fn new(
         address: &str,
         username: &str,
         heartbeat_duration: std::time::Duration,
+        buffer_size: usize,
         on_connect: &[crate::protocol::Message],
         handle_sigwinch: bool,
     ) -> Self {
@@ -170,6 +184,7 @@ impl Client {
             address: address.to_string(),
             username: username.to_string(),
             heartbeat_duration,
+            buffer_size,
 
             heartbeat_timer,
             reconnect_timer: None,
@@ -279,10 +294,16 @@ impl Client {
                     let (rs, ws) = s.split();
                     self.last_server_time = std::time::Instant::now();
                     self.rsock = ReadSocket::Connected(
-                        crate::protocol::FramedReader::new(rs),
+                        crate::protocol::FramedReader::new(
+                            rs,
+                            self.buffer_size * 2,
+                        ),
                     );
                     self.wsock = WriteSocket::Connected(
-                        crate::protocol::FramedWriter::new(ws),
+                        crate::protocol::FramedWriter::new(
+                            ws,
+                            self.buffer_size * 2,
+                        ),
                     );
 
                     self.to_send.clear();

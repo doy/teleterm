@@ -180,7 +180,7 @@ struct Connection {
 }
 
 impl Connection {
-    fn new(s: tokio::net::tcp::TcpStream) -> Self {
+    fn new(s: tokio::net::tcp::TcpStream, buffer_size: usize) -> Self {
         let (rs, ws) = s.split();
         let id = format!("{}", uuid::Uuid::new_v4());
         println!("{}: new connection", id);
@@ -188,10 +188,10 @@ impl Connection {
         Self {
             id,
             rsock: Some(ReadSocket::Connected(
-                crate::protocol::FramedReader::new(rs),
+                crate::protocol::FramedReader::new(rs, buffer_size),
             )),
             wsock: Some(WriteSocket::Connected(
-                crate::protocol::FramedWriter::new(ws),
+                crate::protocol::FramedWriter::new(ws, buffer_size),
             )),
             to_send: std::collections::VecDeque::new(),
             closed: false,
@@ -264,8 +264,9 @@ impl Server {
         buffer_size: usize,
         sock_r: tokio::sync::mpsc::Receiver<tokio::net::tcp::TcpStream>,
     ) -> Self {
-        let sock_stream =
-            sock_r.map(Connection::new).context(SocketChannelReceive);
+        let sock_stream = sock_r
+            .map(move |s| Connection::new(s, buffer_size))
+            .context(SocketChannelReceive);
         Self {
             buffer_size,
             sock_stream: Box::new(sock_stream),

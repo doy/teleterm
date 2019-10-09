@@ -610,10 +610,6 @@ impl WatchSession {
     }
 }
 
-fn new_alternate_screen() -> Result<crossterm::AlternateScreen> {
-    crossterm::AlternateScreen::to_alternate(false).context(ToAlternateScreen)
-}
-
 #[must_use = "futures do nothing unless polled"]
 impl futures::future::Future for WatchSession {
     type Item = ();
@@ -634,6 +630,10 @@ impl futures::future::Future for WatchSession {
         }
         res
     }
+}
+
+fn new_alternate_screen() -> Result<crossterm::AlternateScreen> {
+    crossterm::AlternateScreen::to_alternate(false).context(ToAlternateScreen)
 }
 
 fn format_time(dur: u32) -> String {

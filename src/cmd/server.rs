@@ -67,7 +67,7 @@ fn run_impl(address: &str, buffer_size: usize) -> Result<()> {
             .map_err(|e| eprintln!("{}", e));
         tokio::spawn(server);
 
-        acceptor.map(|_| ()).map_err(|_| ())
+        acceptor
     }));
     Ok(())
 }

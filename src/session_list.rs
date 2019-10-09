@@ -233,7 +233,7 @@ impl SessionList {
             i -= 1;
         }
 
-        if i > self.limit() {
+        if i >= self.limit() {
             return None;
         }
 

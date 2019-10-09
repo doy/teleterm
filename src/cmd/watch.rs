@@ -242,6 +242,12 @@ impl WatchSession {
                 )?;
                 self.needs_redraw = true;
             }
+            crate::protocol::Message::Disconnected => {
+                self.reconnect(true)?;
+            }
+            crate::protocol::Message::Error { msg } => {
+                return Err(Error::Server { message: msg });
+            }
             msg => {
                 return Err(crate::error::Error::UnexpectedMessage {
                     message: msg,
@@ -631,7 +637,10 @@ impl futures::future::Future for WatchSession {
             );
         }
         let res = crate::component_future::poll_future(self, Self::POLL_FNS);
-        if self.needs_redraw {
+        if res.is_err() {
+            self.state = State::Temporary; // drop alternate screen
+            self.raw_screen = None;
+        } else if self.needs_redraw {
             self.redraw()?;
             self.needs_redraw = false;
         }

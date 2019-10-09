@@ -311,7 +311,7 @@ impl Client {
                     Ok(crate::component_future::Poll::NotReady)
                 }
                 Err(..) => {
-                    self.wsock = WriteSocket::NotConnected;
+                    self.reconnect();
                     Ok(crate::component_future::Poll::DidWork)
                 }
             },
@@ -393,13 +393,19 @@ impl Client {
                 }
                 Ok(crate::component_future::Poll::DidWork)
             }
-            WriteSocket::WritingMessage(ref mut fut) => match fut.poll()? {
-                futures::Async::Ready(s) => {
+            WriteSocket::WritingMessage(ref mut fut) => match fut.poll() {
+                Ok(futures::Async::Ready(s)) => {
                     self.wsock = WriteSocket::Connected(s);
                     Ok(crate::component_future::Poll::DidWork)
                 }
-                futures::Async::NotReady => {
+                Ok(futures::Async::NotReady) => {
                     Ok(crate::component_future::Poll::NotReady)
+                }
+                Err(..) => {
+                    self.reconnect();
+                    Ok(crate::component_future::Poll::Event(
+                        Event::Disconnect,
+                    ))
                 }
             },
         }

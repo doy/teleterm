@@ -294,6 +294,9 @@ impl Server {
             let username =
                 conn.state.username().map(std::string::ToString::to_string);
             if self.rate_limiter.check(username).is_err() {
+                let display_name =
+                    conn.state.username().unwrap_or("(non-logged-in users)");
+                println!("{}: ratelimit({})", conn.id, display_name);
                 return Err(Error::RateLimited);
             }
         }

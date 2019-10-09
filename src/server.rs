@@ -1,3 +1,4 @@
+use futures::future::Future as _;
 use futures::stream::Stream as _;
 use snafu::futures01::stream::StreamExt as _;
 use snafu::futures01::FutureExt as _;
@@ -39,6 +40,9 @@ pub enum Error {
 
     #[snafu(display("invalid watch id: {}", id))]
     InvalidWatchId { id: String },
+
+    #[snafu(display("rate limit exceeded"))]
+    RateLimited,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -257,6 +261,7 @@ pub struct Server {
         dyn futures::stream::Stream<Item = Connection, Error = Error> + Send,
     >,
     connections: std::collections::HashMap<String, Connection>,
+    rate_limiter: ratelimit_meter::KeyedRateLimiter<Option<String>>,
 }
 
 impl Server {
@@ -271,6 +276,10 @@ impl Server {
             buffer_size,
             sock_stream: Box::new(sock_stream),
             connections: std::collections::HashMap::new(),
+            rate_limiter: ratelimit_meter::KeyedRateLimiter::new(
+                std::num::NonZeroU32::new(300).unwrap(),
+                std::time::Duration::from_secs(60),
+            ),
         }
     }
 
@@ -279,6 +288,16 @@ impl Server {
         conn: &mut Connection,
         message: crate::protocol::Message,
     ) -> Result<()> {
+        if let crate::protocol::Message::TerminalOutput { .. } = message {
+            // do nothing, we expect TerminalOutput spam
+        } else {
+            let username =
+                conn.state.username().map(std::string::ToString::to_string);
+            if self.rate_limiter.check(username).is_err() {
+                return Err(Error::RateLimited);
+            }
+        }
+
         match conn.state {
             ConnectionState::Accepted { .. } => {
                 self.handle_login_message(conn, message)

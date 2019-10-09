@@ -134,7 +134,11 @@ impl SessionList {
                     "".to_string()
                 };
                 let display_size_plain = format!("{}", &session.size);
-                let display_size_full = if session.size.fits_in(&self.size) {
+                let display_size_full = if session.size == self.size {
+                    // XXX i should be able to use crossterm::style here, but
+                    // it has bugs
+                    format!("\x1b[32m{}\x1b[m", display_size_plain)
+                } else if session.size.fits_in(&self.size) {
                     display_size_plain.clone()
                 } else {
                     // XXX i should be able to use crossterm::style here, but

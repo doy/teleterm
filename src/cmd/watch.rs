@@ -9,6 +9,9 @@ pub enum Error {
     Common { source: crate::error::Error },
 
     #[snafu(display("{}", source))]
+    Resize { source: crate::term::Error },
+
+    #[snafu(display("{}", source))]
     SessionList { source: crate::session_list::Error },
 
     #[snafu(display("failed to read key from terminal: {}", source))]
@@ -229,8 +232,10 @@ impl WatchSession {
         match msg {
             crate::protocol::Message::Sessions { sessions } => {
                 self.state.choosing(
-                    crate::session_list::SessionList::new(sessions)
-                        .context(SessionList)?,
+                    crate::session_list::SessionList::new(
+                        sessions,
+                        crate::term::Size::get().context(Resize)?,
+                    ),
                 )?;
                 self.needs_redraw = true;
             }

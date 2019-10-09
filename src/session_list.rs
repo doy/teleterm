@@ -3,9 +3,6 @@ use std::io::Write as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
-    #[snafu(display("{}", source))]
-    Resize { source: crate::term::Error },
-
     #[snafu(display("failed to write to terminal: {}", source))]
     WriteTerminalCrossterm { source: crossterm::ErrorKind },
 
@@ -22,7 +19,10 @@ pub struct SessionList {
 }
 
 impl SessionList {
-    pub fn new(sessions: Vec<crate::protocol::Session>) -> Result<Self> {
+    pub fn new(
+        sessions: Vec<crate::protocol::Session>,
+        size: crate::term::Size,
+    ) -> Self {
         let mut by_name = std::collections::HashMap::new();
         for session in sessions {
             if !by_name.contains_key(&session.username) {
@@ -54,11 +54,11 @@ impl SessionList {
             }
         }
 
-        Ok(Self {
+        Self {
             sessions: sorted,
             offset: 0,
-            size: crate::term::Size::get().context(Resize)?,
-        })
+            size,
+        }
     }
 
     pub fn print(&self) -> Result<()> {

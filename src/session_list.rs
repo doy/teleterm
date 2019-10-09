@@ -46,16 +46,16 @@ impl SessionList {
             }
         }
 
-        let mut keymap = vec![];
+        let mut sorted = vec![];
         for name in names {
             let sessions = by_name.remove(&name).unwrap();
             for session in sessions {
-                keymap.push(session);
+                sorted.push(session);
             }
         }
 
         Ok(Self {
-            sessions: keymap,
+            sessions: sorted,
             offset: 0,
             size: crate::term::Size::get().context(Resize)?,
         })

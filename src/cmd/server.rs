@@ -9,6 +9,16 @@ pub enum Error {
 
     #[snafu(display("failed to bind: {}", source))]
     Bind { source: tokio::io::Error },
+
+    #[snafu(display(
+        "failed to parse read timeout '{}': {}",
+        input,
+        source
+    ))]
+    ParseReadTimeout {
+        input: String,
+        source: std::num::ParseIntError,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -25,6 +35,11 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
                 .long("buffer-size")
                 .takes_value(true),
         )
+        .arg(
+            clap::Arg::with_name("read-timeout")
+                .long("read-timeout")
+                .takes_value(true),
+        )
 }
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
@@ -37,14 +52,27 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
         })
         .context(Common)
         .context(super::Server)?;
+    let read_timeout_str = matches.value_of("read-timeout").unwrap_or("120");
+    let read_timeout = read_timeout_str
+        .parse()
+        .map(std::time::Duration::from_secs)
+        .context(ParseReadTimeout {
+            input: buffer_size_str,
+        })
+        .context(super::Server)?;
     run_impl(
         matches.value_of("address").unwrap_or("0.0.0.0:4144"),
         buffer_size,
+        read_timeout,
     )
     .context(super::Server)
 }
 
-fn run_impl(address: &str, buffer_size: usize) -> Result<()> {
+fn run_impl(
+    address: &str,
+    buffer_size: usize,
+    read_timeout: std::time::Duration,
+) -> Result<()> {
     let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(100);
     let addr = address
         .parse()
@@ -63,8 +91,9 @@ fn run_impl(address: &str, buffer_size: usize) -> Result<()> {
         });
 
     tokio::run(futures::future::lazy(move || {
-        let server = crate::server::Server::new(buffer_size, sock_r)
-            .map_err(|e| eprintln!("{}", e));
+        let server =
+            crate::server::Server::new(buffer_size, read_timeout, sock_r)
+                .map_err(|e| eprintln!("{}", e));
         tokio::spawn(server);
 
         acceptor

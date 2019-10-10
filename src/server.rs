@@ -4,6 +4,7 @@ use snafu::futures01::stream::StreamExt as _;
 use snafu::futures01::FutureExt as _;
 use snafu::ResultExt as _;
 use tokio::io::AsyncRead as _;
+use tokio::util::FutureExt as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
@@ -24,7 +25,17 @@ pub enum Error {
     SocketChannelClosed,
 
     #[snafu(display("failed to read message: {}", source))]
+    ReadMessageWithTimeout {
+        source: tokio::timer::timeout::Error<crate::protocol::Error>,
+    },
+
+    #[snafu(display("failed to read message: {}", source))]
     ReadMessage { source: crate::protocol::Error },
+
+    #[snafu(display("failed to write message: {}", source))]
+    WriteMessageWithTimeout {
+        source: tokio::timer::timeout::Error<crate::protocol::Error>,
+    },
 
     #[snafu(display("failed to write message: {}", source))]
     WriteMessage { source: crate::protocol::Error },
@@ -43,6 +54,12 @@ pub enum Error {
 
     #[snafu(display("rate limit exceeded"))]
     RateLimited,
+
+    #[snafu(display("timeout"))]
+    Timeout,
+
+    #[snafu(display("read timeout timer failed: {}", source))]
+    Timer { source: tokio::timer::Error },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -257,6 +274,7 @@ impl Connection {
 
 pub struct Server {
     buffer_size: usize,
+    read_timeout: std::time::Duration,
     sock_stream: Box<
         dyn futures::stream::Stream<Item = Connection, Error = Error> + Send,
     >,
@@ -267,6 +285,7 @@ pub struct Server {
 impl Server {
     pub fn new(
         buffer_size: usize,
+        read_timeout: std::time::Duration,
         sock_r: tokio::sync::mpsc::Receiver<tokio::net::tcp::TcpStream>,
     ) -> Self {
         let sock_stream = sock_r
@@ -274,6 +293,7 @@ impl Server {
             .context(SocketChannelReceive);
         Self {
             buffer_size,
+            read_timeout,
             sock_stream: Box::new(sock_stream),
             connections: std::collections::HashMap::new(),
             rate_limiter: ratelimit_meter::KeyedRateLimiter::new(
@@ -512,7 +532,8 @@ impl Server {
                 if let Some(ReadSocket::Connected(s)) = conn.rsock.take() {
                     let fut = Box::new(
                         crate::protocol::Message::read_async(s)
-                            .context(ReadMessage),
+                            .timeout(self.read_timeout)
+                            .context(ReadMessageWithTimeout),
                     );
                     conn.rsock = Some(ReadSocket::Reading(fut));
                 } else {
@@ -520,21 +541,22 @@ impl Server {
                 }
                 Ok(crate::component_future::Poll::DidWork)
             }
-            Some(ReadSocket::Reading(fut)) => {
-                match fut.poll() {
-                    Ok(futures::Async::Ready((msg, s))) => {
-                        let res = self.handle_message(conn, msg);
-                        if res.is_err() {
-                            conn.close(res);
-                        }
-                        conn.rsock = Some(ReadSocket::Connected(s));
-                        Ok(crate::component_future::Poll::DidWork)
+            Some(ReadSocket::Reading(fut)) => match fut.poll() {
+                Ok(futures::Async::Ready((msg, s))) => {
+                    let res = self.handle_message(conn, msg);
+                    if res.is_err() {
+                        conn.close(res);
                     }
-                    Ok(futures::Async::NotReady) => {
-                        Ok(crate::component_future::Poll::NotReady)
-                    }
-                    Err(e) => {
-                        if let Error::ReadMessage { ref source } = e {
+                    conn.rsock = Some(ReadSocket::Connected(s));
+                    Ok(crate::component_future::Poll::DidWork)
+                }
+                Ok(futures::Async::NotReady) => {
+                    Ok(crate::component_future::Poll::NotReady)
+                }
+                Err(e) => {
+                    if let Error::ReadMessageWithTimeout { source } = e {
+                        if source.is_inner() {
+                            let source = source.into_inner().unwrap();
                             match source {
                                 crate::protocol::Error::ReadAsync {
                                     source: ref tokio_err,
@@ -544,20 +566,25 @@ impl Server {
                                     {
                                         Ok(crate::component_future::Poll::Event(()))
                                     } else {
-                                        Err(e)
+                                        Err(Error::ReadMessage { source })
                                     }
                                 }
                                 crate::protocol::Error::EOF => Ok(
                                     crate::component_future::Poll::Event(()),
                                 ),
-                                _ => Err(e),
+                                _ => Err(Error::ReadMessage { source }),
                             }
+                        } else if source.is_elapsed() {
+                            Err(Error::Timeout)
                         } else {
-                            Err(e)
+                            let source = source.into_timer().unwrap();
+                            Err(Error::Timer { source })
                         }
+                    } else {
+                        Err(e)
                     }
                 }
-            }
+            },
             _ => Ok(crate::component_future::Poll::NothingToDo),
         }
     }
@@ -571,7 +598,10 @@ impl Server {
                 if let Some(msg) = conn.to_send.pop_front() {
                     if let Some(WriteSocket::Connected(s)) = conn.wsock.take()
                     {
-                        let fut = msg.write_async(s).context(WriteMessage);
+                        let fut = msg
+                            .write_async(s)
+                            .timeout(self.read_timeout)
+                            .context(WriteMessageWithTimeout);
                         conn.wsock =
                             Some(WriteSocket::Writing(Box::new(fut)));
                     } else {
@@ -584,17 +614,18 @@ impl Server {
                     Ok(crate::component_future::Poll::NothingToDo)
                 }
             }
-            Some(WriteSocket::Writing(fut)) => {
-                match fut.poll() {
-                    Ok(futures::Async::Ready(s)) => {
-                        conn.wsock = Some(WriteSocket::Connected(s));
-                        Ok(crate::component_future::Poll::DidWork)
-                    }
-                    Ok(futures::Async::NotReady) => {
-                        Ok(crate::component_future::Poll::NotReady)
-                    }
-                    Err(e) => {
-                        if let Error::WriteMessage { ref source } = e {
+            Some(WriteSocket::Writing(fut)) => match fut.poll() {
+                Ok(futures::Async::Ready(s)) => {
+                    conn.wsock = Some(WriteSocket::Connected(s));
+                    Ok(crate::component_future::Poll::DidWork)
+                }
+                Ok(futures::Async::NotReady) => {
+                    Ok(crate::component_future::Poll::NotReady)
+                }
+                Err(e) => {
+                    if let Error::WriteMessageWithTimeout { source } = e {
+                        if source.is_inner() {
+                            let source = source.into_inner().unwrap();
                             match source {
                                 crate::protocol::Error::WriteAsync {
                                     source: ref tokio_err,
@@ -602,22 +633,29 @@ impl Server {
                                     if tokio_err.kind()
                                         == tokio::io::ErrorKind::UnexpectedEof
                                     {
-                                        Ok(crate::component_future::Poll::Event(()))
+                                        Ok(crate::component_future::Poll::Event(
+                                        (),
+                                    ))
                                     } else {
-                                        Err(e)
+                                        Err(Error::WriteMessage { source })
                                     }
                                 }
                                 crate::protocol::Error::EOF => Ok(
                                     crate::component_future::Poll::Event(()),
                                 ),
-                                _ => Err(e),
+                                _ => Err(Error::WriteMessage { source }),
                             }
+                        } else if source.is_elapsed() {
+                            Err(Error::Timeout)
                         } else {
-                            Err(e)
+                            let source = source.into_timer().unwrap();
+                            Err(Error::Timer { source })
                         }
+                    } else {
+                        Err(e)
                     }
                 }
-            }
+            },
             _ => Ok(crate::component_future::Poll::NothingToDo),
         }
     }

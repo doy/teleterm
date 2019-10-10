@@ -8,9 +8,6 @@ pub enum Error {
     #[snafu(display("{}", source))]
     Common { source: crate::error::Error },
 
-    #[snafu(display("failed to run process: {}", source))]
-    Spawn { source: crate::process::Error },
-
     #[snafu(display("failed to write to stdout: {}", source))]
     WriteTerminal { source: tokio::io::Error },
 
@@ -94,7 +91,7 @@ fn run_impl(
     args: &[String],
 ) -> Result<()> {
     tokio::run(
-        StreamSession::new(command, args, address, buffer_size, username)?
+        StreamSession::new(command, args, address, buffer_size, username)
             .map_err(|e| {
                 eprintln!("{}", e);
             }),
@@ -122,7 +119,7 @@ impl StreamSession {
         address: std::net::SocketAddr,
         buffer_size: usize,
         username: &str,
-    ) -> Result<Self> {
+    ) -> Self {
         let client =
             crate::client::Client::stream(address, username, buffer_size);
 
@@ -131,10 +128,9 @@ impl StreamSession {
         // let input = tokio::io::stdin();
         let input = crate::async_stdin::Stdin::new();
 
-        let process =
-            crate::process::Process::new(cmd, args, input).context(Spawn)?;
+        let process = crate::process::Process::new(cmd, args, input);
 
-        Ok(Self {
+        Self {
             client,
             process,
             stdout: tokio::io::stdout(),
@@ -144,7 +140,7 @@ impl StreamSession {
             needs_flush: false,
             done: false,
             raw_screen: None,
-        })
+        }
     }
 
     fn record_bytes(&mut self, buf: &[u8]) {

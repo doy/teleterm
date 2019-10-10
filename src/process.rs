@@ -36,9 +36,34 @@ pub enum Event {
     CommandExit(std::process::ExitStatus),
 }
 
+pub struct State {
+    pty: Option<tokio_pty_process::AsyncPtyMaster>,
+    process: Option<tokio_pty_process::Child>,
+}
+
+impl State {
+    fn new() -> Self {
+        Self {
+            pty: None,
+            process: None,
+        }
+    }
+
+    fn pty(&self) -> &tokio_pty_process::AsyncPtyMaster {
+        self.pty.as_ref().unwrap()
+    }
+
+    fn pty_mut(&mut self) -> &mut tokio_pty_process::AsyncPtyMaster {
+        self.pty.as_mut().unwrap()
+    }
+
+    fn process(&mut self) -> &mut tokio_pty_process::Child {
+        self.process.as_mut().unwrap()
+    }
+}
+
 pub struct Process<R: tokio::io::AsyncRead> {
-    pty: tokio_pty_process::AsyncPtyMaster,
-    process: tokio_pty_process::Child,
+    state: State,
     input: R,
     input_buf: std::collections::VecDeque<u8>,
     cmd: String,
@@ -52,18 +77,9 @@ pub struct Process<R: tokio::io::AsyncRead> {
 }
 
 impl<R: tokio::io::AsyncRead + 'static> Process<R> {
-    pub fn new(cmd: &str, args: &[String], input: R) -> Result<Self> {
-        let pty =
-            tokio_pty_process::AsyncPtyMaster::open().context(OpenPty)?;
-
-        let process = std::process::Command::new(cmd)
-            .args(args)
-            .spawn_pty_async(&pty)
-            .context(SpawnProcess { cmd })?;
-
-        Ok(Self {
-            pty,
-            process,
+    pub fn new(cmd: &str, args: &[String], input: R) -> Self {
+        Self {
+            state: State::new(),
             input,
             input_buf: std::collections::VecDeque::with_capacity(4096),
             cmd: cmd.to_string(),
@@ -74,7 +90,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             needs_resize: None,
             stdin_closed: false,
             stdout_closed: false,
-        })
+        }
     }
 
     pub fn resize(&mut self, size: crate::term::Size) {
@@ -103,7 +119,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
         &mut self,
     ) -> Result<crate::component_future::Poll<Event>> {
         if let Some(size) = &self.needs_resize {
-            match size.resize_pty(&self.pty).context(Resize)? {
+            match size.resize_pty(self.state.pty()).context(Resize)? {
                 futures::Async::Ready(()) => {
                     self.needs_resize = None;
                     Ok(crate::component_future::Poll::DidWork)
@@ -167,7 +183,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
 
         let (a, b) = self.input_buf.as_slices();
         let buf = if a.is_empty() { b } else { a };
-        match self.pty.poll_write(buf).context(WriteToPty)? {
+        match self.state.pty_mut().poll_write(buf).context(WriteToPty)? {
             futures::Async::Ready(n) => {
                 for _ in 0..n {
                     self.input_buf.pop_front();
@@ -183,7 +199,12 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
     fn poll_read_stdout(
         &mut self,
     ) -> Result<crate::component_future::Poll<Event>> {
-        match self.pty.poll_read(&mut self.buf).context(ReadFromPty) {
+        match self
+            .state
+            .pty_mut()
+            .poll_read(&mut self.buf)
+            .context(ReadFromPty)
+        {
             Ok(futures::Async::Ready(n)) => {
                 let bytes = self.buf[..n].to_vec();
                 Ok(crate::component_future::Poll::Event(Event::Output(bytes)))
@@ -215,7 +236,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             return Ok(crate::component_future::Poll::NothingToDo);
         }
 
-        match self.process.poll().context(ProcessExitPoll)? {
+        match self.state.process().poll().context(ProcessExitPoll)? {
             futures::Async::Ready(status) => {
                 self.exited = true;
                 Ok(crate::component_future::Poll::Event(Event::CommandExit(
@@ -237,6 +258,22 @@ impl<R: tokio::io::AsyncRead + 'static> futures::stream::Stream
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
+        if self.state.pty.is_none() {
+            self.state.pty = Some(
+                tokio_pty_process::AsyncPtyMaster::open().context(OpenPty)?,
+            );
+        }
+        if self.state.process.is_none() {
+            self.state.process = Some(
+                std::process::Command::new(&self.cmd)
+                    .args(&self.args)
+                    .spawn_pty_async(self.state.pty())
+                    .context(SpawnProcess {
+                        cmd: self.cmd.clone(),
+                    })?,
+            );
+        }
+
         crate::component_future::poll_stream(self, Self::POLL_FNS)
     }
 }
@@ -254,7 +291,6 @@ mod test {
         let mut wres = wres.wait();
         let buf = std::io::Cursor::new(b"hello world\n");
         let fut = Process::new("cat", &[], buf)
-            .unwrap()
             .for_each(move |e| {
                 wres.send(Ok(e)).unwrap();
                 Ok(())

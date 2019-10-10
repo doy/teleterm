@@ -29,9 +29,6 @@ pub enum Error {
     #[snafu(display("received error from server: {}", message))]
     Server { message: String },
 
-    #[snafu(display("failed to create key reader: {}", source))]
-    KeyReader { source: crate::key_reader::Error },
-
     #[snafu(display("failed to switch to alternate screen: {}", source))]
     ToAlternateScreen { source: crossterm::ErrorKind },
 }
@@ -74,16 +71,8 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
 
 fn run_impl(username: &str, address: std::net::SocketAddr) -> Result<()> {
     let username = username.to_string();
-    tokio::run(futures::lazy(move || {
-        futures::future::result(WatchSession::new(
-            futures::task::current(),
-            address,
-            &username,
-        ))
-        .flatten()
-        .map_err(|e| {
-            eprintln!("{}", e);
-        })
+    tokio::run(WatchSession::new(address, &username).map_err(|e| {
+        eprintln!("{}", e);
     }));
 
     Ok(())
@@ -106,10 +95,8 @@ enum State {
 }
 
 impl State {
-    fn new() -> Result<Self> {
-        Ok(Self::LoggingIn {
-            alternate_screen: new_alternate_screen()?,
-        })
+    fn new() -> Self {
+        Self::Temporary
     }
 
     fn logging_in(&mut self) -> Result<()> {
@@ -176,25 +163,20 @@ struct WatchSession {
 }
 
 impl WatchSession {
-    fn new(
-        task: futures::task::Task,
-        address: std::net::SocketAddr,
-        username: &str,
-    ) -> Result<Self> {
+    fn new(address: std::net::SocketAddr, username: &str) -> Self {
         let list_client =
             crate::client::Client::list(address, username, 4_194_304);
 
-        Ok(Self {
+        Self {
             address,
             username: username.to_string(),
 
-            key_reader: crate::key_reader::KeyReader::new(task)
-                .context(KeyReader)?,
+            key_reader: crate::key_reader::KeyReader::new(),
             list_client,
-            state: State::new()?,
+            state: State::new(),
             raw_screen: None,
             needs_redraw: true,
-        })
+        }
     }
 
     fn reconnect(&mut self, hard: bool) -> Result<()> {
@@ -625,6 +607,11 @@ impl futures::future::Future for WatchSession {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
+        if let State::Temporary = self.state {
+            self.state = State::LoggingIn {
+                alternate_screen: new_alternate_screen()?,
+            }
+        }
         if self.raw_screen.is_none() {
             self.raw_screen = Some(
                 crossterm::RawScreen::into_raw_mode()

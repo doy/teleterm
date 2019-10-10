@@ -29,6 +29,9 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+const HEARTBEAT_DURATION: std::time::Duration =
+    std::time::Duration::from_secs(30);
+
 enum ReadSocket {
     NotConnected,
     Connected(
@@ -88,7 +91,6 @@ pub enum Event {
 pub struct Client {
     address: String,
     username: String,
-    heartbeat_duration: std::time::Duration,
     buffer_size: usize,
 
     heartbeat_timer: tokio::timer::Interval,
@@ -107,16 +109,10 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn stream(
-        address: &str,
-        username: &str,
-        heartbeat_duration: std::time::Duration,
-        buffer_size: usize,
-    ) -> Self {
+    pub fn stream(address: &str, username: &str, buffer_size: usize) -> Self {
         Self::new(
             address,
             username,
-            heartbeat_duration,
             buffer_size,
             &[crate::protocol::Message::start_streaming()],
             true,
@@ -126,46 +122,31 @@ impl Client {
     pub fn watch(
         address: &str,
         username: &str,
-        heartbeat_duration: std::time::Duration,
         buffer_size: usize,
         id: &str,
     ) -> Self {
         Self::new(
             address,
             username,
-            heartbeat_duration,
             buffer_size,
             &[crate::protocol::Message::start_watching(id)],
             false,
         )
     }
 
-    pub fn list(
-        address: &str,
-        username: &str,
-        heartbeat_duration: std::time::Duration,
-        buffer_size: usize,
-    ) -> Self {
-        Self::new(
-            address,
-            username,
-            heartbeat_duration,
-            buffer_size,
-            &[],
-            true,
-        )
+    pub fn list(address: &str, username: &str, buffer_size: usize) -> Self {
+        Self::new(address, username, buffer_size, &[], true)
     }
 
     fn new(
         address: &str,
         username: &str,
-        heartbeat_duration: std::time::Duration,
         buffer_size: usize,
         on_connect: &[crate::protocol::Message],
         handle_sigwinch: bool,
     ) -> Self {
         let heartbeat_timer =
-            tokio::timer::Interval::new_interval(heartbeat_duration);
+            tokio::timer::Interval::new_interval(HEARTBEAT_DURATION);
         let winches: Option<
             Box<dyn futures::stream::Stream<Item = (), Error = Error> + Send>,
         > = if handle_sigwinch {
@@ -183,7 +164,6 @@ impl Client {
         Self {
             address: address.to_string(),
             username: username.to_string(),
-            heartbeat_duration,
             buffer_size,
 
             heartbeat_timer,
@@ -250,7 +230,7 @@ impl Client {
             _ => {
                 let since_last_server = std::time::Instant::now()
                     .duration_since(self.last_server_time);
-                if since_last_server > self.heartbeat_duration * 2 {
+                if since_last_server > HEARTBEAT_DURATION * 2 {
                     self.reconnect();
                     return Ok(crate::component_future::Poll::Event(
                         Event::Disconnect,

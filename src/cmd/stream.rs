@@ -92,17 +92,10 @@ fn run_impl(
     args: &[String],
 ) -> Result<()> {
     tokio::run(
-        StreamSession::new(
-            command,
-            args,
-            address,
-            buffer_size,
-            username,
-            std::time::Duration::from_secs(5),
-        )?
-        .map_err(|e| {
-            eprintln!("{}", e);
-        }),
+        StreamSession::new(command, args, address, buffer_size, username)?
+            .map_err(|e| {
+                eprintln!("{}", e);
+            }),
     );
 
     Ok(())
@@ -127,14 +120,9 @@ impl StreamSession {
         address: &str,
         buffer_size: usize,
         username: &str,
-        heartbeat_duration: std::time::Duration,
     ) -> Result<Self> {
-        let client = crate::client::Client::stream(
-            address,
-            username,
-            heartbeat_duration,
-            buffer_size,
-        );
+        let client =
+            crate::client::Client::stream(address, username, buffer_size);
 
         // TODO: tokio::io::stdin is broken (it's blocking)
         // see https://github.com/tokio-rs/tokio/issues/589

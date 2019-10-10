@@ -74,7 +74,6 @@ fn run_impl(username: &str, address: &str) -> Result<()> {
             futures::task::current(),
             &address,
             &username,
-            std::time::Duration::from_secs(5),
         ))
         .flatten()
         .map_err(|e| {
@@ -163,7 +162,6 @@ impl State {
 struct WatchSession {
     address: String,
     username: String,
-    heartbeat_duration: std::time::Duration,
 
     key_reader: crate::key_reader::KeyReader,
     list_client: crate::client::Client,
@@ -177,19 +175,13 @@ impl WatchSession {
         task: futures::task::Task,
         address: &str,
         username: &str,
-        heartbeat_duration: std::time::Duration,
     ) -> Result<Self> {
-        let list_client = crate::client::Client::list(
-            address,
-            username,
-            heartbeat_duration,
-            4_194_304,
-        );
+        let list_client =
+            crate::client::Client::list(address, username, 4_194_304);
 
         Ok(Self {
             address: address.to_string(),
             username: username.to_string(),
-            heartbeat_duration,
 
             key_reader: crate::key_reader::KeyReader::new(task)
                 .context(KeyReader)?,
@@ -295,7 +287,6 @@ impl WatchSession {
                     let client = crate::client::Client::watch(
                         &self.address,
                         &self.username,
-                        self.heartbeat_duration,
                         4_194_304,
                         id,
                     );

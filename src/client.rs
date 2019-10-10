@@ -276,13 +276,13 @@ impl Client {
                     self.rsock = ReadSocket::Connected(
                         crate::protocol::FramedReader::new(
                             rs,
-                            self.buffer_size * 2,
+                            self.buffer_size,
                         ),
                     );
                     self.wsock = WriteSocket::Connected(
                         crate::protocol::FramedWriter::new(
                             ws,
-                            self.buffer_size * 2,
+                            self.buffer_size,
                         ),
                     );
 

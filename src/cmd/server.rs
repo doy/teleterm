@@ -43,42 +43,43 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 }
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    let buffer_size_str =
-        matches.value_of("buffer-size").unwrap_or("4194304");
-    let buffer_size: usize = buffer_size_str
-        .parse()
-        .context(crate::error::ParseBufferSize {
-            input: buffer_size_str,
-        })
-        .context(Common)
-        .context(super::Server)?;
-    let read_timeout_str = matches.value_of("read-timeout").unwrap_or("120");
-    let read_timeout = read_timeout_str
-        .parse()
-        .map(std::time::Duration::from_secs)
-        .context(ParseReadTimeout {
-            input: buffer_size_str,
-        })
-        .context(super::Server)?;
-    run_impl(
-        matches.value_of("address").unwrap_or("0.0.0.0:4144"),
-        buffer_size,
-        read_timeout,
-    )
-    .context(super::Server)
+    let address = matches.value_of("address").map_or_else(
+        || Ok("0.0.0.0:4144".parse().unwrap()),
+        |s| {
+            s.parse()
+                .context(crate::error::ParseAddr)
+                .context(Common)
+                .context(super::Server)
+        },
+    )?;
+    let buffer_size =
+        matches
+            .value_of("buffer-size")
+            .map_or(Ok(4 * 1024 * 1024), |s| {
+                s.parse()
+                    .context(crate::error::ParseBufferSize { input: s })
+                    .context(Common)
+                    .context(super::Server)
+            })?;
+    let read_timeout = matches.value_of("read-timeout").map_or(
+        Ok(std::time::Duration::from_secs(120)),
+        |s| {
+            s.parse()
+                .map(std::time::Duration::from_secs)
+                .context(ParseReadTimeout { input: s })
+                .context(super::Server)
+        },
+    )?;
+    run_impl(address, buffer_size, read_timeout).context(super::Server)
 }
 
 fn run_impl(
-    address: &str,
+    address: std::net::SocketAddr,
     buffer_size: usize,
     read_timeout: std::time::Duration,
 ) -> Result<()> {
     let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(100);
-    let addr = address
-        .parse()
-        .context(crate::error::ParseAddr)
-        .context(Common)?;
-    let listener = tokio::net::TcpListener::bind(&addr).context(Bind)?;
+    let listener = tokio::net::TcpListener::bind(&address).context(Bind)?;
     let acceptor = listener
         .incoming()
         .map_err(|e| {

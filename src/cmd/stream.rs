@@ -48,45 +48,47 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 }
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    let args: Vec<_> = if let Some(args) = matches.values_of("args") {
+    let username = matches
+        .value_of("username")
+        .map(std::string::ToString::to_string)
+        .or_else(|| std::env::var("USER").ok())
+        .context(crate::error::CouldntFindUsername)
+        .context(Common)
+        .context(super::Stream)?;
+    let address = matches.value_of("address").map_or_else(
+        || Ok("0.0.0.0:4144".parse().unwrap()),
+        |s| {
+            s.parse()
+                .context(crate::error::ParseAddr)
+                .context(Common)
+                .context(super::Stream)
+        },
+    )?;
+    let buffer_size =
+        matches
+            .value_of("buffer-size")
+            .map_or(Ok(4 * 1024 * 1024), |s| {
+                s.parse()
+                    .context(crate::error::ParseBufferSize { input: s })
+                    .context(Common)
+                    .context(super::Stream)
+            })?;
+    let command = matches.value_of("command").map_or_else(
+        || std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string()),
+        std::string::ToString::to_string,
+    );
+    let args = if let Some(args) = matches.values_of("args") {
         args.map(std::string::ToString::to_string).collect()
     } else {
         vec![]
     };
-    let buffer_size_str =
-        matches.value_of("buffer-size").unwrap_or("4194304");
-    let buffer_size: usize = buffer_size_str
-        .parse()
-        .context(crate::error::ParseBufferSize {
-            input: buffer_size_str,
-        })
-        .context(Common)
-        .context(super::Stream)?;
-    run_impl(
-        &matches
-            .value_of("username")
-            .map(std::string::ToString::to_string)
-            .or_else(|| std::env::var("USER").ok())
-            .context(crate::error::CouldntFindUsername)
-            .context(Common)
-            .context(super::Stream)?,
-        matches.value_of("address").unwrap_or("127.0.0.1:4144"),
-        buffer_size,
-        &matches.value_of("command").map_or_else(
-            || {
-                std::env::var("SHELL")
-                    .unwrap_or_else(|_| "/bin/bash".to_string())
-            },
-            std::string::ToString::to_string,
-        ),
-        &args,
-    )
-    .context(super::Stream)
+    run_impl(&username, address, buffer_size, &command, &args)
+        .context(super::Stream)
 }
 
 fn run_impl(
     username: &str,
-    address: &str,
+    address: std::net::SocketAddr,
     buffer_size: usize,
     command: &str,
     args: &[String],
@@ -117,7 +119,7 @@ impl StreamSession {
     fn new(
         cmd: &str,
         args: &[String],
-        address: &str,
+        address: std::net::SocketAddr,
         buffer_size: usize,
         username: &str,
     ) -> Result<Self> {

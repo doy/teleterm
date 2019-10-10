@@ -53,26 +53,31 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 }
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    run_impl(
-        &matches
-            .value_of("username")
-            .map(std::string::ToString::to_string)
-            .or_else(|| std::env::var("USER").ok())
-            .context(crate::error::CouldntFindUsername)
-            .context(Common)
-            .context(super::Watch)?,
-        matches.value_of("address").unwrap_or("127.0.0.1:4144"),
-    )
-    .context(super::Watch)
+    let username = matches
+        .value_of("username")
+        .map(std::string::ToString::to_string)
+        .or_else(|| std::env::var("USER").ok())
+        .context(crate::error::CouldntFindUsername)
+        .context(Common)
+        .context(super::Watch)?;
+    let address = matches.value_of("address").map_or_else(
+        || Ok("0.0.0.0:4144".parse().unwrap()),
+        |s| {
+            s.parse()
+                .context(crate::error::ParseAddr)
+                .context(Common)
+                .context(super::Watch)
+        },
+    )?;
+    run_impl(&username, address).context(super::Watch)
 }
 
-fn run_impl(username: &str, address: &str) -> Result<()> {
+fn run_impl(username: &str, address: std::net::SocketAddr) -> Result<()> {
     let username = username.to_string();
-    let address = address.to_string();
     tokio::run(futures::lazy(move || {
         futures::future::result(WatchSession::new(
             futures::task::current(),
-            &address,
+            address,
             &username,
         ))
         .flatten()
@@ -160,7 +165,7 @@ impl State {
 }
 
 struct WatchSession {
-    address: String,
+    address: std::net::SocketAddr,
     username: String,
 
     key_reader: crate::key_reader::KeyReader,
@@ -173,14 +178,14 @@ struct WatchSession {
 impl WatchSession {
     fn new(
         task: futures::task::Task,
-        address: &str,
+        address: std::net::SocketAddr,
         username: &str,
     ) -> Result<Self> {
         let list_client =
             crate::client::Client::list(address, username, 4_194_304);
 
         Ok(Self {
-            address: address.to_string(),
+            address,
             username: username.to_string(),
 
             key_reader: crate::key_reader::KeyReader::new(task)
@@ -285,7 +290,7 @@ impl WatchSession {
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(c)) => {
                 if let Some(id) = sessions.id_for(*c) {
                     let client = crate::client::Client::watch(
-                        &self.address,
+                        self.address,
                         &self.username,
                         4_194_304,
                         id,

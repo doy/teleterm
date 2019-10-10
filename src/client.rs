@@ -94,7 +94,7 @@ pub enum Event {
 }
 
 pub struct Client {
-    address: String,
+    address: std::net::SocketAddr,
     username: String,
     buffer_size: usize,
 
@@ -114,7 +114,11 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn stream(address: &str, username: &str, buffer_size: usize) -> Self {
+    pub fn stream(
+        address: std::net::SocketAddr,
+        username: &str,
+        buffer_size: usize,
+    ) -> Self {
         Self::new(
             address,
             username,
@@ -125,7 +129,7 @@ impl Client {
     }
 
     pub fn watch(
-        address: &str,
+        address: std::net::SocketAddr,
         username: &str,
         buffer_size: usize,
         id: &str,
@@ -139,12 +143,16 @@ impl Client {
         )
     }
 
-    pub fn list(address: &str, username: &str, buffer_size: usize) -> Self {
+    pub fn list(
+        address: std::net::SocketAddr,
+        username: &str,
+        buffer_size: usize,
+    ) -> Self {
         Self::new(address, username, buffer_size, &[], true)
     }
 
     fn new(
-        address: &str,
+        address: std::net::SocketAddr,
         username: &str,
         buffer_size: usize,
         on_connect: &[crate::protocol::Message],
@@ -167,7 +175,7 @@ impl Client {
         };
 
         Self {
-            address: address.to_string(),
+            address,
             username: username.to_string(),
             buffer_size,
 
@@ -263,15 +271,9 @@ impl Client {
 
                 self.set_reconnect_timer();
                 self.wsock = WriteSocket::Connecting(Box::new(
-                    tokio::net::tcp::TcpStream::connect(
-                        &self
-                            .address
-                            .parse::<std::net::SocketAddr>()
-                            .context(crate::error::ParseAddr)
-                            .context(Common)?,
-                    )
-                    .context(crate::error::Connect)
-                    .context(Common),
+                    tokio::net::tcp::TcpStream::connect(&self.address)
+                        .context(crate::error::Connect)
+                        .context(Common),
                 ));
 
                 Ok(crate::component_future::Poll::DidWork)

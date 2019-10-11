@@ -321,6 +321,8 @@ impl Server {
             }
         }
 
+        log_message(&conn.id, &message);
+
         match conn.state {
             ConnectionState::Accepted { .. } => {
                 self.handle_login_message(conn, message)
@@ -792,5 +794,20 @@ impl futures::future::Future for Server {
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
         crate::component_future::poll_future(self, Self::POLL_FNS)
+    }
+}
+
+fn log_message(id: &str, message: &crate::protocol::Message) {
+    match message {
+        crate::protocol::Message::TerminalOutput { data } => {
+            log::debug!(
+                "{}: message(TerminalOutput {{ data: ({} bytes) }})",
+                id,
+                data.len()
+            );
+        }
+        message => {
+            log::debug!("{}: message({:?})", id, message);
+        }
     }
 }

@@ -3,7 +3,6 @@ use futures::stream::Stream as _;
 use snafu::futures01::stream::StreamExt as _;
 use snafu::futures01::FutureExt as _;
 use snafu::ResultExt as _;
-use tokio::io::AsyncRead as _;
 use tokio::util::FutureExt as _;
 
 #[derive(Debug, snafu::Snafu)]
@@ -64,20 +63,16 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-enum ReadSocket {
-    Connected(
-        crate::protocol::FramedReader<
-            tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
-        >,
-    ),
+enum ReadSocket<
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+> {
+    Connected(crate::protocol::FramedReader<tokio::io::ReadHalf<S>>),
     Reading(
         Box<
             dyn futures::future::Future<
                     Item = (
                         crate::protocol::Message,
-                        crate::protocol::FramedReader<
-                            tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
-                        >,
+                        crate::protocol::FramedReader<tokio::io::ReadHalf<S>>,
                     ),
                     Error = Error,
                 > + Send,
@@ -85,17 +80,15 @@ enum ReadSocket {
     ),
 }
 
-enum WriteSocket {
-    Connected(
-        crate::protocol::FramedWriter<
-            tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
-        >,
-    ),
+enum WriteSocket<
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+> {
+    Connected(crate::protocol::FramedWriter<tokio::io::WriteHalf<S>>),
     Writing(
         Box<
             dyn futures::future::Future<
                     Item = crate::protocol::FramedWriter<
-                        tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
+                        tokio::io::WriteHalf<S>,
                     >,
                     Error = Error,
                 > + Send,
@@ -190,18 +183,22 @@ impl ConnectionState {
     }
 }
 
-struct Connection {
+struct Connection<
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+> {
     id: String,
-    rsock: Option<ReadSocket>,
-    wsock: Option<WriteSocket>,
+    rsock: Option<ReadSocket<S>>,
+    wsock: Option<WriteSocket<S>>,
     to_send: std::collections::VecDeque<crate::protocol::Message>,
     closed: bool,
     state: ConnectionState,
     last_activity: std::time::Instant,
 }
 
-impl Connection {
-    fn new(s: tokio::net::tcp::TcpStream, buffer_size: usize) -> Self {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    Connection<S>
+{
+    fn new(s: S, buffer_size: usize) -> Self {
         let (rs, ws) = s.split();
         let id = format!("{}", uuid::Uuid::new_v4());
         log::info!("{}: new connection", id);
@@ -272,21 +269,26 @@ impl Connection {
     }
 }
 
-pub struct Server {
+pub struct Server<
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+> {
     buffer_size: usize,
     read_timeout: std::time::Duration,
     sock_stream: Box<
-        dyn futures::stream::Stream<Item = Connection, Error = Error> + Send,
+        dyn futures::stream::Stream<Item = Connection<S>, Error = Error>
+            + Send,
     >,
-    connections: std::collections::HashMap<String, Connection>,
+    connections: std::collections::HashMap<String, Connection<S>>,
     rate_limiter: ratelimit_meter::KeyedRateLimiter<Option<String>>,
 }
 
-impl Server {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    Server<S>
+{
     pub fn new(
         buffer_size: usize,
         read_timeout: std::time::Duration,
-        sock_r: tokio::sync::mpsc::Receiver<tokio::net::tcp::TcpStream>,
+        sock_r: tokio::sync::mpsc::Receiver<S>,
     ) -> Self {
         let sock_stream = sock_r
             .map(move |s| Connection::new(s, buffer_size))
@@ -305,7 +307,7 @@ impl Server {
 
     fn handle_message(
         &mut self,
-        conn: &mut Connection,
+        conn: &mut Connection<S>,
         message: crate::protocol::Message,
     ) -> Result<()> {
         if let crate::protocol::Message::TerminalOutput { .. } = message {
@@ -341,7 +343,7 @@ impl Server {
 
     fn handle_login_message(
         &mut self,
-        conn: &mut Connection,
+        conn: &mut Connection<S>,
         message: crate::protocol::Message,
     ) -> Result<()> {
         match message {
@@ -364,7 +366,7 @@ impl Server {
 
     fn handle_stream_message(
         &mut self,
-        conn: &mut Connection,
+        conn: &mut Connection<S>,
         message: crate::protocol::Message,
     ) -> Result<()> {
         let (term_info, saved_data) = if let ConnectionState::Streaming {
@@ -414,7 +416,7 @@ impl Server {
 
     fn handle_watch_message(
         &mut self,
-        conn: &mut Connection,
+        conn: &mut Connection<S>,
         message: crate::protocol::Message,
     ) -> Result<()> {
         let term_info =
@@ -443,7 +445,7 @@ impl Server {
 
     fn handle_other_message(
         &mut self,
-        conn: &mut Connection,
+        conn: &mut Connection<S>,
         message: crate::protocol::Message,
     ) -> Result<()> {
         let (username, term_info) = if let ConnectionState::LoggedIn {
@@ -505,7 +507,7 @@ impl Server {
         }
     }
 
-    fn handle_disconnect(&mut self, conn: &mut Connection) {
+    fn handle_disconnect(&mut self, conn: &mut Connection<S>) {
         if let Some(username) = conn.state.username() {
             log::info!("{}: disconnect({})", conn.id, username);
         } else {
@@ -527,7 +529,7 @@ impl Server {
 
     fn poll_read_connection(
         &mut self,
-        conn: &mut Connection,
+        conn: &mut Connection<S>,
     ) -> Result<crate::component_future::Poll<()>> {
         match &mut conn.rsock {
             Some(ReadSocket::Connected(..)) => {
@@ -593,7 +595,7 @@ impl Server {
 
     fn poll_write_connection(
         &mut self,
-        conn: &mut Connection,
+        conn: &mut Connection<S>,
     ) -> Result<crate::component_future::Poll<()>> {
         match &mut conn.wsock {
             Some(WriteSocket::Connected(..)) => {
@@ -662,14 +664,14 @@ impl Server {
         }
     }
 
-    fn streamers(&self) -> impl Iterator<Item = &Connection> {
+    fn streamers(&self) -> impl Iterator<Item = &Connection<S>> {
         self.connections.values().filter(|conn| match conn.state {
             ConnectionState::Streaming { .. } => true,
             _ => false,
         })
     }
 
-    fn watchers_mut(&mut self) -> impl Iterator<Item = &mut Connection> {
+    fn watchers_mut(&mut self) -> impl Iterator<Item = &mut Connection<S>> {
         self.connections
             .values_mut()
             .filter(|conn| match conn.state {
@@ -679,7 +681,9 @@ impl Server {
     }
 }
 
-impl Server {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    Server<S>
+{
     const POLL_FNS: &'static [&'static dyn for<'a> Fn(
         &'a mut Self,
     ) -> Result<
@@ -788,7 +792,9 @@ impl Server {
 }
 
 #[must_use = "futures do nothing unless polled"]
-impl futures::future::Future for Server {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    futures::future::Future for Server<S>
+{
     type Item = ();
     type Error = Error;
 

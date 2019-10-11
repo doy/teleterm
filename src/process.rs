@@ -1,5 +1,6 @@
 use futures::future::Future as _;
 use snafu::ResultExt as _;
+use std::os::unix::io::AsRawFd as _;
 use tokio::io::{AsyncRead as _, AsyncWrite as _};
 use tokio_pty_process::CommandExt as _;
 
@@ -121,6 +122,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
         if let Some(size) = &self.needs_resize {
             match size.resize_pty(self.state.pty()).context(Resize)? {
                 futures::Async::Ready(()) => {
+                    log::debug!("resize({:?})", size);
                     self.needs_resize = None;
                     Ok(crate::component_future::Poll::DidWork)
                 }
@@ -160,6 +162,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             .context(ReadFromTerminal)?
         {
             futures::Async::Ready(n) => {
+                log::debug!("read_stdin({})", n);
                 if n > 0 {
                     self.input_buf.extend(self.buf[..n].iter());
                 } else {
@@ -185,6 +188,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
         let buf = if a.is_empty() { b } else { a };
         match self.state.pty_mut().poll_write(buf).context(WriteToPty)? {
             futures::Async::Ready(n) => {
+                log::debug!("write_stdin({})", n);
                 for _ in 0..n {
                     self.input_buf.pop_front();
                 }
@@ -206,6 +210,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             .context(ReadFromPty)
         {
             Ok(futures::Async::Ready(n)) => {
+                log::debug!("read_stdout({})", n);
                 let bytes = self.buf[..n].to_vec();
                 Ok(crate::component_future::Poll::Event(Event::Output(bytes)))
             }
@@ -217,6 +222,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
                 // wrong? i feel like there has to be a better way to do this
                 if let Error::ReadFromPty { source } = &e {
                     if source.kind() == std::io::ErrorKind::Other {
+                        log::debug!("read_stdout(eof)");
                         self.stdout_closed = true;
                         return Ok(crate::component_future::Poll::DidWork);
                     }
@@ -238,6 +244,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
 
         match self.state.process().poll().context(ProcessExitPoll)? {
             futures::Async::Ready(status) => {
+                log::debug!("exit({})", status);
                 self.exited = true;
                 Ok(crate::component_future::Poll::Event(Event::CommandExit(
                     status,
@@ -262,6 +269,10 @@ impl<R: tokio::io::AsyncRead + 'static> futures::stream::Stream
             self.state.pty = Some(
                 tokio_pty_process::AsyncPtyMaster::open().context(OpenPty)?,
             );
+            log::debug!(
+                "openpty({})",
+                self.state.pty.as_ref().unwrap().as_raw_fd()
+            );
         }
         if self.state.process.is_none() {
             self.state.process = Some(
@@ -271,6 +282,10 @@ impl<R: tokio::io::AsyncRead + 'static> futures::stream::Stream
                     .context(SpawnProcess {
                         cmd: self.cmd.clone(),
                     })?,
+            );
+            log::debug!(
+                "spawn({})",
+                self.state.process.as_ref().unwrap().id()
             );
         }
 

@@ -30,6 +30,8 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+const READ_BUFFER_SIZE: usize = 4 * 1024;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Event {
     CommandStart(String, Vec<String>),
@@ -69,7 +71,7 @@ pub struct Process<R: tokio::io::AsyncRead> {
     input_buf: std::collections::VecDeque<u8>,
     cmd: String,
     args: Vec<String>,
-    buf: Vec<u8>,
+    buf: [u8; READ_BUFFER_SIZE],
     started: bool,
     exited: bool,
     needs_resize: Option<crate::term::Size>,
@@ -82,10 +84,10 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
         Self {
             state: State::new(),
             input,
-            input_buf: std::collections::VecDeque::with_capacity(4096),
+            input_buf: std::collections::VecDeque::new(),
             cmd: cmd.to_string(),
             args: args.to_vec(),
-            buf: vec![0; 4096],
+            buf: [0; READ_BUFFER_SIZE],
             started: false,
             exited: false,
             needs_resize: None,

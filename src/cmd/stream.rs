@@ -9,6 +9,9 @@ pub enum Error {
     #[snafu(display("{}", source))]
     Common { source: crate::error::Error },
 
+    #[snafu(display("{}", source))]
+    Util { source: crate::util::Error },
+
     #[snafu(display("failed to write to stdout: {}", source))]
     WriteTerminal { source: tokio::io::Error },
 
@@ -20,6 +23,9 @@ pub enum Error {
 
     #[snafu(display("communication with server failed: {}", source))]
     Client { source: crate::client::Error },
+
+    #[snafu(display("failed to create tls connector: {}", source))]
+    CreateConnector { source: native_tls::Error },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -36,6 +42,7 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
                 .long("address")
                 .takes_value(true),
         )
+        .arg(clap::Arg::with_name("tls").long("tls"))
         .arg(
             clap::Arg::with_name("buffer-size")
                 .long("buffer-size")
@@ -53,15 +60,11 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
         .context(crate::error::CouldntFindUsername)
         .context(Common)
         .context(super::Stream)?;
-    let address = matches.value_of("address").map_or_else(
-        || Ok("0.0.0.0:4144".parse().unwrap()),
-        |s| {
-            s.parse()
-                .context(crate::error::ParseAddr)
-                .context(Common)
-                .context(super::Stream)
-        },
-    )?;
+    let (host, address) =
+        crate::util::resolve_address(matches.value_of("address"))
+            .context(Util)
+            .context(super::Stream)?;
+    let tls = matches.is_present("tls");
     let buffer_size =
         matches
             .value_of("buffer-size")
@@ -80,29 +83,63 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
     } else {
         vec![]
     };
-    run_impl(&username, address, buffer_size, &command, &args)
+    run_impl(&username, &host, address, tls, buffer_size, &command, &args)
         .context(super::Stream)
 }
 
 fn run_impl(
     username: &str,
+    host: &str,
     address: std::net::SocketAddr,
+    tls: bool,
     buffer_size: usize,
     command: &str,
     args: &[String],
 ) -> Result<()> {
-    let connect: crate::client::Connector<_> = Box::new(move || {
-        Box::new(
-            tokio::net::tcp::TcpStream::connect(&address)
-                .context(crate::error::Connect),
-        )
-    });
-    tokio::run(
-        StreamSession::new(command, args, connect, buffer_size, username)
-            .map_err(|e| {
-                eprintln!("{}", e);
-            }),
-    );
+    let host = host.to_string();
+    let fut: Box<
+        dyn futures::future::Future<Item = (), Error = Error> + Send,
+    > = if tls {
+        let connector =
+            native_tls::TlsConnector::new().context(CreateConnector)?;
+        let connect: crate::client::Connector<_> = Box::new(move || {
+            let host = host.clone();
+            let connector = connector.clone();
+            let connector = tokio_tls::TlsConnector::from(connector);
+            let stream = tokio::net::tcp::TcpStream::connect(&address);
+            Box::new(stream.context(crate::error::Connect).and_then(
+                move |stream| {
+                    connector
+                        .connect(&host, stream)
+                        .context(crate::error::TlsConnect)
+                },
+            ))
+        });
+        Box::new(StreamSession::new(
+            command,
+            args,
+            connect,
+            buffer_size,
+            username,
+        ))
+    } else {
+        let connect: crate::client::Connector<_> = Box::new(move || {
+            Box::new(
+                tokio::net::tcp::TcpStream::connect(&address)
+                    .context(crate::error::Connect),
+            )
+        });
+        Box::new(StreamSession::new(
+            command,
+            args,
+            connect,
+            buffer_size,
+            username,
+        ))
+    };
+    tokio::run(fut.map_err(|e| {
+        eprintln!("{}", e);
+    }));
 
     Ok(())
 }

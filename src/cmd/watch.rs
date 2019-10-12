@@ -10,6 +10,9 @@ pub enum Error {
     Common { source: crate::error::Error },
 
     #[snafu(display("{}", source))]
+    Util { source: crate::util::Error },
+
+    #[snafu(display("{}", source))]
     Resize { source: crate::term::Error },
 
     #[snafu(display("failed to read key from terminal: {}", source))]
@@ -32,6 +35,9 @@ pub enum Error {
 
     #[snafu(display("failed to switch to alternate screen: {}", source))]
     ToAlternateScreen { source: crossterm::ErrorKind },
+
+    #[snafu(display("failed to create tls connector: {}", source))]
+    CreateConnector { source: native_tls::Error },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -48,6 +54,7 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
                 .long("address")
                 .takes_value(true),
         )
+        .arg(clap::Arg::with_name("tls").long("tls"))
 }
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
@@ -58,22 +65,51 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
         .context(crate::error::CouldntFindUsername)
         .context(Common)
         .context(super::Watch)?;
-    let address = matches.value_of("address").map_or_else(
-        || Ok("0.0.0.0:4144".parse().unwrap()),
-        |s| {
-            s.parse()
-                .context(crate::error::ParseAddr)
-                .context(Common)
-                .context(super::Watch)
-        },
-    )?;
-    run_impl(&username, address).context(super::Watch)
+    let (host, address) =
+        crate::util::resolve_address(matches.value_of("address"))
+            .context(Util)
+            .context(super::Watch)?;
+    let tls = matches.is_present("tls");
+    run_impl(&username, &host, address, tls).context(super::Watch)
 }
 
-fn run_impl(username: &str, address: std::net::SocketAddr) -> Result<()> {
-    let make_connector: Box<dyn Fn() -> crate::client::Connector<_> + Send> =
-        Box::new(move || {
-            let address = address;
+fn run_impl(
+    username: &str,
+    host: &str,
+    address: std::net::SocketAddr,
+    tls: bool,
+) -> Result<()> {
+    let host = host.to_string();
+    let username = username.to_string();
+    let fut: Box<
+        dyn futures::future::Future<Item = (), Error = Error> + Send,
+    > = if tls {
+        let connector =
+            native_tls::TlsConnector::new().context(CreateConnector)?;
+        let make_connector: Box<
+            dyn Fn() -> crate::client::Connector<_> + Send,
+        > = Box::new(move || {
+            let host = host.clone();
+            let connector = connector.clone();
+            Box::new(move || {
+                let host = host.clone();
+                let connector = connector.clone();
+                let connector = tokio_tls::TlsConnector::from(connector);
+                let stream = tokio::net::tcp::TcpStream::connect(&address);
+                Box::new(stream.context(crate::error::Connect).and_then(
+                    move |stream| {
+                        connector
+                            .connect(&host, stream)
+                            .context(crate::error::TlsConnect)
+                    },
+                ))
+            })
+        });
+        Box::new(WatchSession::new(make_connector, &username))
+    } else {
+        let make_connector: Box<
+            dyn Fn() -> crate::client::Connector<_> + Send,
+        > = Box::new(move || {
             Box::new(move || {
                 Box::new(
                     tokio::net::tcp::TcpStream::connect(&address)
@@ -81,8 +117,9 @@ fn run_impl(username: &str, address: std::net::SocketAddr) -> Result<()> {
                 )
             })
         });
-    let username = username.to_string();
-    tokio::run(WatchSession::new(make_connector, &username).map_err(|e| {
+        Box::new(WatchSession::new(make_connector, &username))
+    };
+    tokio::run(fut.map_err(|e| {
         eprintln!("{}", e);
     }));
 

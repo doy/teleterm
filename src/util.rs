@@ -1,4 +1,5 @@
-use snafu::OptionExt as _;
+use snafu::{OptionExt as _, ResultExt as _};
+use std::net::ToSocketAddrs as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
@@ -10,6 +11,18 @@ pub enum Error {
         path
     ))]
     NotAFileName { path: String },
+
+    #[snafu(display("failed to parse address"))]
+    ParseAddress,
+
+    #[snafu(display("failed to parse address: {}", source))]
+    ParsePort { source: std::num::ParseIntError },
+
+    #[snafu(display("failed to resolve address: {}", source))]
+    ResolveAddress { source: std::io::Error },
+
+    #[snafu(display("failed to find any resolved addresses"))]
+    HasResolvedAddr,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -24,4 +37,20 @@ pub fn program_name() -> Result<String> {
         })?
         .to_string_lossy()
         .to_string())
+}
+
+pub fn resolve_address(
+    address: Option<&str>,
+) -> Result<(String, std::net::SocketAddr)> {
+    let address = address.unwrap_or("0.0.0.0:4144");
+    let mut address_parts = address.split(':');
+    let host = address_parts.next().context(ParseAddress)?;
+    let port = address_parts.next().context(ParseAddress)?;
+    let port: u16 = port.parse().context(ParsePort)?;
+    let socket_addr = (host, port)
+        .to_socket_addrs()
+        .context(ResolveAddress)?
+        .next()
+        .context(HasResolvedAddr)?;
+    Ok((host.to_string(), socket_addr))
 }

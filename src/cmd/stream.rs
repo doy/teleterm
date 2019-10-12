@@ -1,5 +1,6 @@
 use futures::future::Future as _;
 use futures::stream::Stream as _;
+use snafu::futures01::FutureExt as _;
 use snafu::{OptionExt as _, ResultExt as _};
 use tokio::io::AsyncWrite as _;
 
@@ -90,8 +91,14 @@ fn run_impl(
     command: &str,
     args: &[String],
 ) -> Result<()> {
+    let connect: crate::client::Connector<_> = Box::new(move || {
+        Box::new(
+            tokio::net::tcp::TcpStream::connect(&address)
+                .context(crate::error::Connect),
+        )
+    });
     tokio::run(
-        StreamSession::new(command, args, address, buffer_size, username)
+        StreamSession::new(command, args, connect, buffer_size, username)
             .map_err(|e| {
                 eprintln!("{}", e);
             }),
@@ -100,8 +107,10 @@ fn run_impl(
     Ok(())
 }
 
-struct StreamSession {
-    client: crate::client::Client,
+struct StreamSession<
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+> {
+    client: crate::client::Client<S>,
     process: crate::process::Process<crate::async_stdin::Stdin>,
     stdout: tokio::io::Stdout,
     buffer: crate::term::Buffer,
@@ -112,16 +121,18 @@ struct StreamSession {
     raw_screen: Option<crossterm::RawScreen>,
 }
 
-impl StreamSession {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    StreamSession<S>
+{
     fn new(
         cmd: &str,
         args: &[String],
-        address: std::net::SocketAddr,
+        connect: crate::client::Connector<S>,
         buffer_size: usize,
         username: &str,
     ) -> Self {
         let client =
-            crate::client::Client::stream(address, username, buffer_size);
+            crate::client::Client::stream(connect, username, buffer_size);
 
         // TODO: tokio::io::stdin is broken (it's blocking)
         // see https://github.com/tokio-rs/tokio/issues/589
@@ -158,7 +169,9 @@ impl StreamSession {
     }
 }
 
-impl StreamSession {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    StreamSession<S>
+{
     const POLL_FNS: &'static [&'static dyn for<'a> Fn(
         &'a mut Self,
     ) -> Result<
@@ -305,7 +318,9 @@ impl StreamSession {
 }
 
 #[must_use = "futures do nothing unless polled"]
-impl futures::future::Future for StreamSession {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    futures::future::Future for StreamSession<S>
+{
     type Item = ();
     type Error = Error;
 

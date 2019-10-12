@@ -1,5 +1,6 @@
 use futures::future::Future as _;
 use futures::stream::Stream as _;
+use snafu::futures01::FutureExt as _;
 use snafu::{OptionExt as _, ResultExt as _};
 use std::io::Write as _;
 
@@ -70,8 +71,18 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
 }
 
 fn run_impl(username: &str, address: std::net::SocketAddr) -> Result<()> {
+    let make_connector: Box<dyn Fn() -> crate::client::Connector<_> + Send> =
+        Box::new(move || {
+            let address = address;
+            Box::new(move || {
+                Box::new(
+                    tokio::net::tcp::TcpStream::connect(&address)
+                        .context(crate::error::Connect),
+                )
+            })
+        });
     let username = username.to_string();
-    tokio::run(WatchSession::new(address, &username).map_err(|e| {
+    tokio::run(WatchSession::new(make_connector, &username).map_err(|e| {
         eprintln!("{}", e);
     }));
 
@@ -80,7 +91,7 @@ fn run_impl(username: &str, address: std::net::SocketAddr) -> Result<()> {
 
 // XXX https://github.com/rust-lang/rust/issues/64362
 #[allow(dead_code)]
-enum State {
+enum State<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static> {
     Temporary,
     LoggingIn {
         alternate_screen: crossterm::AlternateScreen,
@@ -90,11 +101,13 @@ enum State {
         alternate_screen: crossterm::AlternateScreen,
     },
     Watching {
-        client: Box<crate::client::Client>,
+        client: Box<crate::client::Client<S>>,
     },
 }
 
-impl State {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    State<S>
+{
     fn new() -> Self {
         Self::Temporary
     }
@@ -141,7 +154,7 @@ impl State {
         Ok(())
     }
 
-    fn watching(&mut self, client: crate::client::Client) {
+    fn watching(&mut self, client: crate::client::Client<S>) {
         if let Self::Temporary = self {
             unreachable!()
         }
@@ -151,24 +164,34 @@ impl State {
     }
 }
 
-struct WatchSession {
-    address: std::net::SocketAddr,
+struct WatchSession<
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+> {
+    make_connector: Box<dyn Fn() -> crate::client::Connector<S> + Send>,
     username: String,
 
     key_reader: crate::key_reader::KeyReader,
-    list_client: crate::client::Client,
-    state: State,
+    list_client: crate::client::Client<S>,
+    state: State<S>,
     raw_screen: Option<crossterm::RawScreen>,
     needs_redraw: bool,
 }
 
-impl WatchSession {
-    fn new(address: std::net::SocketAddr, username: &str) -> Self {
-        let list_client =
-            crate::client::Client::list(address, username, 4_194_304);
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    WatchSession<S>
+{
+    fn new(
+        make_connector: Box<dyn Fn() -> crate::client::Connector<S> + Send>,
+        username: &str,
+    ) -> Self {
+        let list_client = crate::client::Client::list(
+            make_connector(),
+            username,
+            4_194_304,
+        );
 
         Self {
-            address,
+            make_connector,
             username: username.to_string(),
 
             key_reader: crate::key_reader::KeyReader::new(),
@@ -272,7 +295,7 @@ impl WatchSession {
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(c)) => {
                 if let Some(id) = sessions.id_for(*c) {
                     let client = crate::client::Client::watch(
-                        self.address,
+                        (self.make_connector)(),
                         &self.username,
                         4_194_304,
                         id,
@@ -498,7 +521,9 @@ impl WatchSession {
     }
 }
 
-impl WatchSession {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    WatchSession<S>
+{
     const POLL_FNS: &'static [&'static dyn for<'a> Fn(
         &'a mut Self,
     ) -> Result<
@@ -602,7 +627,9 @@ impl WatchSession {
 }
 
 #[must_use = "futures do nothing unless polled"]
-impl futures::future::Future for WatchSession {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    futures::future::Future for WatchSession<S>
+{
     type Item = ();
     type Error = Error;
 

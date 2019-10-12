@@ -4,7 +4,6 @@ use rand::Rng as _;
 use snafu::futures01::stream::StreamExt as _;
 use snafu::futures01::FutureExt as _;
 use snafu::ResultExt as _;
-use tokio::io::AsyncRead as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {
@@ -37,21 +36,17 @@ const RECONNECT_BACKOFF_FACTOR: f32 = 2.0;
 const RECONNECT_BACKOFF_MAX: std::time::Duration =
     std::time::Duration::from_secs(60);
 
-enum ReadSocket {
+enum ReadSocket<
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+> {
     NotConnected,
-    Connected(
-        crate::protocol::FramedReader<
-            tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
-        >,
-    ),
+    Connected(crate::protocol::FramedReader<tokio::io::ReadHalf<S>>),
     ReadingMessage(
         Box<
             dyn futures::future::Future<
                     Item = (
                         crate::protocol::Message,
-                        crate::protocol::FramedReader<
-                            tokio::io::ReadHalf<tokio::net::tcp::TcpStream>,
-                        >,
+                        crate::protocol::FramedReader<tokio::io::ReadHalf<S>>,
                     ),
                     Error = Error,
                 > + Send,
@@ -59,26 +54,24 @@ enum ReadSocket {
     ),
 }
 
-enum WriteSocket {
+enum WriteSocket<
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+> {
     NotConnected,
     Connecting(
         Box<
             dyn futures::future::Future<
-                    Item = tokio::net::tcp::TcpStream,
-                    Error = Error,
+                    Item = S,
+                    Error = crate::error::Error,
                 > + Send,
         >,
     ),
-    Connected(
-        crate::protocol::FramedWriter<
-            tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
-        >,
-    ),
+    Connected(crate::protocol::FramedWriter<tokio::io::WriteHalf<S>>),
     WritingMessage(
         Box<
             dyn futures::future::Future<
                     Item = crate::protocol::FramedWriter<
-                        tokio::io::WriteHalf<tokio::net::tcp::TcpStream>,
+                        tokio::io::WriteHalf<S>,
                     >,
                     Error = Error,
                 > + Send,
@@ -93,8 +86,19 @@ pub enum Event {
     Resize(crate::term::Size),
 }
 
-pub struct Client {
-    address: std::net::SocketAddr,
+pub type Connector<S> = Box<
+    dyn Fn() -> Box<
+            dyn futures::future::Future<
+                    Item = S,
+                    Error = crate::error::Error,
+                > + Send,
+        > + Send,
+>;
+
+pub struct Client<
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+> {
+    connect: Connector<S>,
     username: String,
     buffer_size: usize,
 
@@ -106,21 +110,23 @@ pub struct Client {
         Box<dyn futures::stream::Stream<Item = (), Error = Error> + Send>,
     >,
 
-    rsock: ReadSocket,
-    wsock: WriteSocket,
+    rsock: ReadSocket<S>,
+    wsock: WriteSocket<S>,
 
     on_connect: Vec<crate::protocol::Message>,
     to_send: std::collections::VecDeque<crate::protocol::Message>,
 }
 
-impl Client {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    Client<S>
+{
     pub fn stream(
-        address: std::net::SocketAddr,
+        connect: Connector<S>,
         username: &str,
         buffer_size: usize,
     ) -> Self {
         Self::new(
-            address,
+            connect,
             username,
             buffer_size,
             &[crate::protocol::Message::start_streaming()],
@@ -129,13 +135,13 @@ impl Client {
     }
 
     pub fn watch(
-        address: std::net::SocketAddr,
+        connect: Connector<S>,
         username: &str,
         buffer_size: usize,
         id: &str,
     ) -> Self {
         Self::new(
-            address,
+            connect,
             username,
             buffer_size,
             &[crate::protocol::Message::start_watching(id)],
@@ -144,15 +150,15 @@ impl Client {
     }
 
     pub fn list(
-        address: std::net::SocketAddr,
+        connect: Connector<S>,
         username: &str,
         buffer_size: usize,
     ) -> Self {
-        Self::new(address, username, buffer_size, &[], true)
+        Self::new(connect, username, buffer_size, &[], true)
     }
 
     fn new(
-        address: std::net::SocketAddr,
+        connect: Connector<S>,
         username: &str,
         buffer_size: usize,
         on_connect: &[crate::protocol::Message],
@@ -175,7 +181,7 @@ impl Client {
         };
 
         Self {
-            address,
+            connect,
             username: username.to_string(),
             buffer_size,
 
@@ -223,7 +229,9 @@ impl Client {
     }
 }
 
-impl Client {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    Client<S>
+{
     // XXX rustfmt does a terrible job here
     const POLL_FNS: &'static [&'static dyn for<'a> Fn(
         &'a mut Self,
@@ -270,11 +278,7 @@ impl Client {
                 }
 
                 self.set_reconnect_timer();
-                self.wsock = WriteSocket::Connecting(Box::new(
-                    tokio::net::tcp::TcpStream::connect(&self.address)
-                        .context(crate::error::Connect)
-                        .context(Common),
-                ));
+                self.wsock = WriteSocket::Connecting((self.connect)());
 
                 Ok(crate::component_future::Poll::DidWork)
             }
@@ -461,7 +465,9 @@ impl Client {
 }
 
 #[must_use = "streams do nothing unless polled"]
-impl futures::stream::Stream for Client {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    futures::stream::Stream for Client<S>
+{
     type Item = Event;
     type Error = Error;
 

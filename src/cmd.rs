@@ -1,3 +1,4 @@
+mod record;
 mod server;
 mod stream;
 mod watch;
@@ -11,6 +12,9 @@ pub enum Error {
 
     #[snafu(display("{}", source))]
     Parse { source: clap::Error },
+
+    #[snafu(display("{}", source))]
+    Record { source: crate::cmd::record::Error },
 
     #[snafu(display("{}", source))]
     Stream { source: crate::cmd::stream::Error },
@@ -45,6 +49,11 @@ const COMMANDS: &[Command] = &[
         name: "watch",
         cmd: &watch::cmd,
         run: &watch::run,
+    },
+    Command {
+        name: "record",
+        cmd: &record::cmd,
+        run: &record::run,
     },
 ];
 

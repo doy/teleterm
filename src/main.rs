@@ -17,6 +17,7 @@ mod protocol;
 mod server;
 mod session_list;
 mod term;
+mod ttyrec;
 mod util;
 
 fn main() {

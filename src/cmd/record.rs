@@ -79,6 +79,7 @@ fn run_impl(
     Ok(())
 }
 
+#[allow(clippy::large_enum_variant)]
 enum FileState {
     Closed {
         filename: String,

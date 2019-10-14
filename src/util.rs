@@ -14,6 +14,7 @@ pub fn program_name() -> Result<String> {
         .to_string())
 }
 
+// XXX this does a blocking dns lookup - should try to find an async version
 pub fn resolve_address(
     address: Option<&str>,
 ) -> Result<(String, std::net::SocketAddr)> {

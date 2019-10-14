@@ -75,6 +75,42 @@ impl ConnectionState {
         }
     }
 
+    fn term_info_mut(&mut self) -> Option<&mut TerminalInfo> {
+        match self {
+            Self::Accepted => None,
+            Self::LoggedIn { term_info, .. } => Some(term_info),
+            Self::Streaming { term_info, .. } => Some(term_info),
+            Self::Watching { term_info, .. } => Some(term_info),
+        }
+    }
+
+    fn saved_data(&self) -> Option<&crate::term::Buffer> {
+        match self {
+            Self::Accepted => None,
+            Self::LoggedIn { .. } => None,
+            Self::Streaming { saved_data, .. } => Some(saved_data),
+            Self::Watching { .. } => None,
+        }
+    }
+
+    fn saved_data_mut(&mut self) -> Option<&mut crate::term::Buffer> {
+        match self {
+            Self::Accepted => None,
+            Self::LoggedIn { .. } => None,
+            Self::Streaming { saved_data, .. } => Some(saved_data),
+            Self::Watching { .. } => None,
+        }
+    }
+
+    fn watch_id(&self) -> Option<&str> {
+        match self {
+            Self::Accepted => None,
+            Self::LoggedIn { .. } => None,
+            Self::Streaming { .. } => None,
+            Self::Watching { watch_id, .. } => Some(watch_id),
+        }
+    }
+
     fn login(
         &mut self,
         username: &str,
@@ -180,13 +216,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 ..
             } => (username, term_info),
         };
-        let title = if let ConnectionState::Streaming { saved_data, .. } =
-            &self.state
-        {
-            saved_data.title()
-        } else {
-            ""
-        };
+        let title = self
+            .state
+            .saved_data()
+            .map_or("", crate::term::Buffer::title);
 
         // i don't really care if things break for a connection that has been
         // idle for 136 years
@@ -274,13 +307,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         &mut self,
         conn: &mut Connection<S>,
     ) -> Result<()> {
-        let username = if let ConnectionState::LoggedIn { username, .. } =
-            &mut conn.state
-        {
-            username
-        } else {
-            unreachable!()
-        };
+        let username = conn.state.username().unwrap();
 
         log::info!("{}: stream({})", conn.id, username);
         conn.state.stream(self.buffer_size);
@@ -293,28 +320,21 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         conn: &mut Connection<S>,
         id: String,
     ) -> Result<()> {
-        let username = if let ConnectionState::LoggedIn { username, .. } =
-            &mut conn.state
-        {
-            username
-        } else {
-            unreachable!()
-        };
+        let username = conn.state.username().unwrap();
 
         if let Some(stream_conn) = self.connections.get(&id) {
-            let data =
-                if let ConnectionState::Streaming { saved_data, .. } =
-                    &stream_conn.state
-                {
-                    saved_data.contents().to_vec()
-                } else {
-                    return Err(Error::InvalidWatchId { id });
-                };
+            let data = stream_conn
+                .state
+                .saved_data()
+                .map(crate::term::Buffer::contents)
+                .ok_or_else(|| Error::InvalidWatchId {
+                    id: id.to_string(),
+                })?;
 
             log::info!("{}: watch({}, {})", conn.id, username, id);
             conn.state.watch(&id);
             conn.to_send
-                .push_back(crate::protocol::Message::terminal_output(&data));
+                .push_back(crate::protocol::Message::terminal_output(data));
 
             Ok(())
         } else {
@@ -337,26 +357,15 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         conn: &mut Connection<S>,
         data: &[u8],
     ) -> Result<()> {
-        let saved_data =
-            if let ConnectionState::Streaming { saved_data, .. } =
-                &mut conn.state
-            {
-                saved_data
-            } else {
-                unreachable!()
-            };
+        let saved_data = conn.state.saved_data_mut().unwrap();
 
         saved_data.append(data);
         for watch_conn in self.watchers_mut() {
-            match &watch_conn.state {
-                ConnectionState::Watching { watch_id, .. } => {
-                    if &conn.id == watch_id {
-                        watch_conn.to_send.push_back(
-                            crate::protocol::Message::terminal_output(data),
-                        );
-                    }
-                }
-                _ => unreachable!(),
+            let watch_id = watch_conn.state.watch_id().unwrap();
+            if conn.id == watch_id {
+                watch_conn.to_send.push_back(
+                    crate::protocol::Message::terminal_output(data),
+                );
             }
         }
 
@@ -382,14 +391,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         conn: &mut Connection<S>,
         size: crate::term::Size,
     ) -> Result<()> {
-        let term_info =
-            if let ConnectionState::LoggedIn { term_info, .. } =
-                &mut conn.state
-            {
-                term_info
-            } else {
-                unreachable!()
-            };
+        let term_info = conn.state.term_info_mut().unwrap();
 
         term_info.size = size;
 
@@ -480,14 +482,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         }
 
         for watch_conn in self.watchers_mut() {
-            if let ConnectionState::Watching { watch_id, .. } =
-                &watch_conn.state
-            {
-                if watch_id == &conn.id {
-                    watch_conn.close(Ok(()));
-                }
-            } else {
-                unreachable!()
+            let watch_id = watch_conn.state.watch_id().unwrap();
+            if conn.id == watch_id {
+                watch_conn.close(Ok(()));
             }
         }
     }

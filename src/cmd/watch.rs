@@ -43,7 +43,7 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
-    app.about("Watch shellshare streams")
+    app.about("Watch teleterm streams")
         .arg(
             clap::Arg::with_name("username")
                 .long("username")
@@ -486,7 +486,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         crossterm::terminal()
             .clear(crossterm::ClearType::All)
             .context(WriteTerminalCrossterm)?;
-        println!("welcome to shellshare\r");
+        println!("welcome to teleterm\r");
         println!("available sessions:\r");
         println!("\r");
         println!(

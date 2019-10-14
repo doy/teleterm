@@ -103,7 +103,7 @@ impl Server {
     fn poll_server(&mut self) -> Result<crate::component_future::Poll<()>> {
         match self.server.poll()? {
             futures::Async::Ready(()) => {
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Poll::Event(()))
             }
             futures::Async::NotReady => {
                 Ok(crate::component_future::Poll::NotReady)

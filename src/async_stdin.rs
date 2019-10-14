@@ -70,14 +70,13 @@ impl tokio::io::AsyncRead for Stdin {
         match self.input.poll_read_ready(ready)? {
             futures::Async::Ready(_) => {
                 let res = self.input.poll_read(buf);
+
                 // XXX i'm pretty sure this is wrong (if the single poll_read
                 // call didn't return all waiting data, clearing read ready
                 // state means that we won't get the rest until some more data
                 // beyond that appears), but i don't know that there's a way
                 // to do it correctly given that poll_read blocks
-                if let Err(e) = self.input.clear_read_ready(ready) {
-                    return Err(e);
-                }
+                self.input.clear_read_ready(ready)?;
 
                 res
             }

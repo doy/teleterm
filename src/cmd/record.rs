@@ -158,7 +158,14 @@ impl RecordSession {
         match self.process.poll()? {
             futures::Async::Ready(Some(e)) => {
                 match e {
-                    crate::process::Event::CommandStart(..) => {}
+                    crate::process::Event::CommandStart(..) => {
+                        if self.raw_screen.is_none() {
+                            self.raw_screen = Some(
+                                crossterm::RawScreen::into_raw_mode()
+                                    .context(crate::error::ToRawMode)?,
+                            );
+                        }
+                    }
                     crate::process::Event::CommandExit(..) => {
                         self.done = true;
                     }
@@ -262,12 +269,6 @@ impl futures::future::Future for RecordSession {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-        if self.raw_screen.is_none() {
-            self.raw_screen = Some(
-                crossterm::RawScreen::into_raw_mode()
-                    .context(crate::error::ToRawMode)?,
-            );
-        }
         crate::component_future::poll_future(self, Self::POLL_FNS)
     }
 }

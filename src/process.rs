@@ -117,6 +117,32 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             return Ok(crate::component_future::Poll::NothingToDo);
         }
 
+        if self.state.pty.is_none() {
+            self.state.pty = Some(
+                tokio_pty_process::AsyncPtyMaster::open()
+                    .context(crate::error::OpenPty)?,
+            );
+            log::debug!(
+                "openpty({})",
+                self.state.pty.as_ref().unwrap().as_raw_fd()
+            );
+        }
+
+        if self.state.process.is_none() {
+            self.state.process = Some(
+                std::process::Command::new(&self.cmd)
+                    .args(&self.args)
+                    .spawn_pty_async(self.state.pty())
+                    .context(crate::error::SpawnProcess {
+                        cmd: self.cmd.clone(),
+                    })?,
+            );
+            log::debug!(
+                "spawn({})",
+                self.state.process.as_ref().unwrap().id()
+            );
+        }
+
         self.started = true;
         Ok(crate::component_future::Poll::Event(Event::CommandStart(
             self.cmd.clone(),
@@ -250,31 +276,6 @@ impl<R: tokio::io::AsyncRead + 'static> futures::stream::Stream
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
-        if self.state.pty.is_none() {
-            self.state.pty = Some(
-                tokio_pty_process::AsyncPtyMaster::open()
-                    .context(crate::error::OpenPty)?,
-            );
-            log::debug!(
-                "openpty({})",
-                self.state.pty.as_ref().unwrap().as_raw_fd()
-            );
-        }
-        if self.state.process.is_none() {
-            self.state.process = Some(
-                std::process::Command::new(&self.cmd)
-                    .args(&self.args)
-                    .spawn_pty_async(self.state.pty())
-                    .context(crate::error::SpawnProcess {
-                        cmd: self.cmd.clone(),
-                    })?,
-            );
-            log::debug!(
-                "spawn({})",
-                self.state.process.as_ref().unwrap().id()
-            );
-        }
-
         crate::component_future::poll_stream(self, Self::POLL_FNS)
     }
 }

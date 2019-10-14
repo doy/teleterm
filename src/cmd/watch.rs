@@ -527,6 +527,18 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ];
 
     fn poll_input(&mut self) -> Result<crate::component_future::Poll<()>> {
+        if self.raw_screen.is_none() {
+            self.raw_screen = Some(
+                crossterm::RawScreen::into_raw_mode()
+                    .context(crate::error::ToRawMode)?,
+            );
+        }
+        if let State::Temporary = self.state {
+            self.state = State::LoggingIn {
+                alternate_screen: new_alternate_screen()?,
+            }
+        }
+
         match self.key_reader.poll()? {
             futures::Async::Ready(Some(e)) => {
                 let quit = match &mut self.state {
@@ -626,17 +638,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-        if let State::Temporary = self.state {
-            self.state = State::LoggingIn {
-                alternate_screen: new_alternate_screen()?,
-            }
-        }
-        if self.raw_screen.is_none() {
-            self.raw_screen = Some(
-                crossterm::RawScreen::into_raw_mode()
-                    .context(crate::error::ToRawMode)?,
-            );
-        }
         let res = crate::component_future::poll_future(self, Self::POLL_FNS);
         if res.is_err() {
             self.state = State::Temporary; // drop alternate screen

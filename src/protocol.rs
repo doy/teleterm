@@ -237,6 +237,24 @@ impl Message {
     {
         Packet::from(self).write_async(w)
     }
+
+    // it'd be nice if i could just override the Debug implementation for
+    // specific enum variants, but writing the whole impl Debug by hand just
+    // to make this one change would be super obnoxious
+    pub fn log(&self, id: &str) {
+        match self {
+            Self::TerminalOutput { data } => {
+                log::debug!(
+                    "{}: message(TerminalOutput {{ data: ({} bytes) }})",
+                    id,
+                    data.len()
+                );
+            }
+            message => {
+                log::debug!("{}: message({:?})", id, message);
+            }
+        }
+    }
 }
 
 struct Packet {

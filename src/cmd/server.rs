@@ -43,6 +43,9 @@ pub enum Error {
     #[snafu(display("failed to run server: {}", source))]
     Server { source: crate::server::Error },
 
+    #[snafu(display("failed to run server: {}", source))]
+    TlsServer { source: crate::server::tls::Error },
+
     #[snafu(display("failed to open identity file: {}", source))]
     OpenIdentityFile { source: std::io::Error },
 
@@ -194,7 +197,7 @@ fn create_server_tls(
                 .map_err(|_| Error::TlsSocketChannel {})
         });
     let server =
-        crate::server::TlsServer::new(buffer_size, read_timeout, sock_r)
-            .context(Server);
+        crate::server::tls::Server::new(buffer_size, read_timeout, sock_r)
+            .context(TlsServer);
     Ok((Box::new(acceptor), Box::new(server)))
 }

@@ -1,44 +1,6 @@
 use crate::prelude::*;
 use std::io::Write as _;
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display("{}", source))]
-    Common { source: crate::error::Error },
-
-    #[snafu(display("{}", source))]
-    Util { source: crate::util::Error },
-
-    #[snafu(display("{}", source))]
-    Resize { source: crate::term::Error },
-
-    #[snafu(display("failed to read key from terminal: {}", source))]
-    ReadKey { source: crate::key_reader::Error },
-
-    #[snafu(display("failed to write to terminal: {}", source))]
-    WriteTerminal { source: std::io::Error },
-
-    #[snafu(display("failed to write to terminal: {}", source))]
-    WriteTerminalCrossterm { source: crossterm::ErrorKind },
-
-    #[snafu(display("failed to flush writes to terminal: {}", source))]
-    FlushTerminal { source: std::io::Error },
-
-    #[snafu(display("communication with server failed: {}", source))]
-    Client { source: crate::client::Error },
-
-    #[snafu(display("received error from server: {}", message))]
-    Server { message: String },
-
-    #[snafu(display("failed to switch to alternate screen: {}", source))]
-    ToAlternateScreen { source: crossterm::ErrorKind },
-
-    #[snafu(display("failed to create tls connector: {}", source))]
-    CreateConnector { source: native_tls::Error },
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Watch teleterm streams")
         .arg(
@@ -59,15 +21,11 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
         .value_of("username")
         .map(std::string::ToString::to_string)
         .or_else(|| std::env::var("USER").ok())
-        .context(crate::error::CouldntFindUsername)
-        .context(Common)
-        .context(super::Watch)?;
+        .context(crate::error::CouldntFindUsername)?;
     let (host, address) =
-        crate::util::resolve_address(matches.value_of("address"))
-            .context(Util)
-            .context(super::Watch)?;
+        crate::util::resolve_address(matches.value_of("address"))?;
     let tls = matches.is_present("tls");
-    run_impl(&username, &host, address, tls).context(super::Watch)
+    run_impl(&username, &host, address, tls)
 }
 
 fn run_impl(
@@ -81,8 +39,8 @@ fn run_impl(
     let fut: Box<
         dyn futures::future::Future<Item = (), Error = Error> + Send,
     > = if tls {
-        let connector =
-            native_tls::TlsConnector::new().context(CreateConnector)?;
+        let connector = native_tls::TlsConnector::new()
+            .context(crate::error::CreateConnector)?;
         let make_connector: Box<
             dyn Fn() -> crate::client::Connector<_> + Send,
         > = Box::new(move || {
@@ -97,7 +55,7 @@ fn run_impl(
                     move |stream| {
                         connector
                             .connect(&host, stream)
-                            .context(crate::error::TlsConnect)
+                            .context(crate::error::ConnectTls)
                     },
                 ))
             })
@@ -273,7 +231,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 self.state.choosing(
                     crate::session_list::SessionList::new(
                         sessions,
-                        crate::term::Size::get().context(Resize)?,
+                        crate::term::Size::get()?,
                     ),
                 )?;
                 self.needs_redraw = true;
@@ -287,8 +245,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             msg => {
                 return Err(crate::error::Error::UnexpectedMessage {
                     message: msg,
-                })
-                .context(Common);
+                });
             }
         }
         Ok(())
@@ -337,7 +294,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     self.state.watching(client);
                     crossterm::terminal()
                         .clear(crossterm::ClearType::All)
-                        .context(WriteTerminalCrossterm)?;
+                        .context(crate::error::WriteTerminalCrossterm)?;
                 }
             }
             _ => {}
@@ -367,8 +324,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 // TODO async
                 let stdout = std::io::stdout();
                 let mut stdout = stdout.lock();
-                stdout.write(&data).context(WriteTerminal)?;
-                stdout.flush().context(FlushTerminal)?;
+                stdout.write(&data).context(crate::error::WriteTerminal)?;
+                stdout.flush().context(crate::error::FlushTerminal)?;
             }
             crate::protocol::Message::Disconnected => {
                 self.reconnect(true)?;
@@ -379,8 +336,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             msg => {
                 return Err(crate::error::Error::UnexpectedMessage {
                     message: msg,
-                })
-                .context(Common);
+                });
             }
         }
         Ok(())
@@ -424,12 +380,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn display_loading_screen(&self) -> Result<()> {
         crossterm::terminal()
             .clear(crossterm::ClearType::All)
-            .context(WriteTerminalCrossterm)?;
+            .context(crate::error::WriteTerminalCrossterm)?;
         let data = b"loading...\r\nq: quit --> ";
         let stdout = std::io::stdout();
         let mut stdout = stdout.lock();
-        stdout.write(data).context(WriteTerminal)?;
-        stdout.flush().context(FlushTerminal)?;
+        stdout.write(data).context(crate::error::WriteTerminal)?;
+        stdout.flush().context(crate::error::FlushTerminal)?;
         Ok(())
     }
 
@@ -482,7 +438,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
         crossterm::terminal()
             .clear(crossterm::ClearType::All)
-            .context(WriteTerminalCrossterm)?;
+            .context(crate::error::WriteTerminalCrossterm)?;
         println!("welcome to teleterm\r");
         println!("available sessions:\r");
         println!("\r");
@@ -549,7 +505,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             sessions.current_page(),
             sessions.total_pages(),
         );
-        std::io::stdout().flush().context(FlushTerminal)?;
+        std::io::stdout()
+            .flush()
+            .context(crate::error::FlushTerminal)?;
 
         Ok(())
     }
@@ -569,7 +527,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ];
 
     fn poll_input(&mut self) -> Result<crate::component_future::Poll<()>> {
-        match self.key_reader.poll().context(ReadKey)? {
+        match self.key_reader.poll()? {
             futures::Async::Ready(Some(e)) => {
                 let quit = match &mut self.state {
                     State::Temporary => unreachable!(),
@@ -593,7 +551,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn poll_list_client(
         &mut self,
     ) -> Result<crate::component_future::Poll<()>> {
-        match self.list_client.poll().context(Client)? {
+        match self.list_client.poll()? {
             futures::Async::Ready(Some(e)) => {
                 match e {
                     crate::client::Event::Disconnect => {
@@ -632,7 +590,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             return Ok(crate::component_future::Poll::NothingToDo);
         };
 
-        match client.poll().context(Client)? {
+        match client.poll()? {
             futures::Async::Ready(Some(e)) => {
                 match e {
                     crate::client::Event::Disconnect => {
@@ -676,8 +634,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         if self.raw_screen.is_none() {
             self.raw_screen = Some(
                 crossterm::RawScreen::into_raw_mode()
-                    .context(crate::error::IntoRawMode)
-                    .context(Common)?,
+                    .context(crate::error::ToRawMode)?,
             );
         }
         let res = crate::component_future::poll_future(self, Self::POLL_FNS);
@@ -693,7 +650,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 }
 
 fn new_alternate_screen() -> Result<crossterm::AlternateScreen> {
-    crossterm::AlternateScreen::to_alternate(false).context(ToAlternateScreen)
+    crossterm::AlternateScreen::to_alternate(false)
+        .context(crate::error::ToAlternateScreen)
 }
 
 fn format_time(dur: u32) -> String {

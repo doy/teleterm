@@ -1,29 +1,6 @@
 use crate::prelude::*;
 use std::io::Write as _;
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display("{}", source))]
-    Common { source: crate::error::Error },
-
-    #[snafu(display("failed to open file: {}", source))]
-    OpenFile { source: tokio::io::Error },
-
-    #[snafu(display("failed to sleep until next frame: {}", source))]
-    Sleep { source: tokio::timer::Error },
-
-    #[snafu(display("failed to write to stdout: {}", source))]
-    WriteTerminal { source: tokio::io::Error },
-
-    #[snafu(display("failed to write to stdout: {}", source))]
-    FlushTerminal { source: tokio::io::Error },
-
-    #[snafu(display("failed to read from file: {}", source))]
-    ReadFile { source: crate::ttyrec::Error },
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Play recorded terminal sessions").arg(
         clap::Arg::with_name("filename")
@@ -33,9 +10,9 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     )
 }
 
-pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
+pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> Result<()> {
     let filename = matches.value_of("filename").unwrap();
-    run_impl(filename).context(super::Play)
+    run_impl(filename)
 }
 
 fn run_impl(filename: &str) -> Result<()> {
@@ -100,7 +77,7 @@ impl PlaySession {
                 Ok(crate::component_future::Poll::DidWork)
             }
             FileState::Opening { fut } => {
-                match fut.poll().context(OpenFile)? {
+                match fut.poll().context(crate::error::OpenFile)? {
                     futures::Async::Ready(file) => {
                         let file = crate::ttyrec::File::new(file);
                         self.file = FileState::Open { file };
@@ -119,7 +96,7 @@ impl PlaySession {
         &mut self,
     ) -> Result<crate::component_future::Poll<()>> {
         if let FileState::Open { file } = &mut self.file {
-            match file.poll_read().context(ReadFile)? {
+            match file.poll_read()? {
                 futures::Async::Ready(Some(frame)) => {
                     self.to_write.insert_at(frame.data, frame.time);
                     Ok(crate::component_future::Poll::DidWork)
@@ -140,13 +117,13 @@ impl PlaySession {
     fn poll_write_terminal(
         &mut self,
     ) -> Result<crate::component_future::Poll<()>> {
-        match self.to_write.poll().context(Sleep)? {
+        match self.to_write.poll().context(crate::error::Sleep)? {
             futures::Async::Ready(Some(data)) => {
                 // TODO async
                 let stdout = std::io::stdout();
                 let mut stdout = stdout.lock();
-                stdout.write(&data).context(WriteTerminal)?;
-                stdout.flush().context(FlushTerminal)?;
+                stdout.write(&data).context(crate::error::WriteTerminal)?;
+                stdout.flush().context(crate::error::FlushTerminal)?;
                 Ok(crate::component_future::Poll::DidWork)
             }
             futures::Async::Ready(None) => {

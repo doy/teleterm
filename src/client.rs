@@ -1,29 +1,6 @@
 use crate::prelude::*;
 use rand::Rng as _;
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display("{}", source))]
-    Common { source: crate::error::Error },
-
-    #[snafu(display("{}", source))]
-    Resize { source: crate::term::Error },
-
-    #[snafu(display("heartbeat timer failed: {}", source))]
-    Timer { source: tokio::timer::Error },
-
-    #[snafu(display("failed to read message from server: {}", source))]
-    ReadServer { source: crate::protocol::Error },
-
-    #[snafu(display("failed to write message to server: {}", source))]
-    WriteServer { source: crate::protocol::Error },
-
-    #[snafu(display("SIGWINCH handler failed: {}", source))]
-    SigWinchHandler { source: std::io::Error },
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
 const HEARTBEAT_DURATION: std::time::Duration =
     std::time::Duration::from_secs(30);
 const RECONNECT_BACKOFF_BASE: std::time::Duration =
@@ -170,7 +147,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             )
             .flatten_stream()
             .map(|_| ())
-            .context(SigWinchHandler);
+            .context(crate::error::SigWinchHandler);
             Some(Box::new(winches))
         } else {
             None
@@ -261,7 +238,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         match &mut self.wsock {
             WriteSocket::NotConnected => {
                 if let Some(timer) = &mut self.reconnect_timer {
-                    match timer.poll().context(Timer)? {
+                    match timer
+                        .poll()
+                        .context(crate::error::TimerReconnect)?
+                    {
                         futures::Async::Ready(..) => {
                             self.reconnect_timer = None;
                         }
@@ -299,7 +279,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
                     let term = std::env::var("TERM")
                         .unwrap_or_else(|_| "".to_string());
-                    let size = crate::term::Size::get().context(Resize)?;
+                    let size = crate::term::Size::get()?;
                     let msg = crate::protocol::Message::login_plain(
                         &self.username,
                         &term,
@@ -342,8 +322,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 let mut tmp = ReadSocket::NotConnected;
                 std::mem::swap(&mut self.rsock, &mut tmp);
                 if let ReadSocket::Connected(s) = tmp {
-                    let fut = crate::protocol::Message::read_async(s)
-                        .context(ReadServer);
+                    let fut = crate::protocol::Message::read_async(s);
                     self.rsock = ReadSocket::ReadingMessage(Box::new(fut));
                 } else {
                     unreachable!()
@@ -392,7 +371,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 std::mem::swap(&mut self.wsock, &mut tmp);
                 if let WriteSocket::Connected(s) = tmp {
                     if let Some(msg) = self.to_send.pop_front() {
-                        let fut = msg.write_async(s).context(WriteServer);
+                        let fut = msg.write_async(s);
                         self.wsock =
                             WriteSocket::WritingMessage(Box::new(fut));
                     } else {
@@ -424,7 +403,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn poll_heartbeat(
         &mut self,
     ) -> Result<crate::component_future::Poll<Event>> {
-        match self.heartbeat_timer.poll().context(Timer)? {
+        match self
+            .heartbeat_timer
+            .poll()
+            .context(crate::error::TimerHeartbeat)?
+        {
             futures::Async::Ready(..) => {
                 self.send_message(crate::protocol::Message::heartbeat());
                 Ok(crate::component_future::Poll::DidWork)
@@ -441,7 +424,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         if let Some(winches) = &mut self.winches {
             match winches.poll()? {
                 futures::Async::Ready(Some(_)) => {
-                    let size = crate::term::Size::get().context(Resize)?;
+                    let size = crate::term::Size::get()?;
                     self.send_message(crate::protocol::Message::resize(
                         &size,
                     ));

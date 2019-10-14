@@ -1,62 +1,6 @@
 use crate::prelude::*;
 use std::io::Read as _;
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display("{}", source))]
-    Common { source: crate::error::Error },
-
-    #[snafu(display("failed to bind: {}", source))]
-    Bind { source: tokio::io::Error },
-
-    #[snafu(display(
-        "failed to parse read timeout '{}': {}",
-        input,
-        source
-    ))]
-    ParseReadTimeout {
-        input: String,
-        source: std::num::ParseIntError,
-    },
-
-    #[snafu(display("failed to accept: {}", source))]
-    Acceptor { source: tokio::io::Error },
-
-    #[snafu(display(
-        "failed to send accepted socket to server thread: {}",
-        source
-    ))]
-    SocketChannel {
-        source: tokio::sync::mpsc::error::TrySendError<tokio::net::TcpStream>,
-    },
-
-    #[snafu(display("failed to send accepted socket to server thread"))]
-    TlsSocketChannel {
-        // XXX tokio_tls::Accept doesn't implement Debug or Display
-    // source: tokio::sync::mpsc::error::TrySendError<tokio_tls::Accept<tokio::net::TcpStream>>,
-    },
-
-    #[snafu(display("failed to run server: {}", source))]
-    Server { source: crate::server::Error },
-
-    #[snafu(display("failed to run server: {}", source))]
-    TlsServer { source: crate::server::tls::Error },
-
-    #[snafu(display("failed to open identity file: {}", source))]
-    OpenIdentityFile { source: std::io::Error },
-
-    #[snafu(display("failed to read identity file: {}", source))]
-    ReadIdentityFile { source: std::io::Error },
-
-    #[snafu(display("failed to parse identity file: {}", source))]
-    ParseIdentity { source: native_tls::Error },
-
-    #[snafu(display("failed to create tls acceptor: {}", source))]
-    CreateAcceptor { source: native_tls::Error },
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Run a teleterm server")
         .arg(
@@ -84,12 +28,7 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
     let address = matches.value_of("address").map_or_else(
         || Ok("0.0.0.0:4144".parse().unwrap()),
-        |s| {
-            s.parse()
-                .context(crate::error::ParseAddr)
-                .context(Common)
-                .context(super::Server)
-        },
+        |s| s.parse().context(crate::error::ParseAddr),
     )?;
     let buffer_size =
         matches
@@ -97,21 +36,17 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
             .map_or(Ok(4 * 1024 * 1024), |s| {
                 s.parse()
                     .context(crate::error::ParseBufferSize { input: s })
-                    .context(Common)
-                    .context(super::Server)
             })?;
     let read_timeout = matches.value_of("read-timeout").map_or(
         Ok(std::time::Duration::from_secs(120)),
         |s| {
             s.parse()
                 .map(std::time::Duration::from_secs)
-                .context(ParseReadTimeout { input: s })
-                .context(super::Server)
+                .context(crate::error::ParseReadTimeout { input: s })
         },
     )?;
     let tls_identity_file = matches.value_of("tls-identity-file");
     run_impl(address, buffer_size, read_timeout, tls_identity_file)
-        .context(super::Server)
 }
 
 fn run_impl(
@@ -152,14 +87,18 @@ fn create_server(
     Box<dyn futures::future::Future<Item = (), Error = Error> + Send>,
 )> {
     let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(100);
-    let listener = tokio::net::TcpListener::bind(&address).context(Bind)?;
+    let listener = tokio::net::TcpListener::bind(&address)
+        .context(crate::error::Bind)?;
     let acceptor = listener
         .incoming()
-        .context(Acceptor)
-        .for_each(move |sock| sock_w.try_send(sock).context(SocketChannel));
+        .context(crate::error::Acceptor)
+        .for_each(move |sock| {
+            sock_w
+                .try_send(sock)
+                .context(crate::error::SendSocketChannel)
+        });
     let server =
-        crate::server::Server::new(buffer_size, read_timeout, sock_r)
-            .context(Server);
+        crate::server::Server::new(buffer_size, read_timeout, sock_r);
     Ok((Box::new(acceptor), Box::new(server)))
 }
 
@@ -173,27 +112,30 @@ fn create_server_tls(
     Box<dyn futures::future::Future<Item = (), Error = Error> + Send>,
 )> {
     let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(100);
-    let listener = tokio::net::TcpListener::bind(&address).context(Bind)?;
+    let listener = tokio::net::TcpListener::bind(&address)
+        .context(crate::error::Bind)?;
 
-    let mut file =
-        std::fs::File::open(tls_identity_file).context(OpenIdentityFile)?;
+    let mut file = std::fs::File::open(tls_identity_file)
+        .context(crate::error::OpenIdentityFile)?;
     let mut identity = vec![];
-    file.read_to_end(&mut identity).context(ReadIdentityFile)?;
+    file.read_to_end(&mut identity)
+        .context(crate::error::ReadIdentityFile)?;
     let identity = native_tls::Identity::from_pkcs12(&identity, "")
-        .context(ParseIdentity)?;
-    let acceptor =
-        native_tls::TlsAcceptor::new(identity).context(CreateAcceptor)?;
+        .context(crate::error::ParseIdentity)?;
+    let acceptor = native_tls::TlsAcceptor::new(identity)
+        .context(crate::error::CreateAcceptor)?;
     let acceptor = tokio_tls::TlsAcceptor::from(acceptor);
 
-    let acceptor =
-        listener.incoming().context(Acceptor).for_each(move |sock| {
+    let acceptor = listener
+        .incoming()
+        .context(crate::error::Acceptor)
+        .for_each(move |sock| {
             let sock = acceptor.accept(sock);
             sock_w
                 .try_send(sock)
-                .map_err(|_| Error::TlsSocketChannel {})
+                .map_err(|_| Error::SendSocketChannelTls {})
         });
     let server =
-        crate::server::tls::Server::new(buffer_size, read_timeout, sock_r)
-            .context(TlsServer);
+        crate::server::tls::Server::new(buffer_size, read_timeout, sock_r);
     Ok((Box::new(acceptor), Box::new(server)))
 }

@@ -1,22 +1,5 @@
 use crate::prelude::*;
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display(
-        "failed to spawn a background thread to read terminal input: {}",
-        source
-    ))]
-    TerminalInputReadingThread { source: std::io::Error },
-
-    #[snafu(display("failed to read from event channel: {}", source))]
-    ReadChannel {
-        source: tokio::sync::mpsc::error::UnboundedRecvError,
-    },
-}
-
-#[allow(dead_code)]
-pub type Result<T> = std::result::Result<T, Error>;
-
 pub struct KeyReader {
     events:
         Option<tokio::sync::mpsc::UnboundedReceiver<crossterm::InputEvent>>,
@@ -58,13 +41,17 @@ impl futures::stream::Stream for KeyReader {
                         }
                     }
                 })
-                .context(TerminalInputReadingThread)?;
+                .context(crate::error::TerminalInputReadingThread)?;
 
             self.events = Some(events_rx);
             self.quit = Some(quit_tx);
         }
 
-        self.events.as_mut().unwrap().poll().context(ReadChannel)
+        self.events
+            .as_mut()
+            .unwrap()
+            .poll()
+            .context(crate::error::ReadChannel)
     }
 }
 

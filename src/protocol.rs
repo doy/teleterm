@@ -1,57 +1,6 @@
 use crate::prelude::*;
 use std::convert::{TryFrom as _, TryInto as _};
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display("failed to read packet: {}", source))]
-    Read { source: std::io::Error },
-
-    #[snafu(display("failed to read packet: {}", source))]
-    ReadAsync { source: tokio::io::Error },
-
-    #[snafu(display("failed to write packet: {}", source))]
-    Write { source: std::io::Error },
-
-    #[snafu(display("failed to write packet: {}", source))]
-    WriteAsync { source: tokio::io::Error },
-
-    #[snafu(display("failed to parse string: {}", source))]
-    ParseString { source: std::string::FromUtf8Error },
-
-    #[snafu(display("failed to parse int: {}", source))]
-    ParseInt {
-        source: std::array::TryFromSliceError,
-    },
-
-    #[snafu(display(
-        "packet length must be at least {} bytes (got {})",
-        expected,
-        len
-    ))]
-    LenTooSmall { len: u32, expected: usize },
-
-    #[snafu(display(
-        "packet length must be at most {} bytes (got {})",
-        expected,
-        len
-    ))]
-    LenTooBig { len: u32, expected: usize },
-
-    #[snafu(display("failed to parse string: {:?}", data))]
-    ExtraMessageData { data: Vec<u8> },
-
-    #[snafu(display("invalid message type: {}", ty))]
-    InvalidMessageType { ty: u32 },
-
-    #[snafu(display("invalid auth type: {}", ty))]
-    InvalidAuthType { ty: u32 },
-
-    #[snafu(display("eof"))]
-    EOF,
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Session {
     pub id: String,
@@ -261,7 +210,8 @@ struct Packet {
 impl Packet {
     fn read<R: std::io::Read>(mut r: R) -> Result<Self> {
         let mut len_buf = [0_u8; std::mem::size_of::<u32>()];
-        r.read_exact(&mut len_buf).context(Read)?;
+        r.read_exact(&mut len_buf)
+            .context(crate::error::ReadPacket)?;
         let len = u32::from_be_bytes(len_buf.try_into().unwrap());
         if (len as usize) < std::mem::size_of::<u32>() {
             return Err(Error::LenTooSmall {
@@ -271,7 +221,7 @@ impl Packet {
         }
 
         let mut data = vec![0_u8; len as usize];
-        r.read_exact(&mut data).context(Read)?;
+        r.read_exact(&mut data).context(crate::error::ReadPacket)?;
         let (ty_buf, rest) = data.split_at(std::mem::size_of::<u32>());
         let ty = u32::from_be_bytes(ty_buf.try_into().unwrap());
 
@@ -286,7 +236,7 @@ impl Packet {
     ) -> impl futures::future::Future<Item = (Self, FramedReader<T>), Error = Error>
     {
         r.0.into_future()
-            .map_err(|(e, _)| Error::ReadAsync { source: e })
+            .map_err(|(e, _)| Error::ReadPacketAsync { source: e })
             .and_then(|(data, r)| match data {
                 Some(data) => Ok((data, r)),
                 None => Err(Error::EOF),
@@ -312,7 +262,7 @@ impl Packet {
         let len_buf = len.to_be_bytes();
         let buf: Vec<u8> =
             len_buf.iter().chain(bytes.iter()).copied().collect();
-        Ok(w.write_all(&buf).context(Write)?)
+        Ok(w.write_all(&buf).context(crate::error::WritePacket)?)
     }
 
     fn write_async<T: tokio::io::AsyncWrite>(
@@ -322,7 +272,7 @@ impl Packet {
     {
         w.0.send(bytes::Bytes::from(self.as_bytes()))
             .map(FramedWriter)
-            .context(WriteAsync)
+            .context(crate::error::WritePacketAsync)
     }
 
     fn as_bytes(&self) -> Vec<u8> {
@@ -481,7 +431,9 @@ impl std::convert::TryFrom<Packet> for Message {
                 });
             }
             let (buf, rest) = data.split_at(std::mem::size_of::<u32>());
-            let val = u32::from_be_bytes(buf.try_into().context(ParseInt)?);
+            let val = u32::from_be_bytes(
+                buf.try_into().context(crate::error::ParseInt)?,
+            );
             Ok((val, rest))
         }
         fn read_u16(data: &[u8]) -> Result<(u16, &[u8])> {
@@ -492,7 +444,9 @@ impl std::convert::TryFrom<Packet> for Message {
                 });
             }
             let (buf, rest) = data.split_at(std::mem::size_of::<u16>());
-            let val = u16::from_be_bytes(buf.try_into().context(ParseInt)?);
+            let val = u16::from_be_bytes(
+                buf.try_into().context(crate::error::ParseInt)?,
+            );
             Ok((val, rest))
         }
         fn read_bytes(data: &[u8]) -> Result<(Vec<u8>, &[u8])> {
@@ -509,7 +463,8 @@ impl std::convert::TryFrom<Packet> for Message {
         }
         fn read_str(data: &[u8]) -> Result<(String, &[u8])> {
             let (bytes, rest) = read_bytes(data)?;
-            let val = String::from_utf8(bytes).context(ParseString)?;
+            let val = String::from_utf8(bytes)
+                .context(crate::error::ParseString)?;
             Ok((val, rest))
         }
         fn read_size(data: &[u8]) -> Result<(crate::term::Size, &[u8])> {

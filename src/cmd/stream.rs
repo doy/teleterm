@@ -1,32 +1,6 @@
 use crate::prelude::*;
 use tokio::io::AsyncWrite as _;
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display("{}", source))]
-    Common { source: crate::error::Error },
-
-    #[snafu(display("{}", source))]
-    Util { source: crate::util::Error },
-
-    #[snafu(display("failed to write to stdout: {}", source))]
-    WriteTerminal { source: tokio::io::Error },
-
-    #[snafu(display("failed to write to stdout: {}", source))]
-    FlushTerminal { source: tokio::io::Error },
-
-    #[snafu(display("process failed: {}", source))]
-    Process { source: crate::process::Error },
-
-    #[snafu(display("communication with server failed: {}", source))]
-    Client { source: crate::client::Error },
-
-    #[snafu(display("failed to create tls connector: {}", source))]
-    CreateConnector { source: native_tls::Error },
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Stream your terminal")
         .arg(
@@ -54,13 +28,9 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
         .value_of("username")
         .map(std::string::ToString::to_string)
         .or_else(|| std::env::var("USER").ok())
-        .context(crate::error::CouldntFindUsername)
-        .context(Common)
-        .context(super::Stream)?;
+        .context(crate::error::CouldntFindUsername)?;
     let (host, address) =
-        crate::util::resolve_address(matches.value_of("address"))
-            .context(Util)
-            .context(super::Stream)?;
+        crate::util::resolve_address(matches.value_of("address"))?;
     let tls = matches.is_present("tls");
     let buffer_size =
         matches
@@ -68,8 +38,6 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
             .map_or(Ok(4 * 1024 * 1024), |s| {
                 s.parse()
                     .context(crate::error::ParseBufferSize { input: s })
-                    .context(Common)
-                    .context(super::Stream)
             })?;
     let command = matches.value_of("command").map_or_else(
         || std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string()),
@@ -81,7 +49,6 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
         vec![]
     };
     run_impl(&username, &host, address, tls, buffer_size, &command, &args)
-        .context(super::Stream)
 }
 
 fn run_impl(
@@ -97,8 +64,8 @@ fn run_impl(
     let fut: Box<
         dyn futures::future::Future<Item = (), Error = Error> + Send,
     > = if tls {
-        let connector =
-            native_tls::TlsConnector::new().context(CreateConnector)?;
+        let connector = native_tls::TlsConnector::new()
+            .context(crate::error::CreateConnector)?;
         let connect: crate::client::Connector<_> = Box::new(move || {
             let host = host.clone();
             let connector = connector.clone();
@@ -108,7 +75,7 @@ fn run_impl(
                 move |stream| {
                     connector
                         .connect(&host, stream)
-                        .context(crate::error::TlsConnect)
+                        .context(crate::error::ConnectTls)
                 },
             ))
         });
@@ -223,7 +190,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn poll_read_client(
         &mut self,
     ) -> Result<crate::component_future::Poll<()>> {
-        match self.client.poll().context(Client) {
+        match self.client.poll() {
             Ok(futures::Async::Ready(Some(e))) => match e {
                 crate::client::Event::Disconnect => {
                     Ok(crate::component_future::Poll::DidWork)
@@ -262,7 +229,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn poll_read_process(
         &mut self,
     ) -> Result<crate::component_future::Poll<()>> {
-        match self.process.poll().context(Process)? {
+        match self.process.poll()? {
             futures::Async::Ready(Some(e)) => {
                 match e {
                     crate::process::Event::CommandStart(..) => {}
@@ -299,7 +266,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         match self
             .stdout
             .poll_write(&self.buffer.contents()[self.sent_local..])
-            .context(WriteTerminal)?
+            .context(crate::error::WriteTerminal)?
         {
             futures::Async::Ready(n) => {
                 self.sent_local += n;
@@ -319,7 +286,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             return Ok(crate::component_future::Poll::NothingToDo);
         }
 
-        match self.stdout.poll_flush().context(FlushTerminal)? {
+        match self
+            .stdout
+            .poll_flush()
+            .context(crate::error::FlushTerminal)?
+        {
             futures::Async::Ready(()) => {
                 self.needs_flush = false;
                 Ok(crate::component_future::Poll::DidWork)
@@ -362,8 +333,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         if self.raw_screen.is_none() {
             self.raw_screen = Some(
                 crossterm::RawScreen::into_raw_mode()
-                    .context(crate::error::IntoRawMode)
-                    .context(Common)?,
+                    .context(crate::error::ToRawMode)?,
             );
         }
         crate::component_future::poll_future(self, Self::POLL_FNS)

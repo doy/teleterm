@@ -1,29 +1,5 @@
 use crate::prelude::*;
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display("{}", source))]
-    Common { source: crate::error::Error },
-
-    #[snafu(display("{}", source))]
-    InnerServer { source: super::Error },
-
-    #[snafu(display(
-        "failed to receive new socket over channel: {}",
-        source
-    ))]
-    SocketChannelReceive {
-        source: tokio::sync::mpsc::error::RecvError,
-    },
-
-    #[snafu(display(
-        "failed to receive new socket over channel: channel closed"
-    ))]
-    SocketChannelClosed,
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
 pub struct Server {
     server: super::Server<tokio_tls::TlsStream<tokio::net::TcpStream>>,
     sock_r:
@@ -66,7 +42,11 @@ impl Server {
     fn poll_new_connections(
         &mut self,
     ) -> Result<crate::component_future::Poll<()>> {
-        match self.sock_r.poll().context(SocketChannelReceive)? {
+        match self
+            .sock_r
+            .poll()
+            .context(crate::error::SocketChannelReceive)?
+        {
             futures::Async::Ready(Some(sock)) => {
                 self.accepting_sockets.push(sock);
                 Ok(crate::component_future::Poll::DidWork)
@@ -121,7 +101,7 @@ impl Server {
     }
 
     fn poll_server(&mut self) -> Result<crate::component_future::Poll<()>> {
-        match self.server.poll().context(InnerServer)? {
+        match self.server.poll()? {
             futures::Async::Ready(()) => {
                 Ok(crate::component_future::Poll::DidWork)
             }

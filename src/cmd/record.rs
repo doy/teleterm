@@ -1,29 +1,6 @@
 use crate::prelude::*;
 use tokio::io::AsyncWrite as _;
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display("{}", source))]
-    Common { source: crate::error::Error },
-
-    #[snafu(display("process failed: {}", source))]
-    Process { source: crate::process::Error },
-
-    #[snafu(display("failed to write to stdout: {}", source))]
-    WriteTerminal { source: tokio::io::Error },
-
-    #[snafu(display("failed to write to stdout: {}", source))]
-    FlushTerminal { source: tokio::io::Error },
-
-    #[snafu(display("failed to open file: {}", source))]
-    OpenFile { source: tokio::io::Error },
-
-    #[snafu(display("failed to write to file: {}", source))]
-    WriteFile { source: crate::ttyrec::Error },
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Record a terminal session to a file")
         .arg(
@@ -41,7 +18,7 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         .arg(clap::Arg::with_name("args").index(2).multiple(true))
 }
 
-pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
+pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> Result<()> {
     let filename = matches.value_of("filename").unwrap();
     let buffer_size =
         matches
@@ -49,8 +26,6 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
             .map_or(Ok(4 * 1024 * 1024), |s| {
                 s.parse()
                     .context(crate::error::ParseBufferSize { input: s })
-                    .context(Common)
-                    .context(super::Record)
             })?;
     let command = matches.value_of("command").map_or_else(
         || std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string()),
@@ -61,7 +36,7 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
     } else {
         vec![]
     };
-    run_impl(filename, buffer_size, &command, &args).context(super::Record)
+    run_impl(filename, buffer_size, &command, &args)
 }
 
 fn run_impl(
@@ -159,11 +134,10 @@ impl RecordSession {
                 Ok(crate::component_future::Poll::DidWork)
             }
             FileState::Opening { fut } => {
-                match fut.poll().context(OpenFile)? {
+                match fut.poll().context(crate::error::OpenFile)? {
                     futures::Async::Ready(file) => {
                         let mut file = crate::ttyrec::File::new(file);
-                        file.write_frame(self.buffer.contents())
-                            .context(WriteFile)?;
+                        file.write_frame(self.buffer.contents())?;
                         self.file = FileState::Open { file };
                         Ok(crate::component_future::Poll::DidWork)
                     }
@@ -181,7 +155,7 @@ impl RecordSession {
     fn poll_read_process(
         &mut self,
     ) -> Result<crate::component_future::Poll<()>> {
-        match self.process.poll().context(Process)? {
+        match self.process.poll()? {
             futures::Async::Ready(Some(e)) => {
                 match e {
                     crate::process::Event::CommandStart(..) => {}
@@ -191,7 +165,7 @@ impl RecordSession {
                     crate::process::Event::Output(output) => {
                         self.record_bytes(&output);
                         if let FileState::Open { file } = &mut self.file {
-                            file.write_frame(&output).context(WriteFile)?;
+                            file.write_frame(&output)?;
                         }
                     }
                 }
@@ -221,7 +195,7 @@ impl RecordSession {
         match self
             .stdout
             .poll_write(&self.buffer.contents()[self.sent_local..])
-            .context(WriteTerminal)?
+            .context(crate::error::WriteTerminal)?
         {
             futures::Async::Ready(n) => {
                 self.sent_local += n;
@@ -241,7 +215,11 @@ impl RecordSession {
             return Ok(crate::component_future::Poll::NothingToDo);
         }
 
-        match self.stdout.poll_flush().context(FlushTerminal)? {
+        match self
+            .stdout
+            .poll_flush()
+            .context(crate::error::FlushTerminal)?
+        {
             futures::Async::Ready(()) => {
                 self.needs_flush = false;
                 Ok(crate::component_future::Poll::DidWork)
@@ -262,7 +240,7 @@ impl RecordSession {
             }
         };
 
-        match file.poll_write().context(WriteFile)? {
+        match file.poll_write()? {
             futures::Async::Ready(()) => {
                 Ok(crate::component_future::Poll::DidWork)
             }
@@ -287,8 +265,7 @@ impl futures::future::Future for RecordSession {
         if self.raw_screen.is_none() {
             self.raw_screen = Some(
                 crossterm::RawScreen::into_raw_mode()
-                    .context(crate::error::IntoRawMode)
-                    .context(Common)?,
+                    .context(crate::error::ToRawMode)?,
             );
         }
         crate::component_future::poll_future(self, Self::POLL_FNS)

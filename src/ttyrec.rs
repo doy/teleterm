@@ -2,28 +2,6 @@ use crate::prelude::*;
 use std::convert::TryFrom as _;
 use tokio::io::{AsyncRead as _, AsyncWrite as _};
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display("failed to read from event channel: {}", source))]
-    ReadChannel {
-        source: tokio::sync::mpsc::error::UnboundedRecvError,
-    },
-
-    #[snafu(display("failed to write to event channel: {}", source))]
-    WriteChannel {
-        source: tokio::sync::mpsc::error::UnboundedSendError,
-    },
-
-    #[snafu(display("failed to write to file: {}", source))]
-    WriteFile { source: tokio::io::Error },
-
-    #[snafu(display("failed to read from file: {}", source))]
-    ReadFile { source: tokio::io::Error },
-}
-
-#[allow(dead_code)]
-pub type Result<T> = std::result::Result<T, Error>;
-
 pub struct Frame {
     pub time: std::time::Instant,
     pub data: Vec<u8>,
@@ -86,7 +64,7 @@ impl File {
                 time: now,
                 data: data.to_vec(),
             })
-            .context(WriteChannel)
+            .context(crate::error::WriteChannel)
     }
 
     pub fn poll_write(
@@ -94,7 +72,7 @@ impl File {
     ) -> std::result::Result<futures::Async<()>, Error> {
         loop {
             if self.writing.is_empty() {
-                match self.rframe.poll().context(ReadChannel)? {
+                match self.rframe.poll().context(crate::error::ReadChannel)? {
                     futures::Async::Ready(Some(frame)) => {
                         self.writing.extend(
                             frame.as_bytes(self.base_time.unwrap()).iter(),
@@ -110,7 +88,11 @@ impl File {
 
             let (a, b) = self.writing.as_slices();
             let buf = if a.is_empty() { b } else { a };
-            match self.file.poll_write(buf).context(WriteFile)? {
+            match self
+                .file
+                .poll_write(buf)
+                .context(crate::error::WriteFile)?
+            {
                 futures::Async::Ready(n) => {
                     for _ in 0..n {
                         self.writing.pop_front();
@@ -131,7 +113,11 @@ impl File {
                 return Ok(futures::Async::Ready(Some(frame)));
             }
 
-            match self.file.poll_read(&mut self.read_buf).context(ReadFile)? {
+            match self
+                .file
+                .poll_read(&mut self.read_buf)
+                .context(crate::error::ReadFile)?
+            {
                 futures::Async::Ready(n) => {
                     if n > 0 {
                         self.reading.extend(self.read_buf[..n].iter());

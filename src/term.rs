@@ -1,16 +1,5 @@
 use crate::prelude::*;
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display("failed to get terminal size: {}", source))]
-    GetTerminalSize { source: crossterm::ErrorKind },
-
-    #[snafu(display("failed to resize pty: {}", source))]
-    ResizePty { source: std::io::Error },
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
 const RESET: &[&[u8]] = &[
     b"\x1b[3J\x1b[H\x1b[2J",
     b"\x1b[H\x1b[J",
@@ -28,8 +17,9 @@ pub struct Size {
 
 impl Size {
     pub fn get() -> Result<Self> {
-        let (cols, rows) =
-            crossterm::terminal().size().context(GetTerminalSize)?;
+        let (cols, rows) = crossterm::terminal()
+            .size()
+            .context(crate::error::GetTerminalSize)?;
         Ok(Self { rows, cols })
     }
 
@@ -37,7 +27,8 @@ impl Size {
         &self,
         pty: &T,
     ) -> futures::Poll<(), Error> {
-        pty.resize(self.rows, self.cols).context(ResizePty)
+        pty.resize(self.rows, self.cols)
+            .context(crate::error::ResizePty)
     }
 
     pub fn fits_in(&self, other: &Self) -> bool {

@@ -6,32 +6,6 @@ mod server;
 mod stream;
 mod watch;
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display("failed to determine program name: {}", source))]
-    FindProgramName { source: crate::util::Error },
-
-    #[snafu(display("{}", source))]
-    Parse { source: clap::Error },
-
-    #[snafu(display("{}", source))]
-    Play { source: crate::cmd::play::Error },
-
-    #[snafu(display("{}", source))]
-    Record { source: crate::cmd::record::Error },
-
-    #[snafu(display("{}", source))]
-    Stream { source: crate::cmd::stream::Error },
-
-    #[snafu(display("{}", source))]
-    Server { source: crate::cmd::server::Error },
-
-    #[snafu(display("{}", source))]
-    Watch { source: crate::cmd::watch::Error },
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
 struct Command {
     name: &'static str,
     cmd: &'static dyn for<'a, 'b> Fn(clap::App<'a, 'b>) -> clap::App<'a, 'b>,
@@ -67,18 +41,17 @@ const COMMANDS: &[Command] = &[
 ];
 
 pub fn parse<'a>() -> Result<clap::ArgMatches<'a>> {
-    let mut app =
-        clap::App::new(crate::util::program_name().context(FindProgramName)?)
-            .about("Stream your terminal for other people to watch")
-            .author(clap::crate_authors!())
-            .version(clap::crate_version!());
+    let mut app = clap::App::new(crate::util::program_name()?)
+        .about("Stream your terminal for other people to watch")
+        .author(clap::crate_authors!())
+        .version(clap::crate_version!());
 
     for cmd in COMMANDS {
         let subcommand = clap::SubCommand::with_name(cmd.name);
         app = app.subcommand((cmd.cmd)(subcommand));
     }
 
-    app.get_matches_safe().context(Parse)
+    app.get_matches_safe().context(crate::error::ParseArgs)
 }
 
 pub fn run(matches: &clap::ArgMatches<'_>) -> Result<()> {

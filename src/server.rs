@@ -3,64 +3,6 @@ use tokio::util::FutureExt as _;
 
 pub mod tls;
 
-#[derive(Debug, snafu::Snafu)]
-pub enum Error {
-    #[snafu(display("{}", source))]
-    Common { source: crate::error::Error },
-
-    #[snafu(display(
-        "failed to receive new socket over channel: {}",
-        source
-    ))]
-    SocketChannelReceive {
-        source: tokio::sync::mpsc::error::RecvError,
-    },
-
-    #[snafu(display(
-        "failed to receive new socket over channel: channel closed"
-    ))]
-    SocketChannelClosed,
-
-    #[snafu(display("failed to read message: {}", source))]
-    ReadMessageWithTimeout {
-        source: tokio::timer::timeout::Error<crate::protocol::Error>,
-    },
-
-    #[snafu(display("failed to read message: {}", source))]
-    ReadMessage { source: crate::protocol::Error },
-
-    #[snafu(display("failed to write message: {}", source))]
-    WriteMessageWithTimeout {
-        source: tokio::timer::timeout::Error<crate::protocol::Error>,
-    },
-
-    #[snafu(display("failed to write message: {}", source))]
-    WriteMessage { source: crate::protocol::Error },
-
-    #[snafu(display("unauthenticated message: {:?}", message))]
-    UnauthenticatedMessage { message: crate::protocol::Message },
-
-    #[snafu(display(
-        "terminal must be smaller than 1000 rows or columns (got {})",
-        size
-    ))]
-    TermTooBig { size: crate::term::Size },
-
-    #[snafu(display("invalid watch id: {}", id))]
-    InvalidWatchId { id: String },
-
-    #[snafu(display("rate limit exceeded"))]
-    RateLimited,
-
-    #[snafu(display("timeout"))]
-    Timeout,
-
-    #[snafu(display("read timeout timer failed: {}", source))]
-    Timer { source: tokio::timer::Error },
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
 enum ReadSocket<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
 > {
@@ -290,7 +232,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> Self {
         let sock_stream = sock_r
             .map(move |s| Connection::new(s, buffer_size))
-            .context(SocketChannelReceive);
+            .context(crate::error::SocketChannelReceive);
         Self {
             buffer_size,
             read_timeout,
@@ -390,8 +332,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     Err(Error::InvalidWatchId { id })
                 }
             }
-            m => Err(crate::error::Error::UnexpectedMessage { message: m })
-                .context(Common),
+            m => Err(crate::error::Error::UnexpectedMessage { message: m }),
         }
     }
 
@@ -440,8 +381,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 conn.last_activity = std::time::Instant::now();
                 Ok(())
             }
-            m => Err(crate::error::Error::UnexpectedMessage { message: m })
-                .context(Common),
+            m => Err(crate::error::Error::UnexpectedMessage { message: m }),
         }
     }
 
@@ -469,8 +409,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 term_info.size = size;
                 Ok(())
             }
-            m => Err(crate::error::Error::UnexpectedMessage { message: m })
-                .context(Common),
+            m => Err(crate::error::Error::UnexpectedMessage { message: m }),
         }
     }
 
@@ -540,7 +479,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     let fut = Box::new(
                         crate::protocol::Message::read_async(s)
                             .timeout(self.read_timeout)
-                            .context(ReadMessageWithTimeout),
+                            .context(crate::error::ReadMessageWithTimeout),
                     );
                     conn.rsock = Some(ReadSocket::Reading(fut));
                 } else {
@@ -565,7 +504,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         if source.is_inner() {
                             let source = source.into_inner().unwrap();
                             match source {
-                                crate::protocol::Error::ReadAsync {
+                                Error::ReadPacketAsync {
                                     source: ref tokio_err,
                                 } => {
                                     if tokio_err.kind()
@@ -573,19 +512,19 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                                     {
                                         Ok(crate::component_future::Poll::Event(()))
                                     } else {
-                                        Err(Error::ReadMessage { source })
+                                        Err(source)
                                     }
                                 }
-                                crate::protocol::Error::EOF => Ok(
+                                Error::EOF => Ok(
                                     crate::component_future::Poll::Event(()),
                                 ),
-                                _ => Err(Error::ReadMessage { source }),
+                                _ => Err(source),
                             }
                         } else if source.is_elapsed() {
                             Err(Error::Timeout)
                         } else {
                             let source = source.into_timer().unwrap();
-                            Err(Error::Timer { source })
+                            Err(Error::TimerReadTimeout { source })
                         }
                     } else {
                         Err(e)
@@ -608,7 +547,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         let fut = msg
                             .write_async(s)
                             .timeout(self.read_timeout)
-                            .context(WriteMessageWithTimeout);
+                            .context(crate::error::WriteMessageWithTimeout);
                         conn.wsock =
                             Some(WriteSocket::Writing(Box::new(fut)));
                     } else {
@@ -634,7 +573,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         if source.is_inner() {
                             let source = source.into_inner().unwrap();
                             match source {
-                                crate::protocol::Error::WriteAsync {
+                                Error::WritePacketAsync {
                                     source: ref tokio_err,
                                 } => {
                                     if tokio_err.kind()
@@ -644,19 +583,19 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                                         (),
                                     ))
                                     } else {
-                                        Err(Error::WriteMessage { source })
+                                        Err(source)
                                     }
                                 }
-                                crate::protocol::Error::EOF => Ok(
+                                Error::EOF => Ok(
                                     crate::component_future::Poll::Event(()),
                                 ),
-                                _ => Err(Error::WriteMessage { source }),
+                                _ => Err(source),
                             }
                         } else if source.is_elapsed() {
                             Err(Error::Timeout)
                         } else {
                             let source = source.into_timer().unwrap();
-                            Err(Error::Timer { source })
+                            Err(Error::TimerReadTimeout { source })
                         }
                     } else {
                         Err(e)

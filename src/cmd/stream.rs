@@ -284,7 +284,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 }
                 // don't return final event here - wait until we are done
                 // sending all data to the server (see poll_write_server)
-                Ok(crate::component_future::Poll::NothingToDo)
+                Ok(crate::component_future::Poll::DidWork)
             }
             futures::Async::NotReady => {
                 Ok(crate::component_future::Poll::NotReady)

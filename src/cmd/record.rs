@@ -205,7 +205,7 @@ impl RecordSession {
                 }
                 // don't return final event here - wait until we are done
                 // writing all data to the file (see poll_write_file)
-                Ok(crate::component_future::Poll::NothingToDo)
+                Ok(crate::component_future::Poll::DidWork)
             }
             futures::Async::NotReady => {
                 Ok(crate::component_future::Poll::NotReady)

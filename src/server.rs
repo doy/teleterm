@@ -249,6 +249,153 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         }
     }
 
+    fn handle_message_login(
+        &mut self,
+        conn: &mut Connection<S>,
+        auth: crate::protocol::Auth,
+        term_type: &str,
+        size: crate::term::Size,
+    ) -> Result<()> {
+        if size.rows >= 1000 || size.cols >= 1000 {
+            return Err(Error::TermTooBig { size });
+        }
+
+        match auth {
+            crate::protocol::Auth::Plain { username } => {
+                log::info!("{}: login({})", conn.id, username);
+                conn.state.login(&username, term_type, &size);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn handle_message_start_streaming(
+        &mut self,
+        conn: &mut Connection<S>,
+    ) -> Result<()> {
+        let username = if let ConnectionState::LoggedIn { username, .. } =
+            &mut conn.state
+        {
+            username
+        } else {
+            unreachable!()
+        };
+
+        log::info!("{}: stream({})", conn.id, username);
+        conn.state.stream(self.buffer_size);
+
+        Ok(())
+    }
+
+    fn handle_message_start_watching(
+        &mut self,
+        conn: &mut Connection<S>,
+        id: String,
+    ) -> Result<()> {
+        let username = if let ConnectionState::LoggedIn { username, .. } =
+            &mut conn.state
+        {
+            username
+        } else {
+            unreachable!()
+        };
+
+        if let Some(stream_conn) = self.connections.get(&id) {
+            let data =
+                if let ConnectionState::Streaming { saved_data, .. } =
+                    &stream_conn.state
+                {
+                    saved_data.contents().to_vec()
+                } else {
+                    return Err(Error::InvalidWatchId { id });
+                };
+
+            log::info!("{}: watch({}, {})", conn.id, username, id);
+            conn.state.watch(&id);
+            conn.to_send
+                .push_back(crate::protocol::Message::terminal_output(&data));
+
+            Ok(())
+        } else {
+            Err(Error::InvalidWatchId { id })
+        }
+    }
+
+    fn handle_message_heartbeat(
+        &mut self,
+        conn: &mut Connection<S>,
+    ) -> Result<()> {
+        conn.to_send
+            .push_back(crate::protocol::Message::heartbeat());
+
+        Ok(())
+    }
+
+    fn handle_message_terminal_output(
+        &mut self,
+        conn: &mut Connection<S>,
+        data: &[u8],
+    ) -> Result<()> {
+        let saved_data =
+            if let ConnectionState::Streaming { saved_data, .. } =
+                &mut conn.state
+            {
+                saved_data
+            } else {
+                unreachable!()
+            };
+
+        saved_data.append(data);
+        for watch_conn in self.watchers_mut() {
+            match &watch_conn.state {
+                ConnectionState::Watching { watch_id, .. } => {
+                    if &conn.id == watch_id {
+                        watch_conn.to_send.push_back(
+                            crate::protocol::Message::terminal_output(data),
+                        );
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        conn.last_activity = std::time::Instant::now();
+
+        Ok(())
+    }
+
+    fn handle_message_list_sessions(
+        &mut self,
+        conn: &mut Connection<S>,
+    ) -> Result<()> {
+        let sessions: Vec<_> =
+            self.streamers().flat_map(Connection::session).collect();
+        conn.to_send
+            .push_back(crate::protocol::Message::sessions(&sessions));
+
+        Ok(())
+    }
+
+    fn handle_message_resize(
+        &mut self,
+        conn: &mut Connection<S>,
+        size: crate::term::Size,
+    ) -> Result<()> {
+        let term_info =
+            if let ConnectionState::LoggedIn { term_info, .. } =
+                &mut conn.state
+            {
+                term_info
+            } else {
+                unreachable!()
+            };
+
+        term_info.size = size;
+
+        Ok(())
+    }
+
     fn handle_accepted_message(
         &mut self,
         conn: &mut Connection<S>,
@@ -260,18 +407,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 term_type,
                 size,
                 ..
-            } => {
-                if size.rows >= 1000 || size.cols >= 1000 {
-                    return Err(Error::TermTooBig { size });
-                }
-                match auth {
-                    crate::protocol::Auth::Plain { username } => {
-                        log::info!("{}: login({})", conn.id, username);
-                        conn.state.login(&username, &term_type, &size);
-                    }
-                }
-                Ok(())
-            }
+            } => self.handle_message_login(conn, auth, &term_type, size),
             m => Err(Error::UnauthenticatedMessage { message: m }),
         }
     }
@@ -281,59 +417,21 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         conn: &mut Connection<S>,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let (username, term_info) = if let ConnectionState::LoggedIn {
-            username,
-            term_info,
-            ..
-        } = &mut conn.state
-        {
-            (username, term_info)
-        } else {
-            unreachable!()
-        };
-
         match message {
             crate::protocol::Message::Heartbeat => {
-                conn.to_send
-                    .push_back(crate::protocol::Message::heartbeat());
-                Ok(())
+                self.handle_message_heartbeat(conn)
             }
             crate::protocol::Message::Resize { size } => {
-                term_info.size = size;
-                Ok(())
+                self.handle_message_resize(conn, size)
             }
             crate::protocol::Message::ListSessions => {
-                let sessions: Vec<_> =
-                    self.streamers().flat_map(Connection::session).collect();
-                conn.to_send
-                    .push_back(crate::protocol::Message::sessions(&sessions));
-                Ok(())
+                self.handle_message_list_sessions(conn)
             }
             crate::protocol::Message::StartStreaming => {
-                log::info!("{}: stream({})", conn.id, username);
-                conn.state.stream(self.buffer_size);
-                Ok(())
+                self.handle_message_start_streaming(conn)
             }
             crate::protocol::Message::StartWatching { id } => {
-                if let Some(stream_conn) = self.connections.get(&id) {
-                    log::info!("{}: watch({}, {})", conn.id, username, id);
-                    conn.state.watch(&id);
-                    let data = if let ConnectionState::Streaming {
-                        saved_data,
-                        ..
-                    } = &stream_conn.state
-                    {
-                        saved_data.contents().to_vec()
-                    } else {
-                        unreachable!()
-                    };
-                    conn.to_send.push_back(
-                        crate::protocol::Message::terminal_output(&data),
-                    );
-                    Ok(())
-                } else {
-                    Err(Error::InvalidWatchId { id })
-                }
+                self.handle_message_start_watching(conn, id)
             }
             m => Err(crate::error::Error::UnexpectedMessage { message: m }),
         }
@@ -344,45 +442,15 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         conn: &mut Connection<S>,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let (term_info, saved_data) = if let ConnectionState::Streaming {
-            term_info,
-            saved_data,
-            ..
-        } = &mut conn.state
-        {
-            (term_info, saved_data)
-        } else {
-            unreachable!()
-        };
-
         match message {
             crate::protocol::Message::Heartbeat => {
-                conn.to_send
-                    .push_back(crate::protocol::Message::heartbeat());
-                Ok(())
+                self.handle_message_heartbeat(conn)
             }
             crate::protocol::Message::Resize { size } => {
-                term_info.size = size;
-                Ok(())
+                self.handle_message_resize(conn, size)
             }
             crate::protocol::Message::TerminalOutput { data } => {
-                saved_data.append(&data);
-                for watch_conn in self.watchers_mut() {
-                    match &watch_conn.state {
-                        ConnectionState::Watching { watch_id, .. } => {
-                            if &conn.id == watch_id {
-                                watch_conn.to_send.push_back(
-                                    crate::protocol::Message::terminal_output(
-                                        &data,
-                                    ),
-                                );
-                            }
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-                conn.last_activity = std::time::Instant::now();
-                Ok(())
+                self.handle_message_terminal_output(conn, &data)
             }
             m => Err(crate::error::Error::UnexpectedMessage { message: m }),
         }
@@ -393,24 +461,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         conn: &mut Connection<S>,
         message: crate::protocol::Message,
     ) -> Result<()> {
-        let term_info =
-            if let ConnectionState::Watching { term_info, .. } =
-                &mut conn.state
-            {
-                term_info
-            } else {
-                unreachable!()
-            };
-
         match message {
             crate::protocol::Message::Heartbeat => {
-                conn.to_send
-                    .push_back(crate::protocol::Message::heartbeat());
-                Ok(())
+                self.handle_message_heartbeat(conn)
             }
             crate::protocol::Message::Resize { size } => {
-                term_info.size = size;
-                Ok(())
+                self.handle_message_resize(conn, size)
             }
             m => Err(crate::error::Error::UnexpectedMessage { message: m }),
         }
@@ -502,37 +558,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 Ok(futures::Async::NotReady) => {
                     Ok(crate::component_future::Poll::NotReady)
                 }
-                Err(e) => {
-                    if let Error::ReadMessageWithTimeout { source } = e {
-                        if source.is_inner() {
-                            let source = source.into_inner().unwrap();
-                            match source {
-                                Error::ReadPacketAsync {
-                                    source: ref tokio_err,
-                                } => {
-                                    if tokio_err.kind()
-                                        == tokio::io::ErrorKind::UnexpectedEof
-                                    {
-                                        Ok(crate::component_future::Poll::Event(()))
-                                    } else {
-                                        Err(source)
-                                    }
-                                }
-                                Error::EOF => Ok(
-                                    crate::component_future::Poll::Event(()),
-                                ),
-                                _ => Err(source),
-                            }
-                        } else if source.is_elapsed() {
-                            Err(Error::Timeout)
-                        } else {
-                            let source = source.into_timer().unwrap();
-                            Err(Error::TimerReadTimeout { source })
-                        }
-                    } else {
-                        Err(e)
-                    }
-                }
+                Err(e) => classify_connection_error(e),
             },
             _ => Ok(crate::component_future::Poll::NothingToDo),
         }
@@ -571,39 +597,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 Ok(futures::Async::NotReady) => {
                     Ok(crate::component_future::Poll::NotReady)
                 }
-                Err(e) => {
-                    if let Error::WriteMessageWithTimeout { source } = e {
-                        if source.is_inner() {
-                            let source = source.into_inner().unwrap();
-                            match source {
-                                Error::WritePacketAsync {
-                                    source: ref tokio_err,
-                                } => {
-                                    if tokio_err.kind()
-                                        == tokio::io::ErrorKind::UnexpectedEof
-                                    {
-                                        Ok(crate::component_future::Poll::Event(
-                                        (),
-                                    ))
-                                    } else {
-                                        Err(source)
-                                    }
-                                }
-                                Error::EOF => Ok(
-                                    crate::component_future::Poll::Event(()),
-                                ),
-                                _ => Err(source),
-                            }
-                        } else if source.is_elapsed() {
-                            Err(Error::Timeout)
-                        } else {
-                            let source = source.into_timer().unwrap();
-                            Err(Error::TimerReadTimeout { source })
-                        }
-                    } else {
-                        Err(e)
-                    }
-                }
+                Err(e) => classify_connection_error(e),
             },
             _ => Ok(crate::component_future::Poll::NothingToDo),
         }
@@ -730,6 +724,45 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         } else {
             Ok(crate::component_future::Poll::NothingToDo)
         }
+    }
+}
+
+fn classify_connection_error(
+    e: Error,
+) -> Result<crate::component_future::Poll<()>> {
+    let source = match e {
+        Error::ReadMessageWithTimeout { source } => source,
+        Error::WriteMessageWithTimeout { source } => source,
+        _ => return Err(e),
+    };
+
+    if source.is_inner() {
+        let source = source.into_inner().unwrap();
+        let tokio_err = match source {
+            Error::ReadPacketAsync {
+                source: ref tokio_err,
+            } => tokio_err,
+            Error::WritePacketAsync {
+                source: ref tokio_err,
+            } => tokio_err,
+            Error::EOF => {
+                return Ok(crate::component_future::Poll::Event(()));
+            }
+            _ => {
+                return Err(source);
+            }
+        };
+
+        if tokio_err.kind() == tokio::io::ErrorKind::UnexpectedEof {
+            Ok(crate::component_future::Poll::Event(()))
+        } else {
+            Err(source)
+        }
+    } else if source.is_elapsed() {
+        Err(Error::Timeout)
+    } else {
+        let source = source.into_timer().unwrap();
+        Err(Error::TimerReadTimeout { source })
     }
 }
 

@@ -236,12 +236,16 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         })
     }
 
+    fn send_message(&mut self, message: crate::protocol::Message) {
+        self.to_send.push_back(message);
+    }
+
     fn close(&mut self, res: Result<()>) {
         let msg = match res {
             Ok(()) => crate::protocol::Message::disconnected(),
             Err(e) => crate::protocol::Message::error(&format!("{}", e)),
         };
-        self.to_send.push_back(msg);
+        self.send_message(msg);
         self.closed = true;
     }
 }
@@ -333,8 +337,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
             log::info!("{}: watch({}, {})", conn.id, username, id);
             conn.state.watch(&id);
-            conn.to_send
-                .push_back(crate::protocol::Message::terminal_output(data));
+            conn.send_message(crate::protocol::Message::terminal_output(
+                data,
+            ));
 
             Ok(())
         } else {
@@ -346,8 +351,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         &mut self,
         conn: &mut Connection<S>,
     ) -> Result<()> {
-        conn.to_send
-            .push_back(crate::protocol::Message::heartbeat());
+        conn.send_message(crate::protocol::Message::heartbeat());
 
         Ok(())
     }
@@ -363,7 +367,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         for watch_conn in self.watchers_mut() {
             let watch_id = watch_conn.state.watch_id().unwrap();
             if conn.id == watch_id {
-                watch_conn.to_send.push_back(
+                watch_conn.send_message(
                     crate::protocol::Message::terminal_output(data),
                 );
             }
@@ -380,8 +384,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> Result<()> {
         let sessions: Vec<_> =
             self.streamers().flat_map(Connection::session).collect();
-        conn.to_send
-            .push_back(crate::protocol::Message::sessions(&sessions));
+        conn.send_message(crate::protocol::Message::sessions(&sessions));
 
         Ok(())
     }

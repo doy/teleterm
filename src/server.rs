@@ -305,43 +305,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         }
     }
 
-    fn handle_message(
-        &mut self,
-        conn: &mut Connection<S>,
-        message: crate::protocol::Message,
-    ) -> Result<()> {
-        if let crate::protocol::Message::TerminalOutput { .. } = message {
-            // do nothing, we expect TerminalOutput spam
-        } else {
-            let username =
-                conn.state.username().map(std::string::ToString::to_string);
-            if self.rate_limiter.check(username).is_err() {
-                let display_name =
-                    conn.state.username().unwrap_or("(non-logged-in users)");
-                log::info!("{}: ratelimit({})", conn.id, display_name);
-                return Err(Error::RateLimited);
-            }
-        }
-
-        log_message(&conn.id, &message);
-
-        match conn.state {
-            ConnectionState::Accepted { .. } => {
-                self.handle_login_message(conn, message)
-            }
-            ConnectionState::LoggedIn { .. } => {
-                self.handle_other_message(conn, message)
-            }
-            ConnectionState::Streaming { .. } => {
-                self.handle_stream_message(conn, message)
-            }
-            ConnectionState::Watching { .. } => {
-                self.handle_watch_message(conn, message)
-            }
-        }
-    }
-
-    fn handle_login_message(
+    fn handle_accepted_message(
         &mut self,
         conn: &mut Connection<S>,
         message: crate::protocol::Message,
@@ -369,86 +333,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         }
     }
 
-    fn handle_stream_message(
-        &mut self,
-        conn: &mut Connection<S>,
-        message: crate::protocol::Message,
-    ) -> Result<()> {
-        let (term_info, saved_data) = if let ConnectionState::Streaming {
-            term_info,
-            saved_data,
-            ..
-        } = &mut conn.state
-        {
-            (term_info, saved_data)
-        } else {
-            unreachable!()
-        };
-
-        match message {
-            crate::protocol::Message::Heartbeat => {
-                conn.to_send
-                    .push_back(crate::protocol::Message::heartbeat());
-                Ok(())
-            }
-            crate::protocol::Message::Resize { size } => {
-                term_info.size = size;
-                Ok(())
-            }
-            crate::protocol::Message::TerminalOutput { data } => {
-                saved_data.append(&data);
-                for watch_conn in self.watchers_mut() {
-                    match &watch_conn.state {
-                        ConnectionState::Watching { watch_id, .. } => {
-                            if &conn.id == watch_id {
-                                watch_conn.to_send.push_back(
-                                    crate::protocol::Message::terminal_output(
-                                        &data,
-                                    ),
-                                );
-                            }
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-                conn.last_activity = std::time::Instant::now();
-                Ok(())
-            }
-            m => Err(crate::error::Error::UnexpectedMessage { message: m })
-                .context(Common),
-        }
-    }
-
-    fn handle_watch_message(
-        &mut self,
-        conn: &mut Connection<S>,
-        message: crate::protocol::Message,
-    ) -> Result<()> {
-        let term_info =
-            if let ConnectionState::Watching { term_info, .. } =
-                &mut conn.state
-            {
-                term_info
-            } else {
-                unreachable!()
-            };
-
-        match message {
-            crate::protocol::Message::Heartbeat => {
-                conn.to_send
-                    .push_back(crate::protocol::Message::heartbeat());
-                Ok(())
-            }
-            crate::protocol::Message::Resize { size } => {
-                term_info.size = size;
-                Ok(())
-            }
-            m => Err(crate::error::Error::UnexpectedMessage { message: m })
-                .context(Common),
-        }
-    }
-
-    fn handle_other_message(
+    fn handle_logged_in_message(
         &mut self,
         conn: &mut Connection<S>,
         message: crate::protocol::Message,
@@ -512,6 +397,85 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         }
     }
 
+    fn handle_streaming_message(
+        &mut self,
+        conn: &mut Connection<S>,
+        message: crate::protocol::Message,
+    ) -> Result<()> {
+        let (term_info, saved_data) = if let ConnectionState::Streaming {
+            term_info,
+            saved_data,
+            ..
+        } = &mut conn.state
+        {
+            (term_info, saved_data)
+        } else {
+            unreachable!()
+        };
+
+        match message {
+            crate::protocol::Message::Heartbeat => {
+                conn.to_send
+                    .push_back(crate::protocol::Message::heartbeat());
+                Ok(())
+            }
+            crate::protocol::Message::Resize { size } => {
+                term_info.size = size;
+                Ok(())
+            }
+            crate::protocol::Message::TerminalOutput { data } => {
+                saved_data.append(&data);
+                for watch_conn in self.watchers_mut() {
+                    match &watch_conn.state {
+                        ConnectionState::Watching { watch_id, .. } => {
+                            if &conn.id == watch_id {
+                                watch_conn.to_send.push_back(
+                                    crate::protocol::Message::terminal_output(
+                                        &data,
+                                    ),
+                                );
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                conn.last_activity = std::time::Instant::now();
+                Ok(())
+            }
+            m => Err(crate::error::Error::UnexpectedMessage { message: m })
+                .context(Common),
+        }
+    }
+
+    fn handle_watching_message(
+        &mut self,
+        conn: &mut Connection<S>,
+        message: crate::protocol::Message,
+    ) -> Result<()> {
+        let term_info =
+            if let ConnectionState::Watching { term_info, .. } =
+                &mut conn.state
+            {
+                term_info
+            } else {
+                unreachable!()
+            };
+
+        match message {
+            crate::protocol::Message::Heartbeat => {
+                conn.to_send
+                    .push_back(crate::protocol::Message::heartbeat());
+                Ok(())
+            }
+            crate::protocol::Message::Resize { size } => {
+                term_info.size = size;
+                Ok(())
+            }
+            m => Err(crate::error::Error::UnexpectedMessage { message: m })
+                .context(Common),
+        }
+    }
+
     fn handle_disconnect(&mut self, conn: &mut Connection<S>) {
         if let Some(username) = conn.state.username() {
             log::info!("{}: disconnect({})", conn.id, username);
@@ -528,6 +492,42 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 }
             } else {
                 unreachable!()
+            }
+        }
+    }
+
+    fn handle_message(
+        &mut self,
+        conn: &mut Connection<S>,
+        message: crate::protocol::Message,
+    ) -> Result<()> {
+        if let crate::protocol::Message::TerminalOutput { .. } = message {
+            // do nothing, we expect TerminalOutput spam
+        } else {
+            let username =
+                conn.state.username().map(std::string::ToString::to_string);
+            if self.rate_limiter.check(username).is_err() {
+                let display_name =
+                    conn.state.username().unwrap_or("(non-logged-in users)");
+                log::info!("{}: ratelimit({})", conn.id, display_name);
+                return Err(Error::RateLimited);
+            }
+        }
+
+        log_message(&conn.id, &message);
+
+        match conn.state {
+            ConnectionState::Accepted { .. } => {
+                self.handle_accepted_message(conn, message)
+            }
+            ConnectionState::LoggedIn { .. } => {
+                self.handle_logged_in_message(conn, message)
+            }
+            ConnectionState::Streaming { .. } => {
+                self.handle_streaming_message(conn, message)
+            }
+            ConnectionState::Watching { .. } => {
+                self.handle_watching_message(conn, message)
             }
         }
     }

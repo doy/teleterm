@@ -1,10 +1,10 @@
+use crate::prelude::*;
+
 mod play;
 mod record;
 mod server;
 mod stream;
 mod watch;
-
-use snafu::ResultExt as _;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {

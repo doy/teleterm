@@ -1,8 +1,4 @@
-use futures::future::Future as _;
-use futures::stream::Stream as _;
-use snafu::futures01::stream::StreamExt as _;
-use snafu::futures01::FutureExt as _;
-use snafu::ResultExt as _;
+use crate::prelude::*;
 use std::io::Read as _;
 
 #[derive(Debug, snafu::Snafu)]

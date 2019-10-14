@@ -1,6 +1,4 @@
-use futures::sink::Sink as _;
-use futures::stream::Stream as _;
-use snafu::ResultExt as _;
+use crate::prelude::*;
 use std::convert::TryFrom as _;
 use tokio::io::{AsyncRead as _, AsyncWrite as _};
 

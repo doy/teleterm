@@ -1,8 +1,4 @@
-use futures::future::Future as _;
-use futures::sink::Sink as _;
-use futures::stream::Stream as _;
-use snafu::futures01::FutureExt as _;
-use snafu::ResultExt as _;
+use crate::prelude::*;
 use std::convert::{TryFrom as _, TryInto as _};
 
 #[derive(Debug, snafu::Snafu)]

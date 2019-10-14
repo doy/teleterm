@@ -1,4 +1,4 @@
-use snafu::{OptionExt as _, ResultExt as _};
+use crate::prelude::*;
 use std::net::ToSocketAddrs as _;
 
 #[derive(Debug, snafu::Snafu)]

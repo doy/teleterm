@@ -1,5 +1,4 @@
-use futures::future::Future as _;
-use snafu::ResultExt as _;
+use crate::prelude::*;
 use std::os::unix::io::AsRawFd as _;
 use tokio::io::{AsyncRead as _, AsyncWrite as _};
 use tokio_pty_process::CommandExt as _;
@@ -298,8 +297,6 @@ impl<R: tokio::io::AsyncRead + 'static> futures::stream::Stream
 #[cfg(test)]
 mod test {
     use super::*;
-    use futures::sink::Sink as _;
-    use futures::stream::Stream as _;
 
     #[test]
     fn test_simple() {

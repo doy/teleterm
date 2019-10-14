@@ -1,6 +1,4 @@
-use futures::future::Future as _;
-use futures::stream::Stream as _;
-use snafu::ResultExt as _;
+use crate::prelude::*;
 
 #[derive(Debug, snafu::Snafu)]
 pub enum Error {

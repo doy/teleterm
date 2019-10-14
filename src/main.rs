@@ -6,6 +6,8 @@
 #![allow(clippy::single_match_else)]
 #![allow(clippy::type_complexity)]
 
+mod prelude;
+
 mod async_stdin;
 mod client;
 mod cmd;

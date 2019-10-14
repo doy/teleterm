@@ -304,7 +304,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     let term = std::env::var("TERM")
                         .unwrap_or_else(|_| "".to_string());
                     let size = crate::term::Size::get().context(Resize)?;
-                    let msg = crate::protocol::Message::login(
+                    let msg = crate::protocol::Message::login_plain(
                         &self.username,
                         &term,
                         &size,

@@ -47,6 +47,9 @@ pub enum Error {
     #[snafu(display("invalid message type: {}", ty))]
     InvalidMessageType { ty: u32 },
 
+    #[snafu(display("invalid auth type: {}", ty))]
+    InvalidAuthType { ty: u32 },
+
     #[snafu(display("eof"))]
     EOF,
 }
@@ -101,13 +104,20 @@ impl<T: tokio::io::AsyncWrite> FramedWriter<T> {
 
 pub const PROTO_VERSION: u32 = 1;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Auth {
+    Plain { username: String },
+}
+
+const AUTH_PLAIN: u32 = 0;
+
 // XXX https://github.com/rust-lang/rust/issues/64362
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
     Login {
         proto_version: u32,
-        username: String,
+        auth: Auth,
         term_type: String,
         size: crate::term::Size,
     },
@@ -144,14 +154,16 @@ const MSG_ERROR: u32 = 8;
 const MSG_RESIZE: u32 = 9;
 
 impl Message {
-    pub fn login(
+    pub fn login_plain(
         username: &str,
         term_type: &str,
         size: &crate::term::Size,
     ) -> Self {
         Self::Login {
             proto_version: PROTO_VERSION,
-            username: username.to_string(),
+            auth: Auth::Plain {
+                username: username.to_string(),
+            },
             term_type: term_type.to_string(),
             size: size.clone(),
         }
@@ -345,18 +357,26 @@ impl From<&Message> for Packet {
                 write_session(s, data);
             }
         }
+        fn write_auth(val: &Auth, data: &mut Vec<u8>) {
+            match val {
+                Auth::Plain { username } => {
+                    write_u32(AUTH_PLAIN, data);
+                    write_str(username, data);
+                }
+            }
+        }
 
         match msg {
             Message::Login {
                 proto_version,
-                username,
+                auth,
                 term_type,
                 size,
             } => {
                 let mut data = vec![];
 
                 write_u32(*proto_version, &mut data);
-                write_str(username, &mut data);
+                write_auth(auth, &mut data);
                 write_str(term_type, &mut data);
                 write_size(size, &mut data);
 
@@ -512,19 +532,31 @@ impl std::convert::TryFrom<Packet> for Message {
             }
             Ok((val, data))
         }
+        fn read_auth(data: &[u8]) -> Result<(Auth, &[u8])> {
+            let (ty, data) = read_u32(data)?;
+            let (auth, data) = match ty {
+                AUTH_PLAIN => {
+                    let (username, data) = read_str(data)?;
+                    let auth = Auth::Plain { username };
+                    (auth, data)
+                }
+                _ => return Err(Error::InvalidAuthType { ty }),
+            };
+            Ok((auth, data))
+        }
 
         let data: &[u8] = packet.data.as_ref();
         let (msg, rest) = match packet.ty {
             MSG_LOGIN => {
                 let (proto_version, data) = read_u32(data)?;
-                let (username, data) = read_str(data)?;
+                let (auth, data) = read_auth(data)?;
                 let (term_type, data) = read_str(data)?;
                 let (size, data) = read_size(data)?;
 
                 (
                     Self::Login {
                         proto_version,
-                        username,
+                        auth,
                         term_type,
                         size,
                     },
@@ -656,7 +688,7 @@ mod test {
 
     fn valid_messages() -> Vec<Message> {
         vec![
-            Message::login(
+            Message::login_plain(
                 "doy",
                 "screen",
                 &crate::term::Size { rows: 24, cols: 80 },

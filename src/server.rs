@@ -348,7 +348,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> Result<()> {
         match message {
             crate::protocol::Message::Login {
-                username,
+                auth,
                 term_type,
                 size,
                 ..
@@ -356,8 +356,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 if size.rows >= 1000 || size.cols >= 1000 {
                     return Err(Error::TermTooBig { size });
                 }
-                log::info!("{}: login({})", conn.id, username);
-                conn.state = conn.state.login(&username, &term_type, &size);
+                match auth {
+                    crate::protocol::Auth::Plain { username } => {
+                        log::info!("{}: login({})", conn.id, username);
+                        conn.state =
+                            conn.state.login(&username, &term_type, &size);
+                    }
+                }
                 Ok(())
             }
             m => Err(Error::UnauthenticatedMessage { message: m }),

@@ -40,6 +40,7 @@ struct TerminalInfo {
     size: crate::term::Size,
 }
 
+#[derive(Debug, Clone)]
 // XXX https://github.com/rust-lang/rust/issues/64362
 #[allow(dead_code)]
 enum ConnectionState {
@@ -75,48 +76,53 @@ impl ConnectionState {
     }
 
     fn login(
-        &self,
+        &mut self,
         username: &str,
         term_type: &str,
         size: &crate::term::Size,
-    ) -> Self {
-        match self {
-            Self::Accepted => Self::LoggedIn {
+    ) {
+        if let Self::Accepted = self {
+            *self = Self::LoggedIn {
                 username: username.to_string(),
                 term_info: TerminalInfo {
                     term: term_type.to_string(),
                     size: size.clone(),
                 },
-            },
-            _ => unreachable!(),
+            };
+        } else {
+            unreachable!()
         }
     }
 
-    fn stream(&self, buffer_size: usize) -> Self {
-        match self {
-            Self::LoggedIn {
+    fn stream(&mut self, buffer_size: usize) {
+        if let Self::LoggedIn {
+            username,
+            term_info,
+        } = std::mem::replace(self, Self::Accepted)
+        {
+            *self = Self::Streaming {
                 username,
                 term_info,
-            } => Self::Streaming {
-                username: username.clone(),
-                term_info: term_info.clone(),
                 saved_data: crate::term::Buffer::new(buffer_size),
-            },
-            _ => unreachable!(),
+            };
+        } else {
+            unreachable!()
         }
     }
 
-    fn watch(&self, id: &str) -> Self {
-        match self {
-            Self::LoggedIn {
+    fn watch(&mut self, id: &str) {
+        if let Self::LoggedIn {
+            username,
+            term_info,
+        } = std::mem::replace(self, Self::Accepted)
+        {
+            *self = Self::Watching {
                 username,
                 term_info,
-            } => Self::Watching {
-                username: username.clone(),
-                term_info: term_info.clone(),
                 watch_id: id.to_string(),
-            },
-            _ => unreachable!(),
+            };
+        } else {
+            unreachable!()
         }
     }
 }
@@ -261,8 +267,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 match auth {
                     crate::protocol::Auth::Plain { username } => {
                         log::info!("{}: login({})", conn.id, username);
-                        conn.state =
-                            conn.state.login(&username, &term_type, &size);
+                        conn.state.login(&username, &term_type, &size);
                     }
                 }
                 Ok(())
@@ -306,13 +311,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             }
             crate::protocol::Message::StartStreaming => {
                 log::info!("{}: stream({})", conn.id, username);
-                conn.state = conn.state.stream(self.buffer_size);
+                conn.state.stream(self.buffer_size);
                 Ok(())
             }
             crate::protocol::Message::StartWatching { id } => {
                 if let Some(stream_conn) = self.connections.get(&id) {
                     log::info!("{}: watch({}, {})", conn.id, username, id);
-                    conn.state = conn.state.watch(&id);
+                    conn.state.watch(&id);
                     let data = if let ConnectionState::Streaming {
                         saved_data,
                         ..

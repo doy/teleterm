@@ -42,7 +42,7 @@ impl std::fmt::Display for Size {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Buffer {
     max_size: usize,
     contents: Vec<u8>,

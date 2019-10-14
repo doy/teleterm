@@ -13,13 +13,13 @@ enum ReadSocket<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
 > {
     NotConnected,
-    Connected(crate::protocol::FramedReader<tokio::io::ReadHalf<S>>),
+    Connected(crate::protocol::FramedReadHalf<S>),
     ReadingMessage(
         Box<
             dyn futures::future::Future<
                     Item = (
                         crate::protocol::Message,
-                        crate::protocol::FramedReader<tokio::io::ReadHalf<S>>,
+                        crate::protocol::FramedReadHalf<S>,
                     ),
                     Error = Error,
                 > + Send,
@@ -39,13 +39,11 @@ enum WriteSocket<
                 > + Send,
         >,
     ),
-    Connected(crate::protocol::FramedWriter<tokio::io::WriteHalf<S>>),
+    Connected(crate::protocol::FramedWriteHalf<S>),
     WritingMessage(
         Box<
             dyn futures::future::Future<
-                    Item = crate::protocol::FramedWriter<
-                        tokio::io::WriteHalf<S>,
-                    >,
+                    Item = crate::protocol::FramedWriteHalf<S>,
                     Error = Error,
                 > + Send,
         >,

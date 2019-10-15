@@ -301,6 +301,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             crate::protocol::Auth::Plain { username } => {
                 log::info!("{}: login({})", conn.id, username);
                 conn.state.login(&username, term_type, &size);
+                conn.send_message(crate::protocol::Message::logged_in(
+                    &username,
+                ));
             }
         }
 

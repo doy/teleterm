@@ -88,6 +88,9 @@ pub enum Message {
     Resize {
         size: crate::term::Size,
     },
+    LoggedIn {
+        username: String,
+    },
 }
 
 const MSG_LOGIN: u32 = 0;
@@ -100,6 +103,7 @@ const MSG_SESSIONS: u32 = 6;
 const MSG_DISCONNECTED: u32 = 7;
 const MSG_ERROR: u32 = 8;
 const MSG_RESIZE: u32 = 9;
+const MSG_LOGGED_IN: u32 = 10;
 
 impl Message {
     pub fn login_plain(
@@ -157,6 +161,12 @@ impl Message {
 
     pub fn resize(size: &crate::term::Size) -> Self {
         Self::Resize { size: size.clone() }
+    }
+
+    pub fn logged_in(username: &str) -> Self {
+        Self::LoggedIn {
+            username: username.to_string(),
+        }
     }
 
     #[allow(dead_code)]
@@ -418,6 +428,16 @@ impl From<&Message> for Packet {
                     data,
                 }
             }
+            Message::LoggedIn { username } => {
+                let mut data = vec![];
+
+                write_str(username, &mut data);
+
+                Self {
+                    ty: MSG_LOGGED_IN,
+                    data,
+                }
+            }
         }
     }
 }
@@ -563,6 +583,11 @@ impl std::convert::TryFrom<Packet> for Message {
 
                 (Self::Resize { size }, data)
             }
+            MSG_LOGGED_IN => {
+                let (username, data) = read_str(data)?;
+
+                (Self::LoggedIn { username }, data)
+            }
             _ => return Err(Error::InvalidMessageType { ty: packet.ty }),
         };
 
@@ -701,6 +726,7 @@ mod test {
             Message::disconnected(),
             Message::error("error message"),
             Message::resize(&crate::term::Size { rows: 25, cols: 81 }),
+            Message::logged_in("doy"),
         ]
     }
 

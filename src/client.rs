@@ -297,9 +297,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
                     self.reset_reconnect_timer();
 
-                    Ok(crate::component_future::Poll::Event(Event::Connect(
-                        self.size.clone().unwrap(),
-                    )))
+                    Ok(crate::component_future::Poll::DidWork)
                 }
                 Ok(futures::Async::NotReady) => {
                     Ok(crate::component_future::Poll::NotReady)
@@ -338,6 +336,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     self.last_server_time = std::time::Instant::now();
                     self.rsock = ReadSocket::Connected(s);
                     match msg {
+                        crate::protocol::Message::LoggedIn { .. } => {
+                            Ok(crate::component_future::Poll::Event(
+                                Event::Connect(self.size.clone().unwrap()),
+                            ))
+                        }
                         crate::protocol::Message::Heartbeat => {
                             Ok(crate::component_future::Poll::DidWork)
                         }

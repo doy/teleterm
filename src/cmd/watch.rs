@@ -210,7 +210,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         &mut self,
         e: &crossterm::InputEvent,
     ) -> Result<bool> {
-        #[allow(clippy::single_match)]
         match e {
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
                 'q',
@@ -343,7 +342,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     }
 
     fn watch_keypress(&mut self, e: &crossterm::InputEvent) -> Result<bool> {
-        #[allow(clippy::single_match)]
         match e {
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
                 'q',

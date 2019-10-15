@@ -610,6 +610,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         }
                         e @ Err(..) => {
                             conn.close(e.map(|_| ()));
+                            conn.rsock = Some(ReadSocket::Connected(s));
                         }
                     }
                     Ok(crate::component_future::Poll::DidWork)

@@ -73,6 +73,9 @@ pub struct Client<
     username: String,
     buffer_size: usize,
 
+    term_type: String,
+    size: Option<crate::term::Size>,
+
     heartbeat_timer: tokio::timer::Interval,
     reconnect_timer: Option<tokio::timer::Delay>,
     reconnect_backoff_amount: std::time::Duration,
@@ -135,6 +138,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         on_connect: &[crate::protocol::Message],
         handle_sigwinch: bool,
     ) -> Self {
+        let term_type =
+            std::env::var("TERM").unwrap_or_else(|_| "".to_string());
         let heartbeat_timer =
             tokio::timer::Interval::new_interval(HEARTBEAT_DURATION);
         let winches: Option<
@@ -155,6 +160,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             connect,
             username: username.to_string(),
             buffer_size,
+
+            term_type,
+            size: None,
 
             heartbeat_timer,
             reconnect_timer: None,
@@ -275,13 +283,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
                     self.to_send.clear();
 
-                    let term = std::env::var("TERM")
-                        .unwrap_or_else(|_| "".to_string());
-                    let size = crate::term::Size::get()?;
+                    self.size = Some(crate::term::Size::get()?);
                     let msg = crate::protocol::Message::login_plain(
                         &self.username,
-                        &term,
-                        &size,
+                        &self.term_type,
+                        self.size.as_ref().unwrap(),
                     );
                     self.to_send.push_back(msg);
 
@@ -292,7 +298,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     self.reset_reconnect_timer();
 
                     Ok(crate::component_future::Poll::Event(Event::Connect(
-                        size,
+                        self.size.clone().unwrap(),
                     )))
                 }
                 Ok(futures::Async::NotReady) => {
@@ -422,12 +428,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         if let Some(winches) = &mut self.winches {
             match winches.poll()? {
                 futures::Async::Ready(Some(_)) => {
-                    let size = crate::term::Size::get()?;
+                    self.size = Some(crate::term::Size::get()?);
                     self.send_message(crate::protocol::Message::resize(
-                        &size,
+                        self.size.as_ref().unwrap(),
                     ));
                     Ok(crate::component_future::Poll::Event(Event::Resize(
-                        size,
+                        self.size.clone().unwrap(),
                     )))
                 }
                 futures::Async::Ready(None) => unreachable!(),

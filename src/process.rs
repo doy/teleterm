@@ -82,10 +82,11 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
     >] = &[
         // order is important here - checking command_exit first so that we
         // don't try to read from a process that has already exited, which
-        // causes an error
-        &Self::poll_resize,
+        // causes an error. also, poll_resize needs to happen after
+        // poll_command_start, or else the pty might not be initialized.
         &Self::poll_command_start,
         &Self::poll_command_exit,
+        &Self::poll_resize,
         &Self::poll_read_stdin,
         &Self::poll_write_stdin,
         &Self::poll_read_stdout,

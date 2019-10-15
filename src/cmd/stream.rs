@@ -195,9 +195,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 crate::client::Event::Disconnect => {
                     Ok(crate::component_future::Poll::DidWork)
                 }
-                crate::client::Event::Connect(size) => {
-                    self.sent_remote = 0;
+                crate::client::Event::Start(size) => {
                     self.process.resize(size);
+                    Ok(crate::component_future::Poll::DidWork)
+                }
+                crate::client::Event::Connect() => {
+                    self.sent_remote = 0;
                     Ok(crate::component_future::Poll::DidWork)
                 }
                 crate::client::Event::ServerMessage(..) => {
@@ -239,6 +242,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                                     .context(crate::error::ToRawMode)?,
                             );
                         }
+                        self.process.resize(crate::term::Size::get()?);
                     }
                     crate::process::Event::CommandExit(..) => {
                         self.done = true;

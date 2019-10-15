@@ -564,10 +564,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         match self.list_client.poll()? {
             futures::Async::Ready(Some(e)) => {
                 match e {
+                    crate::client::Event::Start(size) => {
+                        self.resize(size)?;
+                    }
                     crate::client::Event::Disconnect => {
                         self.reconnect(true)?;
                     }
-                    crate::client::Event::Connect(_) => {
+                    crate::client::Event::Connect() => {
                         self.list_client.send_message(
                             crate::protocol::Message::list_sessions(),
                         );
@@ -603,10 +606,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         match client.poll()? {
             futures::Async::Ready(Some(e)) => {
                 match e {
+                    crate::client::Event::Start(_) => {
+                        // watch clients don't respond to resize events
+                        unreachable!();
+                    }
                     crate::client::Event::Disconnect => {
                         self.reconnect(true)?;
                     }
-                    crate::client::Event::Connect(_) => {}
+                    crate::client::Event::Connect() => {}
                     crate::client::Event::ServerMessage(msg) => {
                         self.watch_server_message(msg)?;
                     }

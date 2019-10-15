@@ -87,7 +87,7 @@ pub struct Client<
     rsock: ReadSocket<S>,
     wsock: WriteSocket<S>,
 
-    on_connect: Vec<crate::protocol::Message>,
+    on_login: Vec<crate::protocol::Message>,
     to_send: std::collections::VecDeque<crate::protocol::Message>,
 }
 
@@ -135,7 +135,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         connect: Connector<S>,
         username: &str,
         buffer_size: usize,
-        on_connect: &[crate::protocol::Message],
+        on_login: &[crate::protocol::Message],
         handle_sigwinch: bool,
     ) -> Self {
         let term_type =
@@ -173,7 +173,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             rsock: ReadSocket::NotConnected,
             wsock: WriteSocket::NotConnected,
 
-            on_connect: on_connect.to_vec(),
+            on_login: on_login.to_vec(),
             to_send: std::collections::VecDeque::new(),
         }
     }
@@ -249,9 +249,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             &self.term_type,
             self.size.as_ref().unwrap(),
         ));
-        for msg in &self.on_connect {
-            self.to_send.push_back(msg.clone());
-        }
 
         self.reset_reconnect_timer();
 
@@ -264,6 +261,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> Result<crate::component_future::Poll<Event>> {
         match msg {
             crate::protocol::Message::LoggedIn { .. } => {
+                for msg in &self.on_login {
+                    self.to_send.push_back(msg.clone());
+                }
                 Ok(crate::component_future::Poll::Event(Event::Connect(
                     self.size.clone().unwrap(),
                 )))

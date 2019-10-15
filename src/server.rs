@@ -54,6 +54,9 @@ struct TerminalInfo {
 #[allow(dead_code)]
 enum ConnectionState {
     Accepted,
+    LoggingIn {
+        term_info: TerminalInfo,
+    },
     LoggedIn {
         username: String,
         term_info: TerminalInfo,
@@ -78,6 +81,7 @@ impl ConnectionState {
     fn username(&self) -> Option<&str> {
         match self {
             Self::Accepted => None,
+            Self::LoggingIn { .. } => None,
             Self::LoggedIn { username, .. } => Some(username),
             Self::Streaming { username, .. } => Some(username),
             Self::Watching { username, .. } => Some(username),
@@ -87,6 +91,7 @@ impl ConnectionState {
     fn term_info_mut(&mut self) -> Option<&mut TerminalInfo> {
         match self {
             Self::Accepted => None,
+            Self::LoggingIn { term_info, .. } => Some(term_info),
             Self::LoggedIn { term_info, .. } => Some(term_info),
             Self::Streaming { term_info, .. } => Some(term_info),
             Self::Watching { term_info, .. } => Some(term_info),
@@ -96,6 +101,7 @@ impl ConnectionState {
     fn saved_data(&self) -> Option<&crate::term::Buffer> {
         match self {
             Self::Accepted => None,
+            Self::LoggingIn { .. } => None,
             Self::LoggedIn { .. } => None,
             Self::Streaming { saved_data, .. } => Some(saved_data),
             Self::Watching { .. } => None,
@@ -105,6 +111,7 @@ impl ConnectionState {
     fn saved_data_mut(&mut self) -> Option<&mut crate::term::Buffer> {
         match self {
             Self::Accepted => None,
+            Self::LoggingIn { .. } => None,
             Self::LoggedIn { .. } => None,
             Self::Streaming { saved_data, .. } => Some(saved_data),
             Self::Watching { .. } => None,
@@ -114,13 +121,14 @@ impl ConnectionState {
     fn watch_id(&self) -> Option<&str> {
         match self {
             Self::Accepted => None,
+            Self::LoggingIn { .. } => None,
             Self::LoggedIn { .. } => None,
             Self::Streaming { .. } => None,
             Self::Watching { watch_id, .. } => Some(watch_id),
         }
     }
 
-    fn login(
+    fn login_plain(
         &mut self,
         username: &str,
         term_type: &str,
@@ -210,6 +218,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn session(&self) -> Option<crate::protocol::Session> {
         let (username, term_info) = match &self.state {
             ConnectionState::Accepted => return None,
+            ConnectionState::LoggingIn { .. } => return None,
             ConnectionState::LoggedIn {
                 username,
                 term_info,
@@ -308,8 +317,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
         match auth {
             crate::protocol::Auth::Plain { username } => {
-                log::info!("{}: login({})", conn.id, username);
-                conn.state.login(&username, term_type, &size);
+                log::info!("{}: login(plain, {})", conn.id, username);
+                conn.state.login_plain(&username, term_type, &size);
                 conn.send_message(crate::protocol::Message::logged_in(
                     &username,
                 ));
@@ -429,6 +438,25 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         }
     }
 
+    fn handle_logging_in_message(
+        &mut self,
+        _conn: &mut Connection<S>,
+        message: crate::protocol::Message,
+    ) -> Result<
+        Option<
+            Box<
+                dyn futures::future::Future<
+                        Item = (ConnectionState, crate::protocol::Message),
+                        Error = Error,
+                    > + Send,
+            >,
+        >,
+    > {
+        match &message {
+            _ => Err(Error::UnauthenticatedMessage { message }),
+        }
+    }
+
     fn handle_logged_in_message(
         &mut self,
         conn: &mut Connection<S>,
@@ -536,6 +564,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         match conn.state {
             ConnectionState::Accepted { .. } => {
                 self.handle_accepted_message(conn, message).map(|_| None)
+            }
+            ConnectionState::LoggingIn { .. } => {
+                self.handle_logging_in_message(conn, message)
             }
             ConnectionState::LoggedIn { .. } => {
                 self.handle_logged_in_message(conn, message).map(|_| None)

@@ -259,6 +259,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         &mut self,
         msg: crate::protocol::Message,
     ) -> Result<crate::component_future::Poll<Event>> {
+        msg.log("recv");
+
         match msg {
             crate::protocol::Message::LoggedIn { .. } => {
                 for msg in &self.on_login {
@@ -389,6 +391,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     WriteSocket::NotConnected,
                 ) {
                     let msg = self.to_send.pop_front().unwrap();
+                    msg.log("send");
                     let fut = msg.write_async(s);
                     self.wsock = WriteSocket::WritingMessage(Box::new(fut));
                 } else {

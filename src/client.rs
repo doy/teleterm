@@ -249,8 +249,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             &crate::term::Size::get()?,
         ));
 
-        self.reset_reconnect_timer();
-
         Ok(())
     }
 
@@ -262,6 +260,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
         match msg {
             crate::protocol::Message::LoggedIn { .. } => {
+                self.reset_reconnect_timer();
                 for msg in &self.on_login {
                     self.to_send.push_back(msg.clone());
                 }

@@ -147,6 +147,34 @@ impl ConnectionState {
         }
     }
 
+    fn login_oauth_start(
+        &mut self,
+        term_type: &str,
+        size: &crate::term::Size,
+    ) {
+        if let Self::Accepted = self {
+            *self = Self::LoggingIn {
+                term_info: TerminalInfo {
+                    term: term_type.to_string(),
+                    size: size.clone(),
+                },
+            };
+        } else {
+            unreachable!()
+        }
+    }
+
+    fn login_oauth_finish(&mut self, username: &str) {
+        if let Self::LoggingIn { term_info } = self {
+            *self = Self::LoggedIn {
+                username: username.to_string(),
+                term_info: term_info.clone(),
+            };
+        } else {
+            unreachable!()
+        }
+    }
+
     fn stream(&mut self, buffer_size: usize) {
         if let Self::LoggedIn {
             username,
@@ -190,6 +218,7 @@ struct Connection<
     closed: bool,
     state: ConnectionState,
     last_activity: std::time::Instant,
+    oauth_client: Option<Box<dyn crate::oauth::Oauth + Send>>,
 }
 
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
@@ -212,6 +241,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             closed: false,
             state: ConnectionState::new(),
             last_activity: std::time::Instant::now(),
+            oauth_client: None,
         }
     }
 
@@ -323,6 +353,54 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     &username,
                 ));
             }
+            crate::protocol::Auth::RecurseCenter { id } => {
+                // XXX this needs some kind of real configuration system
+                let client_id =
+                    std::env::var("TT_RECURSE_CENTER_CLIENT_ID").unwrap();
+                let client_secret =
+                    std::env::var("TT_RECURSE_CENTER_CLIENT_SECRET").unwrap();
+                let redirect_url =
+                    std::env::var("TT_RECURSE_CENTER_REDIRECT_URL").unwrap();
+                let redirect_url = url::Url::parse(&redirect_url).unwrap();
+
+                conn.oauth_client =
+                    Some(Box::new(crate::oauth::recurse_center::Oauth::new(
+                        crate::oauth::recurse_center::config(
+                            &client_id,
+                            &client_secret,
+                            redirect_url,
+                        ),
+                    )));
+
+                if let Some(id) = id {
+                    log::info!(
+                        "{}: login(recurse_center, {:?})",
+                        conn.id,
+                        id
+                    );
+                    // refresh
+                    unimplemented!()
+                } else {
+                    let id = format!("{}", uuid::Uuid::new_v4());
+                    log::info!(
+                        "{}: login(recurse_center, {:?})",
+                        conn.id,
+                        id
+                    );
+
+                    conn.state.login_oauth_start(term_type, &size);
+                    conn.send_message(
+                        crate::protocol::Message::oauth_request(
+                            &conn
+                                .oauth_client
+                                .as_ref()
+                                .unwrap()
+                                .generate_authorize_url(),
+                            &id,
+                        ),
+                    );
+                }
+            }
         }
 
         Ok(())
@@ -422,6 +500,35 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         Ok(())
     }
 
+    fn handle_message_oauth_response(
+        &mut self,
+        conn: &mut Connection<S>,
+        code: &str,
+    ) -> Result<
+        Option<
+            Box<
+                dyn futures::future::Future<
+                        Item = (ConnectionState, crate::protocol::Message),
+                        Error = Error,
+                    > + Send,
+            >,
+        >,
+    > {
+        let client = conn.oauth_client.as_ref().ok_or_else(|| {
+            Error::UnexpectedMessage {
+                message: crate::protocol::Message::oauth_response(code),
+            }
+        })?;
+
+        let mut new_state = conn.state.clone();
+        let fut = client.get_username(code).map(|username| {
+            new_state.login_oauth_finish(&username);
+            (new_state, crate::protocol::Message::logged_in(&username))
+        });
+
+        Ok(Some(Box::new(fut)))
+    }
+
     fn handle_accepted_message(
         &mut self,
         conn: &mut Connection<S>,
@@ -440,7 +547,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
     fn handle_logging_in_message(
         &mut self,
-        _conn: &mut Connection<S>,
+        conn: &mut Connection<S>,
         message: crate::protocol::Message,
     ) -> Result<
         Option<
@@ -452,8 +559,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             >,
         >,
     > {
-        match &message {
-            _ => Err(Error::UnauthenticatedMessage { message }),
+        match message {
+            crate::protocol::Message::OauthResponse { code } => {
+                self.handle_message_oauth_response(conn, &code)
+            }
+            m => Err(Error::UnauthenticatedMessage { message: m }),
         }
     }
 

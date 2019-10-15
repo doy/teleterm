@@ -25,6 +25,18 @@ pub enum Error {
     #[snafu(display("eof"))]
     EOF,
 
+    #[snafu(display("failed to retrieve access token: {:?}", msg))]
+    ExchangeCode {
+        msg: String,
+        // XXX RequestTokenError doesn't implement the right traits
+        // source: oauth2::RequestTokenError<
+        //     oauth2::reqwest::Error,
+        //     oauth2::StandardErrorResponse<
+        //         oauth2::basic::BasicErrorResponseType,
+        //     >,
+        // >
+    },
+
     #[snafu(display("failed to parse string: {:?}", data))]
     ExtraMessageData { data: Vec<u8> },
 
@@ -33,6 +45,12 @@ pub enum Error {
 
     #[snafu(display("failed to flush writes to terminal: {}", source))]
     FlushTerminalSync { source: std::io::Error },
+
+    #[snafu(display(
+        "failed to get recurse center profile data: {}",
+        source
+    ))]
+    GetProfile { source: reqwest::Error },
 
     #[snafu(display("failed to get terminal size: {}", source))]
     GetTerminalSize { source: crossterm::ErrorKind },
@@ -78,6 +96,9 @@ pub enum Error {
     #[snafu(display("failed to open identity file: {}", source))]
     OpenIdentityFile { source: std::io::Error },
 
+    #[snafu(display("failed to open link in browser: {}", source))]
+    OpenLink { source: std::io::Error },
+
     #[snafu(display("failed to open a pty: {}", source))]
     OpenPty { source: std::io::Error },
 
@@ -104,6 +125,9 @@ pub enum Error {
         source: std::array::TryFromSliceError,
     },
 
+    #[snafu(display("failed to parse response json: {}", source))]
+    ParseJson { source: reqwest::Error },
+
     #[snafu(display("failed to parse address: {}", source))]
     ParsePort { source: std::num::ParseIntError },
 
@@ -119,6 +143,9 @@ pub enum Error {
 
     #[snafu(display("failed to parse string: {}", source))]
     ParseString { source: std::string::FromUtf8Error },
+
+    #[snafu(display("failed to parse url: {}", source))]
+    ParseUrl { source: url::ParseError },
 
     #[snafu(display("failed to poll for process exit: {}", source))]
     ProcessExitPoll { source: std::io::Error },
@@ -152,6 +179,9 @@ pub enum Error {
     #[snafu(display("failed to read from pty: {}", source))]
     ReadPty { source: std::io::Error },
 
+    #[snafu(display("failed to read from socket: {}", source))]
+    ReadSocket { source: tokio::io::Error },
+
     #[snafu(display("failed to read from terminal: {}", source))]
     ReadTerminal { source: std::io::Error },
 
@@ -160,6 +190,14 @@ pub enum Error {
 
     #[snafu(display("failed to resolve address: {}", source))]
     ResolveAddress { source: std::io::Error },
+
+    #[snafu(display(
+        "failed to send oauth result back to main thread: {}",
+        source
+    ))]
+    SendResultChannel {
+        source: tokio::sync::mpsc::error::SendError,
+    },
 
     #[snafu(display(
         "failed to send accepted socket to server thread: {}",
@@ -261,6 +299,9 @@ pub enum Error {
 
     #[snafu(display("failed to write to pty: {}", source))]
     WritePty { source: std::io::Error },
+
+    #[snafu(display("failed to write to socket: {}", source))]
+    WriteSocket { source: tokio::io::Error },
 
     #[snafu(display("failed to write to stdout: {}", source))]
     WriteTerminal { source: tokio::io::Error },

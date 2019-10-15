@@ -71,7 +71,7 @@ pub struct Client<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
 > {
     connect: Connector<S>,
-    username: String,
+    auth: crate::protocol::Auth,
     buffer_size: usize,
 
     term_type: String,
@@ -97,12 +97,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 {
     pub fn stream(
         connect: Connector<S>,
-        username: &str,
+        auth: &crate::protocol::Auth,
         buffer_size: usize,
     ) -> Self {
         Self::new(
             connect,
-            username,
+            auth,
             buffer_size,
             &[crate::protocol::Message::start_streaming()],
             true,
@@ -111,13 +111,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
     pub fn watch(
         connect: Connector<S>,
-        username: &str,
+        auth: &crate::protocol::Auth,
         buffer_size: usize,
         id: &str,
     ) -> Self {
         Self::new(
             connect,
-            username,
+            auth,
             buffer_size,
             &[crate::protocol::Message::start_watching(id)],
             false,
@@ -126,15 +126,15 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
     pub fn list(
         connect: Connector<S>,
-        username: &str,
+        auth: &crate::protocol::Auth,
         buffer_size: usize,
     ) -> Self {
-        Self::new(connect, username, buffer_size, &[], true)
+        Self::new(connect, auth, buffer_size, &[], true)
     }
 
     fn new(
         connect: Connector<S>,
-        username: &str,
+        auth: &crate::protocol::Auth,
         buffer_size: usize,
         on_login: &[crate::protocol::Message],
         handle_sigwinch: bool,
@@ -159,7 +159,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
         Self {
             connect,
-            username: username.to_string(),
+            auth: auth.clone(),
             buffer_size,
 
             term_type,
@@ -243,8 +243,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         );
 
         self.to_send.clear();
-        self.send_message(crate::protocol::Message::login_plain(
-            &self.username,
+        self.send_message(crate::protocol::Message::login(
+            &self.auth,
             &self.term_type,
             &crate::term::Size::get()?,
         ));
@@ -259,6 +259,23 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         msg.log("recv");
 
         match msg {
+            // XXX store the id and use it on future requests
+            crate::protocol::Message::OauthRequest { url, id: _id } => {
+                let mut state = None;
+                let parsed_url = url::Url::parse(&url).unwrap();
+                for (k, v) in parsed_url.query_pairs() {
+                    if k == "state" {
+                        state = Some(v);
+                    }
+                }
+                open::that(url).context(crate::error::OpenLink)?;
+                let code = self
+                    .wait_for_oauth_response(state.map(|s| s.to_string()))?;
+                self.send_message(crate::protocol::Message::OauthResponse {
+                    code,
+                });
+                Ok(crate::component_future::Poll::DidWork)
+            }
             crate::protocol::Message::LoggedIn { .. } => {
                 self.reset_reconnect_timer();
                 for msg in &self.on_login {
@@ -273,6 +290,82 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 Event::ServerMessage(msg),
             )),
         }
+    }
+
+    fn wait_for_oauth_response(
+        &self,
+        state: Option<String>,
+    ) -> Result<String> {
+        lazy_static::lazy_static! {
+            static ref RE: regex::Regex = regex::Regex::new(
+                r"GET (/[^ ]*) HTTP/1\.1"
+            ).unwrap();
+        }
+
+        let addr =
+            "127.0.0.1:44141".parse().context(crate::error::ParseAddr)?;
+        let listener = tokio::net::TcpListener::bind(&addr)
+            .context(crate::error::Bind)?;
+        let (wcode, rcode) = tokio::sync::mpsc::channel(1);
+        let wcode2 = wcode.clone();
+        let fut = listener
+            .incoming()
+            .into_future()
+            .map_err(|(e, _)| e)
+            .context(crate::error::Acceptor)
+            .and_then(|(sock, _)| {
+                let sock = sock.unwrap();
+                tokio::io::lines(std::io::BufReader::new(sock))
+                    .into_future()
+                    .map_err(|(e, _)| e)
+                    .context(crate::error::ReadSocket)
+            })
+            .and_then(move |(buf, lines)| {
+                let buf = buf.unwrap();
+                let path = &RE.captures(&buf).unwrap()[1];
+                let base = url::Url::parse("http://localhost:44141").unwrap();
+                let url = base.join(path).unwrap();
+                let mut req_code = None;
+                let mut req_state = None;
+                for (k, v) in url.query_pairs() {
+                    if k == "code" {
+                        req_code = Some(v.to_string());
+                    }
+                    if k == "state" {
+                        req_state = Some(v.to_string());
+                    }
+                }
+                let res = if let Some(auth_state) = state {
+                    if req_state.is_none() || req_state.unwrap() != auth_state
+                    {
+                        unimplemented!()
+                    } else {
+                        Ok(req_code.unwrap())
+                    }
+                } else {
+                    Ok(req_code.unwrap())
+                };
+                wcode
+                    .send(res)
+                    .context(crate::error::SendResultChannel)
+                    .map(|_| lines.into_inner().into_inner())
+            })
+            .and_then(|sock| {
+                let response = r"HTTP/1.1 200 OK
+
+authenticated successfully! now close this page and return to your terminal.
+";
+                tokio::io::write_all(sock, response)
+                    .context(crate::error::WriteSocket)
+            })
+            .map(|_| ())
+            .map_err(|e| {
+                wcode2.wait().send(Err(e)).unwrap();
+            });
+        tokio::spawn(fut);
+        // XXX we don't actually want to block the main thread here - move
+        // this to a background thing that we poll instead
+        rcode.wait().next().unwrap().unwrap()
     }
 }
 

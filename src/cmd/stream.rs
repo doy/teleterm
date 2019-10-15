@@ -4,9 +4,14 @@ use tokio::io::AsyncWrite as _;
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Stream your terminal")
         .arg(
-            clap::Arg::with_name("username")
-                .long("username")
+            clap::Arg::with_name("login-plain")
+                .long("login-plain")
                 .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("login-recurse-center")
+                .long("login-recurse-center")
+                .conflicts_with("login-plain"),
         )
         .arg(
             clap::Arg::with_name("address")
@@ -24,11 +29,16 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 }
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    let username = matches
-        .value_of("username")
-        .map(std::string::ToString::to_string)
-        .or_else(|| std::env::var("USER").ok())
-        .context(crate::error::CouldntFindUsername)?;
+    let auth = if matches.is_present("login-recurse-center") {
+        crate::protocol::Auth::RecurseCenter { id: None }
+    } else {
+        let username = matches
+            .value_of("login-plain")
+            .map(std::string::ToString::to_string)
+            .or_else(|| std::env::var("USER").ok())
+            .context(crate::error::CouldntFindUsername)?;
+        crate::protocol::Auth::Plain { username }
+    };
     let (host, address) =
         crate::util::resolve_address(matches.value_of("address"))?;
     let tls = matches.is_present("tls");
@@ -48,11 +58,11 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
     } else {
         vec![]
     };
-    run_impl(&username, &host, address, tls, buffer_size, &command, &args)
+    run_impl(&auth, &host, address, tls, buffer_size, &command, &args)
 }
 
 fn run_impl(
-    username: &str,
+    auth: &crate::protocol::Auth,
     host: &str,
     address: std::net::SocketAddr,
     tls: bool,
@@ -84,7 +94,7 @@ fn run_impl(
             args,
             connect,
             buffer_size,
-            username,
+            auth,
         ))
     } else {
         let connect: crate::client::Connector<_> = Box::new(move || {
@@ -98,7 +108,7 @@ fn run_impl(
             args,
             connect,
             buffer_size,
-            username,
+            auth,
         ))
     };
     tokio::run(fut.map_err(|e| {
@@ -131,10 +141,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         args: &[String],
         connect: crate::client::Connector<S>,
         buffer_size: usize,
-        username: &str,
+        auth: &crate::protocol::Auth,
     ) -> Self {
         let client =
-            crate::client::Client::stream(connect, username, buffer_size);
+            crate::client::Client::stream(connect, auth, buffer_size);
 
         // TODO: tokio::io::stdin is broken (it's blocking)
         // see https://github.com/tokio-rs/tokio/issues/589

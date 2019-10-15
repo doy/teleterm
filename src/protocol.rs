@@ -55,9 +55,11 @@ pub const PROTO_VERSION: u32 = 1;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Auth {
     Plain { username: String },
+    RecurseCenter { id: Option<String> },
 }
 
 const AUTH_PLAIN: u32 = 0;
+const AUTH_RECURSE_CENTER: u32 = 1;
 
 // XXX https://github.com/rust-lang/rust/issues/64362
 #[allow(dead_code)]
@@ -91,6 +93,13 @@ pub enum Message {
     LoggedIn {
         username: String,
     },
+    OauthRequest {
+        url: String,
+        id: String,
+    },
+    OauthResponse {
+        code: String,
+    },
 }
 
 const MSG_LOGIN: u32 = 0;
@@ -104,18 +113,18 @@ const MSG_DISCONNECTED: u32 = 7;
 const MSG_ERROR: u32 = 8;
 const MSG_RESIZE: u32 = 9;
 const MSG_LOGGED_IN: u32 = 10;
+const MSG_OAUTH_REQUEST: u32 = 11;
+const MSG_OAUTH_RESPONSE: u32 = 12;
 
 impl Message {
-    pub fn login_plain(
-        username: &str,
+    pub fn login(
+        auth: &Auth,
         term_type: &str,
         size: &crate::term::Size,
     ) -> Self {
         Self::Login {
             proto_version: PROTO_VERSION,
-            auth: Auth::Plain {
-                username: username.to_string(),
-            },
+            auth: auth.clone(),
             term_type: term_type.to_string(),
             size: size.clone(),
         }
@@ -169,6 +178,19 @@ impl Message {
         }
     }
 
+    pub fn oauth_request(url: &str, id: &str) -> Self {
+        Self::OauthRequest {
+            url: url.to_string(),
+            id: id.to_string(),
+        }
+    }
+
+    pub fn oauth_response(code: &str) -> Self {
+        Self::OauthResponse {
+            code: code.to_string(),
+        }
+    }
+
     #[allow(dead_code)]
     pub fn read<R: std::io::Read>(r: R) -> Result<Self> {
         Packet::read(r).and_then(Self::try_from)
@@ -207,6 +229,13 @@ impl Message {
                     id,
                     data.len()
                 );
+            }
+            // these are security-sensitive, keep them out of logs
+            Self::OauthRequest { .. } => {
+                log::debug!("{}: message(OauthRequest {{ .. }})", id);
+            }
+            Self::OauthResponse { .. } => {
+                log::debug!("{}: message(OauthResponse {{ .. }})", id);
             }
             message => {
                 log::debug!("{}: message({:?})", id, message);
@@ -340,6 +369,11 @@ impl From<&Message> for Packet {
                     write_u32(AUTH_PLAIN, data);
                     write_str(username, data);
                 }
+                Auth::RecurseCenter { id } => {
+                    let id = id.as_ref().map_or("", |s| s.as_str());
+                    write_u32(AUTH_RECURSE_CENTER, data);
+                    write_str(id, data);
+                }
             }
         }
 
@@ -438,6 +472,27 @@ impl From<&Message> for Packet {
                     data,
                 }
             }
+            Message::OauthRequest { url, id } => {
+                let mut data = vec![];
+
+                write_str(url, &mut data);
+                write_str(id, &mut data);
+
+                Self {
+                    ty: MSG_OAUTH_REQUEST,
+                    data,
+                }
+            }
+            Message::OauthResponse { code } => {
+                let mut data = vec![];
+
+                write_str(code, &mut data);
+
+                Self {
+                    ty: MSG_OAUTH_RESPONSE,
+                    data,
+                }
+            }
         }
     }
 }
@@ -532,6 +587,12 @@ impl std::convert::TryFrom<Packet> for Message {
                     let auth = Auth::Plain { username };
                     (auth, data)
                 }
+                AUTH_RECURSE_CENTER => {
+                    let (id, data) = read_str(data)?;
+                    let id = if id == "" { None } else { Some(id) };
+                    let auth = Auth::RecurseCenter { id };
+                    (auth, data)
+                }
                 _ => return Err(Error::InvalidAuthType { ty }),
             };
             Ok((auth, data))
@@ -587,6 +648,17 @@ impl std::convert::TryFrom<Packet> for Message {
                 let (username, data) = read_str(data)?;
 
                 (Self::LoggedIn { username }, data)
+            }
+            MSG_OAUTH_REQUEST => {
+                let (url, data) = read_str(data)?;
+                let (id, data) = read_str(data)?;
+
+                (Self::OauthRequest { url, id }, data)
+            }
+            MSG_OAUTH_RESPONSE => {
+                let (code, data) = read_str(data)?;
+
+                (Self::OauthResponse { code }, data)
             }
             _ => return Err(Error::InvalidMessageType { ty: packet.ty }),
         };
@@ -685,8 +757,22 @@ mod test {
 
     fn valid_messages() -> Vec<Message> {
         vec![
-            Message::login_plain(
-                "doy",
+            Message::login(
+                &Auth::Plain {
+                    username: "doy".to_string(),
+                },
+                "screen",
+                &crate::term::Size { rows: 24, cols: 80 },
+            ),
+            Message::login(
+                &Auth::RecurseCenter {
+                    id: Some("some-random-id".to_string()),
+                },
+                "screen",
+                &crate::term::Size { rows: 24, cols: 80 },
+            ),
+            Message::login(
+                &Auth::RecurseCenter { id: None },
                 "screen",
                 &crate::term::Size { rows: 24, cols: 80 },
             ),

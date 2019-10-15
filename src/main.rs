@@ -15,6 +15,7 @@ mod cmd;
 mod component_future;
 mod error;
 mod key_reader;
+mod oauth;
 mod process;
 mod protocol;
 mod server;

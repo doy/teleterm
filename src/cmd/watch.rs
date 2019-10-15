@@ -4,9 +4,14 @@ use std::io::Write as _;
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Watch teleterm streams")
         .arg(
-            clap::Arg::with_name("username")
-                .long("username")
+            clap::Arg::with_name("login-plain")
+                .long("login-plain")
                 .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("login-recurse-center")
+                .long("login-recurse-center")
+                .conflicts_with("login-plain"),
         )
         .arg(
             clap::Arg::with_name("address")
@@ -17,25 +22,30 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 }
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    let username = matches
-        .value_of("username")
-        .map(std::string::ToString::to_string)
-        .or_else(|| std::env::var("USER").ok())
-        .context(crate::error::CouldntFindUsername)?;
+    let auth = if matches.is_present("login-recurse-center") {
+        crate::protocol::Auth::RecurseCenter { id: None }
+    } else {
+        let username = matches
+            .value_of("login-plain")
+            .map(std::string::ToString::to_string)
+            .or_else(|| std::env::var("USER").ok())
+            .context(crate::error::CouldntFindUsername)?;
+        crate::protocol::Auth::Plain { username }
+    };
     let (host, address) =
         crate::util::resolve_address(matches.value_of("address"))?;
     let tls = matches.is_present("tls");
-    run_impl(&username, &host, address, tls)
+    run_impl(&auth, &host, address, tls)
 }
 
 fn run_impl(
-    username: &str,
+    auth: &crate::protocol::Auth,
     host: &str,
     address: std::net::SocketAddr,
     tls: bool,
 ) -> Result<()> {
     let host = host.to_string();
-    let username = username.to_string();
+    let auth = auth.clone();
     let fut: Box<
         dyn futures::future::Future<Item = (), Error = Error> + Send,
     > = if tls {
@@ -60,7 +70,7 @@ fn run_impl(
                 ))
             })
         });
-        Box::new(WatchSession::new(make_connector, &username))
+        Box::new(WatchSession::new(make_connector, &auth))
     } else {
         let make_connector: Box<
             dyn Fn() -> crate::client::Connector<_> + Send,
@@ -72,7 +82,7 @@ fn run_impl(
                 )
             })
         });
-        Box::new(WatchSession::new(make_connector, &username))
+        Box::new(WatchSession::new(make_connector, &auth))
     };
     tokio::run(fut.map_err(|e| {
         eprintln!("{}", e);
@@ -160,7 +170,7 @@ struct WatchSession<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
 > {
     make_connector: Box<dyn Fn() -> crate::client::Connector<S> + Send>,
-    username: String,
+    auth: crate::protocol::Auth,
 
     key_reader: crate::key_reader::KeyReader,
     list_client: crate::client::Client<S>,
@@ -174,17 +184,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 {
     fn new(
         make_connector: Box<dyn Fn() -> crate::client::Connector<S> + Send>,
-        username: &str,
+        auth: &crate::protocol::Auth,
     ) -> Self {
-        let list_client = crate::client::Client::list(
-            make_connector(),
-            username,
-            4_194_304,
-        );
+        let list_client =
+            crate::client::Client::list(make_connector(), auth, 4_194_304);
 
         Self {
             make_connector,
-            username: username.to_string(),
+            auth: auth.clone(),
 
             key_reader: crate::key_reader::KeyReader::new(),
             list_client,
@@ -286,7 +293,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 if let Some(id) = sessions.id_for(*c) {
                     let client = crate::client::Client::watch(
                         (self.make_connector)(),
-                        &self.username,
+                        &self.auth,
                         4_194_304,
                         id,
                     );

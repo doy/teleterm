@@ -118,6 +118,7 @@ struct StreamSession<
     sent_local: usize,
     sent_remote: usize,
     needs_flush: bool,
+    connected: bool,
     done: bool,
     raw_screen: Option<crossterm::RawScreen>,
 }
@@ -150,6 +151,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             sent_local: 0,
             sent_remote: 0,
             needs_flush: false,
+            connected: false,
             done: false,
             raw_screen: None,
         }
@@ -193,6 +195,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         match self.client.poll() {
             Ok(futures::Async::Ready(Some(e))) => match e {
                 crate::client::Event::Disconnect => {
+                    self.connected = false;
                     Ok(crate::component_future::Poll::DidWork)
                 }
                 crate::client::Event::Start(size) => {
@@ -200,6 +203,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     Ok(crate::component_future::Poll::DidWork)
                 }
                 crate::client::Event::Connect() => {
+                    self.connected = true;
                     self.sent_remote = 0;
                     Ok(crate::component_future::Poll::DidWork)
                 }
@@ -315,7 +319,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn poll_write_server(
         &mut self,
     ) -> Result<crate::component_future::Poll<()>> {
-        if self.sent_remote == self.buffer.len() {
+        if self.sent_remote == self.buffer.len() || !self.connected {
             // ship all data to the server before actually ending
             if self.done {
                 return Ok(crate::component_future::Poll::Event(()));

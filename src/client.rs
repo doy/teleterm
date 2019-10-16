@@ -16,7 +16,7 @@ enum ReadSocket<
 > {
     NotConnected,
     Connected(crate::protocol::FramedReadHalf<S>),
-    ReadingMessage(
+    Reading(
         Box<
             dyn futures::future::Future<
                     Item = (
@@ -42,7 +42,7 @@ enum WriteSocket<
         >,
     ),
     Connected(crate::protocol::FramedWriteHalf<S>),
-    WritingMessage(
+    Writing(
         Box<
             dyn futures::future::Future<
                     Item = crate::protocol::FramedWriteHalf<S>,
@@ -417,7 +417,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     // actually connected, so it'd just be spammy
                 }
             },
-            WriteSocket::Connected(..) | WriteSocket::WritingMessage(..) => {
+            WriteSocket::Connected(..) | WriteSocket::Writing(..) => {
                 if self.has_seen_server_recently() {
                     return Ok(crate::component_future::Poll::NothingToDo);
                 } else {
@@ -445,13 +445,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     ReadSocket::NotConnected,
                 ) {
                     let fut = crate::protocol::Message::read_async(s);
-                    self.rsock = ReadSocket::ReadingMessage(Box::new(fut));
+                    self.rsock = ReadSocket::Reading(Box::new(fut));
                 } else {
                     unreachable!()
                 }
                 Ok(crate::component_future::Poll::DidWork)
             }
-            ReadSocket::ReadingMessage(ref mut fut) => match fut.poll() {
+            ReadSocket::Reading(ref mut fut) => match fut.poll() {
                 Ok(futures::Async::Ready((msg, s))) => {
                     self.last_server_time = std::time::Instant::now();
                     self.rsock = ReadSocket::Connected(s);
@@ -489,14 +489,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     let msg = self.to_send.pop_front().unwrap();
                     msg.log("send");
                     let fut = msg.write_async(s);
-                    self.wsock = WriteSocket::WritingMessage(Box::new(fut));
+                    self.wsock = WriteSocket::Writing(Box::new(fut));
                 } else {
                     unreachable!()
                 }
 
                 Ok(crate::component_future::Poll::DidWork)
             }
-            WriteSocket::WritingMessage(ref mut fut) => match fut.poll() {
+            WriteSocket::Writing(ref mut fut) => match fut.poll() {
                 Ok(futures::Async::Ready(s)) => {
                     self.wsock = WriteSocket::Connected(s);
                     Ok(crate::component_future::Poll::DidWork)

@@ -1,9 +1,16 @@
 use crate::prelude::*;
+use oauth2::TokenResponse as _;
 
 pub mod recurse_center;
 
 pub trait Oauth {
     fn client(&self) -> &oauth2::basic::BasicClient;
+    fn user_id(&self) -> &str;
+    fn name(&self) -> &str;
+    fn token_cache_file(&self) -> std::path::PathBuf {
+        let name = format!("server-oauth-{}-{}", self.name(), self.user_id());
+        crate::dirs::Dirs::new().cache_file(&name)
+    }
 
     fn generate_authorize_url(&self) -> String {
         let (auth_url, _) = self
@@ -13,15 +20,12 @@ pub trait Oauth {
         auth_url.to_string()
     }
 
-    fn get_token(
+    fn get_access_token_from_auth_code(
         &self,
         code: &str,
-    ) -> Box<
-        dyn futures::future::Future<
-                Item = oauth2::basic::BasicTokenResponse,
-                Error = Error,
-            > + Send,
-    > {
+    ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>
+    {
+        let token_cache_file = self.token_cache_file();
         let fut = self
             .client()
             .exchange_code(oauth2::AuthorizationCode::new(code.to_string()))
@@ -29,14 +33,60 @@ pub trait Oauth {
             .map_err(|e| {
                 let msg = stringify_oauth2_http_error(&e);
                 Error::ExchangeCode { msg }
+            })
+            .and_then(move |token| {
+                cache_refresh_token(token_cache_file, &token)
+                    .map(move |_| token.access_token().secret().to_string())
             });
         Box::new(fut)
     }
 
-    fn get_username(
+    fn get_access_token_from_refresh_token(
         &self,
-        code: &str,
+        token: &str,
+    ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>
+    {
+        let token_cache_file = self.token_cache_file();
+        let fut = self
+            .client()
+            .exchange_refresh_token(&oauth2::RefreshToken::new(
+                token.to_string(),
+            ))
+            .request_async(oauth2::reqwest::async_http_client)
+            .map_err(|e| {
+                let msg = stringify_oauth2_http_error(&e);
+                Error::ExchangeCode { msg }
+            })
+            .and_then(move |token| {
+                cache_refresh_token(token_cache_file, &token)
+                    .map(move |_| token.access_token().secret().to_string())
+            });
+        Box::new(fut)
+    }
+
+    fn get_username_from_access_token(
+        self: Box<Self>,
+        token: &str,
     ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>;
+}
+
+fn cache_refresh_token(
+    token_cache_file: std::path::PathBuf,
+    token: &oauth2::basic::BasicTokenResponse,
+) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send> {
+    let token_data = format!(
+        "{}\n{}\n",
+        token.refresh_token().unwrap().secret(),
+        token.access_token().secret(),
+    );
+    let fut = tokio::fs::File::create(token_cache_file)
+        .context(crate::error::CreateFile)
+        .and_then(|file| {
+            tokio::io::write_all(file, token_data)
+                .context(crate::error::WriteFile)
+        })
+        .map(|_| ());
+    Box::new(fut)
 }
 
 pub struct Config {

@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Watch teleterm streams")
@@ -23,7 +23,16 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
     let auth = if matches.is_present("login-recurse-center") {
-        crate::protocol::Auth::RecurseCenter { id: None }
+        let auth = crate::protocol::Auth::RecurseCenter { id: None };
+        let id_file = crate::dirs::Dirs::new()
+            .data_file(&format!("client-oauth-{}", auth.name()));
+        let id = std::fs::File::open(id_file).ok().and_then(|mut file| {
+            let mut id = vec![];
+            file.read_to_end(&mut id).ok().map(|_| {
+                std::string::String::from_utf8_lossy(&id).to_string()
+            })
+        });
+        crate::protocol::Auth::RecurseCenter { id }
     } else {
         let username = matches
             .value_of("login-plain")

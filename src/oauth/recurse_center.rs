@@ -1,14 +1,15 @@
 use crate::prelude::*;
-use oauth2::TokenResponse as _;
 
 pub struct Oauth {
     client: oauth2::basic::BasicClient,
+    user_id: String,
 }
 
 impl Oauth {
-    pub fn new(config: super::Config) -> Self {
+    pub fn new(config: super::Config, user_id: &str) -> Self {
         Self {
             client: config.into_basic_client(),
+            user_id: user_id.to_string(),
         }
     }
 }
@@ -18,21 +19,24 @@ impl super::Oauth for Oauth {
         &self.client
     }
 
-    fn get_username(
-        &self,
-        code: &str,
+    fn user_id(&self) -> &str {
+        &self.user_id
+    }
+
+    fn name(&self) -> &str {
+        "recurse_center"
+    }
+
+    fn get_username_from_access_token(
+        self: Box<Self>,
+        token: &str,
     ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>
     {
-        let fut = self
-            .get_token(code)
-            .and_then(|token| {
-                let access_token = token.access_token();
-                reqwest::r#async::Client::new()
-                    .get("https://www.recurse.com/api/v1/profiles/me")
-                    .bearer_auth(access_token.secret())
-                    .send()
-                    .context(crate::error::GetProfile)
-            })
+        let fut = reqwest::r#async::Client::new()
+            .get("https://www.recurse.com/api/v1/profiles/me")
+            .bearer_auth(token)
+            .send()
+            .context(crate::error::GetProfile)
             .and_then(|mut res| res.json().context(crate::error::ParseJson))
             .map(|user: User| user.name());
         Box::new(fut)

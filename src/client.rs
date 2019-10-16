@@ -280,8 +280,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         msg.log("recv");
 
         match msg {
-            // XXX store the id and use it on future requests
-            crate::protocol::Message::OauthRequest { url, id: _id } => {
+            crate::protocol::Message::OauthRequest { url, id } => {
                 let mut state = None;
                 let parsed_url = url::Url::parse(&url).unwrap();
                 for (k, v) in parsed_url.query_pairs() {
@@ -294,6 +293,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     crate::component_future::Poll::DidWork,
                     Some(self.wait_for_oauth_response(
                         state.map(|s| s.to_string()),
+                        &id,
                     )?),
                 ))
             }
@@ -322,6 +322,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn wait_for_oauth_response(
         &self,
         state: Option<String>,
+        id: &str,
     ) -> Result<
         Box<
             dyn futures::future::Future<
@@ -336,6 +337,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             ).unwrap();
         }
 
+        let auth_name = self.auth.name().to_string();
+        let id = id.to_string();
         let addr = OAUTH_LISTEN_ADDRESS
             .parse()
             .context(crate::error::ParseAddr)?;
@@ -389,6 +392,17 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         crate::protocol::Message::oauth_response(&code),
                         lines.into_inner().into_inner(),
                     ))
+                })
+                .and_then(move |(msg, sock)| {
+                    let id_file = crate::dirs::Dirs::new()
+                        .data_file(&format!("client-oauth-{}", auth_name));
+                    tokio::fs::File::create(id_file)
+                        .context(crate::error::CreateFile)
+                        .and_then(|file| {
+                            tokio::io::write_all(file, id)
+                                .context(crate::error::WriteFile)
+                        })
+                        .map(|_| (msg, sock))
                 })
                 .and_then(|(msg, sock)| {
                     let response = r"HTTP/1.1 200 OK

@@ -13,6 +13,7 @@ mod async_stdin;
 mod client;
 mod cmd;
 mod component_future;
+mod dirs;
 mod error;
 mod key_reader;
 mod oauth;
@@ -25,6 +26,7 @@ mod ttyrec;
 mod util;
 
 fn main() {
+    dirs::Dirs::new().create_all().unwrap();
     env_logger::from_env(
         env_logger::Env::default().default_filter_or("info"),
     )

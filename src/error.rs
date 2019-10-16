@@ -22,6 +22,12 @@ pub enum Error {
     #[snafu(display("failed to create tls connector: {}", source))]
     CreateConnector { source: native_tls::Error },
 
+    #[snafu(display("failed to create directory: {}", source))]
+    CreateDir { source: std::io::Error },
+
+    #[snafu(display("failed to create file: {}", source))]
+    CreateFile { source: tokio::io::Error },
+
     #[snafu(display("eof"))]
     EOF,
 

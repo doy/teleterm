@@ -147,6 +147,25 @@ impl ConnectionState {
         }
     }
 
+    fn login_oauth(
+        &mut self,
+        term_type: &str,
+        size: &crate::term::Size,
+        username: &str,
+    ) {
+        if let Self::Accepted = self {
+            *self = Self::LoggedIn {
+                username: username.to_string(),
+                term_info: TerminalInfo {
+                    term: term_type.to_string(),
+                    size: size.clone(),
+                },
+            };
+        } else {
+            unreachable!()
+        }
+    }
+
     fn login_oauth_start(
         &mut self,
         term_type: &str,
@@ -340,7 +359,16 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         auth: &crate::protocol::Auth,
         term_type: &str,
         size: crate::term::Size,
-    ) -> Result<()> {
+    ) -> Result<
+        Option<
+            Box<
+                dyn futures::future::Future<
+                        Item = (ConnectionState, crate::protocol::Message),
+                        Error = Error,
+                    > + Send,
+            >,
+        >,
+    > {
         if size.rows >= 1000 || size.cols >= 1000 {
             return Err(Error::TermTooBig { size });
         }
@@ -359,7 +387,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 ));
             }
             oauth if oauth.is_oauth() => {
-                let (id, client) = match oauth {
+                let (refresh, client) = match oauth {
                     crate::protocol::Auth::RecurseCenter { id } => {
                         // XXX this needs some kind of real configuration
                         // system
@@ -376,7 +404,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                             url::Url::parse(&redirect_url).unwrap();
 
                         (
-                            id,
+                            id.is_some(),
                             Box::new(
                                 crate::oauth::recurse_center::Oauth::new(
                                     crate::oauth::recurse_center::config(
@@ -384,6 +412,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                                         &client_secret,
                                         redirect_url,
                                     ),
+                                    &id.clone().unwrap_or_else(|| {
+                                        format!("{}", uuid::Uuid::new_v4())
+                                    }),
                                 ),
                             ),
                         )
@@ -391,29 +422,64 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     _ => unreachable!(),
                 };
 
+                conn.oauth_client = Some(client);
+                let client = conn.oauth_client.as_ref().unwrap();
+
                 log::info!(
                     "{}: login(oauth({}), {:?})",
                     conn.id,
                     auth.name(),
-                    id
+                    client.user_id()
                 );
-                conn.oauth_client = Some(client);
 
-                if let Some(_id) = id {
-                    // refresh
-                    unimplemented!()
+                if refresh {
+                    let term_type = term_type.to_string();
+                    let client = conn.oauth_client.take().unwrap();
+                    let mut new_state = conn.state.clone();
+                    let fut =
+                        tokio::fs::File::open(client.token_cache_file())
+                            .context(crate::error::OpenFile)
+                            .and_then(|file| {
+                                tokio::io::lines(std::io::BufReader::new(
+                                    file,
+                                ))
+                                .into_future()
+                                .map_err(|(e, _)| e)
+                                .context(crate::error::ReadFile)
+                            })
+                            .and_then(|(refresh_token, _)| {
+                                // XXX unwrap here isn't super safe
+                                let refresh_token = refresh_token.unwrap();
+                                client
+                                    .get_access_token_from_refresh_token(
+                                        refresh_token.trim(),
+                                    )
+                                    .and_then(|access_token| {
+                                        client.get_username_from_access_token(
+                                            &access_token,
+                                        )
+                                    })
+                            })
+                            .map(move |username| {
+                                new_state.login_oauth(
+                                    &term_type, &size, &username,
+                                );
+                                (
+                                    new_state,
+                                    crate::protocol::Message::logged_in(
+                                        &username,
+                                    ),
+                                )
+                            });
+                    return Ok(Some(Box::new(fut)));
                 } else {
-                    let id = format!("{}", uuid::Uuid::new_v4());
-
                     conn.state.login_oauth_start(term_type, &size);
+                    let authorize_url = client.generate_authorize_url();
+                    let user_id = client.user_id().to_string();
                     conn.send_message(
                         crate::protocol::Message::oauth_request(
-                            &conn
-                                .oauth_client
-                                .as_ref()
-                                .unwrap()
-                                .generate_authorize_url(),
-                            &id,
+                            &authorize_url,
+                            &user_id,
                         ),
                     );
                 }
@@ -421,7 +487,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             _ => unreachable!(),
         }
 
-        Ok(())
+        Ok(None)
     }
 
     fn handle_message_start_streaming(
@@ -532,17 +598,20 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             >,
         >,
     > {
-        let client = conn.oauth_client.as_ref().ok_or_else(|| {
+        let client = conn.oauth_client.take().ok_or_else(|| {
             Error::UnexpectedMessage {
                 message: crate::protocol::Message::oauth_response(code),
             }
         })?;
 
         let mut new_state = conn.state.clone();
-        let fut = client.get_username(code).map(|username| {
-            new_state.login_oauth_finish(&username);
-            (new_state, crate::protocol::Message::logged_in(&username))
-        });
+        let fut = client
+            .get_access_token_from_auth_code(code)
+            .and_then(|token| client.get_username_from_access_token(&token))
+            .map(|username| {
+                new_state.login_oauth_finish(&username);
+                (new_state, crate::protocol::Message::logged_in(&username))
+            });
 
         Ok(Some(Box::new(fut)))
     }
@@ -551,7 +620,16 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         &mut self,
         conn: &mut Connection<S>,
         message: crate::protocol::Message,
-    ) -> Result<()> {
+    ) -> Result<
+        Option<
+            Box<
+                dyn futures::future::Future<
+                        Item = (ConnectionState, crate::protocol::Message),
+                        Error = Error,
+                    > + Send,
+            >,
+        >,
+    > {
         match message {
             crate::protocol::Message::Login {
                 auth,
@@ -691,7 +769,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
         match conn.state {
             ConnectionState::Accepted { .. } => {
-                self.handle_accepted_message(conn, message).map(|_| None)
+                self.handle_accepted_message(conn, message)
             }
             ConnectionState::LoggingIn { .. } => {
                 self.handle_logging_in_message(conn, message)

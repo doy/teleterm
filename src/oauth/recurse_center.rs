@@ -1,11 +1,11 @@
 use crate::prelude::*;
 
-pub struct Oauth {
+pub struct RecurseCenter {
     client: oauth2::basic::BasicClient,
     user_id: String,
 }
 
-impl Oauth {
+impl RecurseCenter {
     pub fn new(
         client_id: &str,
         client_secret: &str,
@@ -31,7 +31,7 @@ impl Oauth {
     }
 }
 
-impl super::Oauth for Oauth {
+impl super::Oauth for RecurseCenter {
     fn client(&self) -> &oauth2::basic::BasicClient {
         &self.client
     }

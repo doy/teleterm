@@ -1,7 +1,8 @@
 use crate::prelude::*;
 use oauth2::TokenResponse as _;
 
-pub mod recurse_center;
+mod recurse_center;
+pub use recurse_center::RecurseCenter;
 
 pub trait Oauth {
     fn client(&self) -> &oauth2::basic::BasicClient;

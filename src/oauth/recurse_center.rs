@@ -6,7 +6,24 @@ pub struct Oauth {
 }
 
 impl Oauth {
-    pub fn new(config: super::Config, user_id: &str) -> Self {
+    pub fn new(
+        client_id: &str,
+        client_secret: &str,
+        redirect_url: url::Url,
+        user_id: &str,
+    ) -> Self {
+        let config = super::Config {
+            client_id: client_id.to_string(),
+            client_secret: client_secret.to_string(),
+            auth_url: url::Url::parse(
+                "https://www.recurse.com/oauth/authorize",
+            )
+            .unwrap(),
+            token_url: url::Url::parse("https://www.recurse.com/oauth/token")
+                .unwrap(),
+            redirect_url,
+        };
+
         Self {
             client: config.into_basic_client(),
             user_id: user_id.to_string(),
@@ -40,22 +57,6 @@ impl super::Oauth for Oauth {
             .and_then(|mut res| res.json().context(crate::error::ParseJson))
             .map(|user: User| user.name());
         Box::new(fut)
-    }
-}
-
-pub fn config(
-    client_id: &str,
-    client_secret: &str,
-    redirect_url: url::Url,
-) -> super::Config {
-    super::Config {
-        client_id: client_id.to_string(),
-        client_secret: client_secret.to_string(),
-        auth_url: url::Url::parse("https://www.recurse.com/oauth/authorize")
-            .unwrap(),
-        token_url: url::Url::parse("https://www.recurse.com/oauth/token")
-            .unwrap(),
-        redirect_url,
     }
 }
 

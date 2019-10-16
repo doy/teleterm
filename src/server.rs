@@ -407,11 +407,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                             id.is_some(),
                             Box::new(
                                 crate::oauth::recurse_center::Oauth::new(
-                                    crate::oauth::recurse_center::config(
-                                        &client_id,
-                                        &client_secret,
-                                        redirect_url,
-                                    ),
+                                    &client_id,
+                                    &client_secret,
+                                    redirect_url,
                                     &id.clone().unwrap_or_else(|| {
                                         format!("{}", uuid::Uuid::new_v4())
                                     }),

@@ -12,6 +12,7 @@ pub struct Session {
     pub size: crate::term::Size,
     pub idle_time: u32,
     pub title: String,
+    pub watchers: u32,
 }
 
 pub struct FramedReader<T: tokio::io::AsyncRead>(
@@ -375,6 +376,7 @@ impl From<&Message> for Packet {
             write_size(&val.size, data);
             write_u32(val.idle_time, data);
             write_str(&val.title, data);
+            write_u32(val.watchers, data);
         }
         fn write_sessions(val: &[Session], data: &mut Vec<u8>) {
             write_u32(u32_from_usize(val.len()), data);
@@ -589,6 +591,7 @@ impl std::convert::TryFrom<Packet> for Message {
             let (size, data) = read_size(data)?;
             let (idle_time, data) = read_u32(data)?;
             let (title, data) = read_str(data)?;
+            let (watchers, data) = read_u32(data)?;
             Ok((
                 Session {
                     id,
@@ -597,6 +600,7 @@ impl std::convert::TryFrom<Packet> for Message {
                     size,
                     idle_time,
                     title,
+                    watchers,
                 },
                 data,
             ))
@@ -822,6 +826,7 @@ mod test {
                 size: crate::term::Size { rows: 24, cols: 80 },
                 idle_time: 123,
                 title: "it's my terminal title".to_string(),
+                watchers: 0,
             }]),
             Message::sessions(&[
                 Session {
@@ -831,6 +836,7 @@ mod test {
                     size: crate::term::Size { rows: 24, cols: 80 },
                     idle_time: 123,
                     title: "it's my terminal title".to_string(),
+                    watchers: 0,
                 },
                 Session {
                     id: "some-other-session-id".to_string(),
@@ -839,6 +845,7 @@ mod test {
                     size: crate::term::Size { rows: 24, cols: 80 },
                     idle_time: 68,
                     title: "some other terminal title".to_string(),
+                    watchers: 0,
                 },
             ]),
             Message::disconnected(),

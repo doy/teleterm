@@ -440,6 +440,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         let idle_width = format_time(max_idle_time).len();
         let idle_width = if idle_width < 4 { 4 } else { idle_width };
 
+        let watch_width = 5;
+
         let max_title_width = (sessions.size().cols as usize)
             - char_width
             - 3
@@ -448,6 +450,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             - size_width
             - 3
             - idle_width
+            - 3
+            - watch_width
             - 3;
 
         crossterm::terminal()
@@ -457,15 +461,17 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         println!("available sessions:\r");
         println!("\r");
         println!(
-            "{:4$} | {:5$} | {:6$} | {:7$} | title\r",
+            "{:5$} | {:6$} | {:7$} | {:8$} | {:9$} | title\r",
             "",
             "name",
             "size",
             "idle",
+            "watch",
             char_width,
             name_width,
             size_width,
-            idle_width
+            idle_width,
+            watch_width,
         );
         println!("{}\r", "-".repeat(sessions.size().cols as usize));
 
@@ -497,19 +503,22 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             };
             let display_idle = format_time(session.idle_time);
             let display_title = truncate(&session.title, max_title_width);
+            let display_watch = session.watchers;
 
             println!(
-                "{:5$} | {:6$} | {:7$} | {:8$} | {}\r",
+                "{:6$} | {:7$} | {:8$} | {:9$} | {:10$} | {}\r",
                 display_char,
                 display_name,
                 display_size_full,
                 display_idle,
+                display_watch,
                 display_title,
                 char_width,
                 name_width,
                 size_width
                     + (display_size_full.len() - display_size_plain.len()),
-                idle_width
+                idle_width,
+                watch_width,
             );
 
             prev_name = Some(&session.username);

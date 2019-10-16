@@ -264,7 +264,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         }
     }
 
-    fn session(&self) -> Option<crate::protocol::Session> {
+    fn session(&self, watchers: u32) -> Option<crate::protocol::Session> {
         let (username, term_info) = match &self.state {
             ConnectionState::Accepted => return None,
             ConnectionState::LoggingIn { .. } => return None,
@@ -300,6 +300,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 .duration_since(self.last_activity)
                 .as_secs() as u32,
             title: title.to_string(),
+            watchers,
         })
     }
 
@@ -561,8 +562,28 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         &mut self,
         conn: &mut Connection<S>,
     ) -> Result<()> {
-        let sessions: Vec<_> =
-            self.streamers().flat_map(Connection::session).collect();
+        let mut watcher_counts = std::collections::HashMap::new();
+        for watcher in self.watchers() {
+            let watch_id =
+                if let ConnectionState::Watching { watch_id, .. } =
+                    &watcher.state
+                {
+                    watch_id
+                } else {
+                    unreachable!()
+                };
+            watcher_counts.insert(
+                watch_id,
+                *watcher_counts.get(&watch_id).unwrap_or(&0) + 1,
+            );
+        }
+        let sessions: Vec<_> = self
+            .streamers()
+            .flat_map(|streamer| {
+                streamer
+                    .session(*watcher_counts.get(&streamer.id).unwrap_or(&0))
+            })
+            .collect();
         conn.send_message(crate::protocol::Message::sessions(&sessions));
 
         Ok(())
@@ -885,6 +906,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn streamers(&self) -> impl Iterator<Item = &Connection<S>> {
         self.connections.values().filter(|conn| match conn.state {
             ConnectionState::Streaming { .. } => true,
+            _ => false,
+        })
+    }
+
+    fn watchers(&self) -> impl Iterator<Item = &Connection<S>> {
+        self.connections.values().filter(|conn| match conn.state {
+            ConnectionState::Watching { .. } => true,
             _ => false,
         })
     }

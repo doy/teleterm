@@ -1,11 +1,8 @@
 use crate::prelude::*;
 
-const RESET: &[&[u8]] = &[
-    b"\x1b[3J\x1b[H\x1b[2J",
-    b"\x1b[H\x1b[J",
-    b"\x1b[H\x1b[2J",
-    b"\x1bc",
-];
+const RESET: &[&[u8]] = &[b"\x1bc"];
+const CLEAR: &[&[u8]] =
+    &[b"\x1b[3J\x1b[H\x1b[2J", b"\x1b[H\x1b[J", b"\x1b[H\x1b[2J"];
 const WINDOW_TITLE: &[(&[u8], &[u8])] =
     &[(b"\x1b]0;", b"\x07"), (b"\x1b]2;", b"\x07")];
 
@@ -77,6 +74,11 @@ impl Buffer {
             return written;
         }
 
+        if self.find_clear(buf).is_some() {
+            self.truncate_at(written);
+            return written;
+        }
+
         if self.contents.len() > self.max_size {
             let to_drop = self.contents.len() - self.max_size / 2;
             let to_drop = to_drop.min(written);
@@ -103,11 +105,17 @@ impl Buffer {
             self.title = title;
         }
 
+        // resets are actually safe to truncate at, because they reset ~all
+        // terminal state
+        if let Some(i) = self.find_reset(buf) {
+            self.truncate_at(self.contents.len() - buf.len() + i);
+        }
+
         while self.contents.len() > self.max_size {
             let hard_truncate = self.contents.len() - self.max_size / 2;
-            // off by one so that we skip over a reset escape sequence at the
+            // off by one so that we skip over a clear escape sequence at the
             // start of the buffer
-            if let Some(i) = self.find_reset(&self.contents[1..]) {
+            if let Some(i) = self.find_clear(&self.contents[1..]) {
                 self.truncate_at((i + 1).min(hard_truncate));
             } else {
                 self.truncate_at(hard_truncate);
@@ -150,9 +158,20 @@ impl Buffer {
         found.map(|(_, title)| title.to_string())
     }
 
+    fn find_clear(&self, buf: &[u8]) -> Option<usize> {
+        for clear in CLEAR {
+            if let Some(i) = twoway::find_bytes(buf, clear) {
+                return Some(i);
+            }
+        }
+        None
+    }
+
     fn find_reset(&self, buf: &[u8]) -> Option<usize> {
         for reset in RESET {
-            if let Some(i) = twoway::find_bytes(buf, reset) {
+            // rfind because we only ever care about the most recent reset,
+            // unlike clears where we might want to be more conservative
+            if let Some(i) = twoway::rfind_bytes(buf, reset) {
                 return Some(i);
             }
         }
@@ -265,11 +284,8 @@ mod test {
         assert_eq!(buffer.title(), "this is another title");
 
         buffer.append_server(b"\x1bcfoo");
-        assert_eq!(
-            buffer.contents(),
-            &b"is is another title\x07\x1bcfoo"[..]
-        );
-        assert_eq!(buffer.len(), 25);
+        assert_eq!(buffer.contents(), &b"\x1bcfoo"[..]);
+        assert_eq!(buffer.len(), 5);
         assert_eq!(buffer.title(), "this is another title");
 
         buffer.append_server(
@@ -277,9 +293,9 @@ mod test {
         );
         assert_eq!(
             buffer.contents(),
-            &b"\x1bcfoo\x1bcabc\x1b]0;title1\x07def\x1b]2;title2\x07ghi"[..]
+            &b"\x1bcabc\x1b]0;title1\x07def\x1b]2;title2\x07ghi"[..]
         );
-        assert_eq!(buffer.len(), 38);
+        assert_eq!(buffer.len(), 33);
         assert_eq!(buffer.title(), "title2");
 
         buffer.append_server(
@@ -399,32 +415,37 @@ mod test {
         assert_eq!(buffer.len(), 95);
         assert_eq!(buffer.title(), "");
 
-        buffer.append_server("\x1bcfooobaar".repeat(8).as_ref());
-        assert_eq!(buffer.contents(), &b"\x1bcfooobaar\x1bcfooobaar\x1bcfooobaar\x1bcfooobaar\x1bcfooobaar\x1bcfooobaar\x1bcfooobaar\x1bcfooobaar"[..]);
+        buffer.append_server("\x1b[H\x1b[Jfooo".repeat(8).as_ref());
+        assert_eq!(buffer.contents(), &b"\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfooo"[..]);
         assert_eq!(buffer.len(), 80);
         assert_eq!(buffer.title(), "");
 
         buffer.append_server("abcdefghij".repeat(5).as_ref());
-        assert_eq!(buffer.contents(), &b"\x1bcfooobaar\x1bcfooobaar\x1bcfooobaar\x1bcfooobaar\x1bcfooobaarabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"[..]);
+        assert_eq!(buffer.contents(), &b"\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfoooabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"[..]);
         assert_eq!(buffer.len(), 100);
         assert_eq!(buffer.title(), "");
 
         buffer.append_server(b"z");
-        assert_eq!(buffer.contents(), &b"\x1bcfooobaar\x1bcfooobaar\x1bcfooobaar\x1bcfooobaarabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijz"[..]);
+        assert_eq!(buffer.contents(), &b"\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfoooabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijz"[..]);
         assert_eq!(buffer.len(), 91);
         assert_eq!(buffer.title(), "");
 
-        buffer.append_server(b"bcdefghijabcdefghij\x1bcfooobaar");
-        assert_eq!(buffer.contents(), &b"\x1bcfooobaar\x1bcfooobaarabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijzbcdefghijabcdefghij\x1bcfooobaar"[..]);
+        buffer.append_server(b"bcdefghijabcdefghij\x1b[H\x1b[Jfooo");
+        assert_eq!(buffer.contents(), &b"\x1b[H\x1b[Jfooo\x1b[H\x1b[Jfoooabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijzbcdefghijabcdefghij\x1b[H\x1b[Jfooo"[..]);
         assert_eq!(buffer.len(), 100);
         assert_eq!(buffer.title(), "");
 
         buffer.append_server(b"abcdefghijz");
         assert_eq!(
             buffer.contents(),
-            &b"bcdefghijzbcdefghijabcdefghij\x1bcfooobaarabcdefghijz"[..]
+            &b"bcdefghijzbcdefghijabcdefghij\x1b[H\x1b[Jfoooabcdefghijz"[..]
         );
         assert_eq!(buffer.len(), 50);
+        assert_eq!(buffer.title(), "");
+
+        buffer.append_server("\x1bcfooobaar".repeat(8).as_ref());
+        assert_eq!(buffer.contents(), b"\x1bcfooobaar");
+        assert_eq!(buffer.len(), 10);
         assert_eq!(buffer.title(), "");
     }
 }

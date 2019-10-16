@@ -158,6 +158,11 @@ pub enum Error {
         source: tokio::sync::mpsc::error::UnboundedRecvError,
     },
 
+    #[snafu(display("failed to read from channel: {}", source))]
+    ReadChannelBounded {
+        source: tokio::sync::mpsc::error::RecvError,
+    },
+
     #[snafu(display("failed to read from file: {}", source))]
     ReadFile { source: tokio::io::Error },
 

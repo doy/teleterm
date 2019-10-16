@@ -39,8 +39,8 @@ pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
             .context(crate::error::CouldntFindUsername)?;
         crate::protocol::Auth::Plain { username }
     };
-    let (host, address) =
-        crate::util::resolve_address(matches.value_of("address"))?;
+    let address = matches.value_of("address").unwrap_or("127.0.0.1:4144");
+    let (host, address) = crate::util::resolve_address(address)?;
     let tls = matches.is_present("tls");
     let buffer_size =
         matches

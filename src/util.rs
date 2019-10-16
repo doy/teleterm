@@ -16,9 +16,8 @@ pub fn program_name() -> Result<String> {
 
 // XXX this does a blocking dns lookup - should try to find an async version
 pub fn resolve_address(
-    address: Option<&str>,
+    address: &str,
 ) -> Result<(String, std::net::SocketAddr)> {
-    let address = address.unwrap_or("0.0.0.0:4144");
     let mut address_parts = address.split(':');
     let host = address_parts.next().context(crate::error::ParseAddress)?;
     let port = address_parts.next().context(crate::error::ParseAddress)?;

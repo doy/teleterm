@@ -50,7 +50,7 @@ impl<T: tokio::io::AsyncWrite> FramedWriter<T> {
     }
 }
 
-pub const PROTO_VERSION: u32 = 1;
+pub const PROTO_VERSION: u8 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Auth {
@@ -74,15 +74,15 @@ impl Auth {
     }
 }
 
-const AUTH_PLAIN: u32 = 0;
-const AUTH_RECURSE_CENTER: u32 = 1;
+const AUTH_PLAIN: u8 = 0;
+const AUTH_RECURSE_CENTER: u8 = 1;
 
 // XXX https://github.com/rust-lang/rust/issues/64362
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
     Login {
-        proto_version: u32,
+        proto_version: u8,
         auth: Auth,
         term_type: String,
         size: crate::term::Size,
@@ -118,19 +118,19 @@ pub enum Message {
     },
 }
 
-const MSG_LOGIN: u32 = 0;
-const MSG_START_STREAMING: u32 = 1;
-const MSG_START_WATCHING: u32 = 2;
-const MSG_HEARTBEAT: u32 = 3;
-const MSG_TERMINAL_OUTPUT: u32 = 4;
-const MSG_LIST_SESSIONS: u32 = 5;
-const MSG_SESSIONS: u32 = 6;
-const MSG_DISCONNECTED: u32 = 7;
-const MSG_ERROR: u32 = 8;
-const MSG_RESIZE: u32 = 9;
-const MSG_LOGGED_IN: u32 = 10;
-const MSG_OAUTH_REQUEST: u32 = 11;
-const MSG_OAUTH_RESPONSE: u32 = 12;
+const MSG_LOGIN: u8 = 0;
+const MSG_START_STREAMING: u8 = 1;
+const MSG_START_WATCHING: u8 = 2;
+const MSG_HEARTBEAT: u8 = 3;
+const MSG_TERMINAL_OUTPUT: u8 = 4;
+const MSG_LIST_SESSIONS: u8 = 5;
+const MSG_SESSIONS: u8 = 6;
+const MSG_DISCONNECTED: u8 = 7;
+const MSG_ERROR: u8 = 8;
+const MSG_RESIZE: u8 = 9;
+const MSG_LOGGED_IN: u8 = 10;
+const MSG_OAUTH_REQUEST: u8 = 11;
+const MSG_OAUTH_RESPONSE: u8 = 12;
 
 impl Message {
     pub fn login(
@@ -261,7 +261,7 @@ impl Message {
 }
 
 struct Packet {
-    ty: u32,
+    ty: u8,
     data: Vec<u8>,
 }
 
@@ -271,17 +271,17 @@ impl Packet {
         r.read_exact(&mut len_buf)
             .context(crate::error::ReadPacket)?;
         let len = u32::from_be_bytes(len_buf.try_into().unwrap());
-        if (len as usize) < std::mem::size_of::<u32>() {
+        if (len as usize) < std::mem::size_of::<u8>() {
             return Err(Error::LenTooSmall {
                 len,
-                expected: std::mem::size_of::<u32>(),
+                expected: std::mem::size_of::<u8>(),
             });
         }
 
         let mut data = vec![0_u8; len as usize];
         r.read_exact(&mut data).context(crate::error::ReadPacket)?;
-        let (ty_buf, rest) = data.split_at(std::mem::size_of::<u32>());
-        let ty = u32::from_be_bytes(ty_buf.try_into().unwrap());
+        let (ty_buf, rest) = data.split_at(std::mem::size_of::<u8>());
+        let ty = u8::from_be_bytes(ty_buf.try_into().unwrap());
 
         Ok(Self {
             ty,
@@ -300,15 +300,15 @@ impl Packet {
                 None => Err(Error::EOF),
             })
             .and_then(|(buf, r)| {
-                if buf.len() < std::mem::size_of::<u32>() {
+                if buf.len() < std::mem::size_of::<u8>() {
                     return Err(Error::LenTooSmall {
                         len: buf.len().try_into().unwrap(),
-                        expected: std::mem::size_of::<u32>(),
+                        expected: std::mem::size_of::<u8>(),
                     });
                 }
                 let (ty_buf, data_buf) =
-                    buf.split_at(std::mem::size_of::<u32>());
-                let ty = u32::from_be_bytes(ty_buf.try_into().unwrap());
+                    buf.split_at(std::mem::size_of::<u8>());
+                let ty = u8::from_be_bytes(ty_buf.try_into().unwrap());
                 let data = data_buf.to_vec();
                 Ok((Self { ty, data }, FramedReader(r)))
             })
@@ -354,6 +354,9 @@ impl From<&Message> for Packet {
         fn write_u16(val: u16, data: &mut Vec<u8>) {
             data.extend_from_slice(&val.to_be_bytes());
         }
+        fn write_u8(val: u8, data: &mut Vec<u8>) {
+            data.extend_from_slice(&val.to_be_bytes());
+        }
         fn write_bytes(val: &[u8], data: &mut Vec<u8>) {
             write_u32(u32_from_usize(val.len()), data);
             data.extend_from_slice(val);
@@ -382,12 +385,12 @@ impl From<&Message> for Packet {
         fn write_auth(val: &Auth, data: &mut Vec<u8>) {
             match val {
                 Auth::Plain { username } => {
-                    write_u32(AUTH_PLAIN, data);
+                    write_u8(AUTH_PLAIN, data);
                     write_str(username, data);
                 }
                 Auth::RecurseCenter { id } => {
                     let id = id.as_ref().map_or("", |s| s.as_str());
-                    write_u32(AUTH_RECURSE_CENTER, data);
+                    write_u8(AUTH_RECURSE_CENTER, data);
                     write_str(id, data);
                 }
             }
@@ -402,7 +405,7 @@ impl From<&Message> for Packet {
             } => {
                 let mut data = vec![];
 
-                write_u32(*proto_version, &mut data);
+                write_u8(*proto_version, &mut data);
                 write_auth(auth, &mut data);
                 write_str(term_type, &mut data);
                 write_size(size, &mut data);
@@ -543,6 +546,19 @@ impl std::convert::TryFrom<Packet> for Message {
             );
             Ok((val, rest))
         }
+        fn read_u8(data: &[u8]) -> Result<(u8, &[u8])> {
+            if std::mem::size_of::<u8>() > data.len() {
+                return Err(Error::LenTooBig {
+                    len: std::mem::size_of::<u8>().try_into().unwrap(),
+                    expected: data.len(),
+                });
+            }
+            let (buf, rest) = data.split_at(std::mem::size_of::<u8>());
+            let val = u8::from_be_bytes(
+                buf.try_into().context(crate::error::ParseInt)?,
+            );
+            Ok((val, rest))
+        }
         fn read_bytes(data: &[u8]) -> Result<(Vec<u8>, &[u8])> {
             let (len, data) = read_u32(data)?;
             if len as usize > data.len() {
@@ -596,7 +612,7 @@ impl std::convert::TryFrom<Packet> for Message {
             Ok((val, data))
         }
         fn read_auth(data: &[u8]) -> Result<(Auth, &[u8])> {
-            let (ty, data) = read_u32(data)?;
+            let (ty, data) = read_u8(data)?;
             let (auth, data) = match ty {
                 AUTH_PLAIN => {
                     let (username, data) = read_str(data)?;
@@ -617,7 +633,7 @@ impl std::convert::TryFrom<Packet> for Message {
         let data: &[u8] = packet.data.as_ref();
         let (msg, rest) = match packet.ty {
             MSG_LOGIN => {
-                let (proto_version, data) = read_u32(data)?;
+                let (proto_version, data) = read_u8(data)?;
                 let (auth, data) = read_auth(data)?;
                 let (term_type, data) = read_str(data)?;
                 let (size, data) = read_size(data)?;
@@ -837,12 +853,12 @@ mod test {
             b"".to_vec(),
             b"\x04".to_vec(),
             b"\x00\x00\x00\x00".to_vec(),
-            b"\x00\x00\x00\x04\x00\x00\x00\x00".to_vec(),
-            b"\x00\x00\x00\x04\x00\x00\x00\xff".to_vec(),
-            b"\x00\x00\x00\x03\x00\x00\x00\x01".to_vec(),
-            b"\x00\x00\x00\x05\x00\x00\x00\x01".to_vec(),
-            b"\xee\xee\xee\xee\x00\x00\x00\x01".to_vec(),
-            b"\x00\x00\x00\x09\x00\x00\x00\x08\x00\x00\x00\x01\xff".to_vec(),
+            b"\x00\x00\x00\x01\x00".to_vec(),
+            b"\x00\x00\x00\x01\xff".to_vec(),
+            b"\x00\x00\x00\x00\x01".to_vec(),
+            b"\x00\x00\x00\x02\x01".to_vec(),
+            b"\xee\xee\xee\xee\x01".to_vec(),
+            b"\x00\x00\x00\x06\x08\x00\x00\x00\x01\xff".to_vec(),
         ]
     }
 }

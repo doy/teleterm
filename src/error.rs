@@ -65,10 +65,10 @@ pub enum Error {
     HasResolvedAddr,
 
     #[snafu(display("invalid auth type: {}", ty))]
-    InvalidAuthType { ty: u32 },
+    InvalidAuthType { ty: u8 },
 
     #[snafu(display("invalid message type: {}", ty))]
-    InvalidMessageType { ty: u32 },
+    InvalidMessageType { ty: u8 },
 
     #[snafu(display("invalid watch id: {}", id))]
     InvalidWatchId { id: String },

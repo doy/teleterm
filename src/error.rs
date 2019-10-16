@@ -117,6 +117,25 @@ pub enum Error {
         source: std::num::ParseIntError,
     },
 
+    #[snafu(display("failed to parse incoming http request"))]
+    ParseHttpRequest,
+
+    #[snafu(display(
+        "failed to validate csrf token on incoming http request"
+    ))]
+    ParseHttpRequestCsrf,
+
+    #[snafu(display(
+        "incoming http request had no code in the query parameters"
+    ))]
+    ParseHttpRequestMissingCode,
+
+    #[snafu(display(
+        "failed to parse path from incoming http request: {}",
+        source
+    ))]
+    ParseHttpRequestPath { source: url::ParseError },
+
     #[snafu(display("failed to parse identity file: {}", source))]
     ParseIdentity { source: native_tls::Error },
 

@@ -356,13 +356,17 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 })
                 .and_then(move |(buf, lines)| {
                     let buf = buf.unwrap();
-                    let path = &RE.captures(&buf).unwrap()[1];
+                    let path = &RE
+                        .captures(&buf)
+                        .context(crate::error::ParseHttpRequest)?[1];
                     let base = url::Url::parse(&format!(
                         "http://{}",
                         OAUTH_LISTEN_ADDRESS
                     ))
                     .unwrap();
-                    let url = base.join(path).unwrap();
+                    let url = base
+                        .join(path)
+                        .context(crate::error::ParseHttpRequestPath)?;
                     let mut req_code = None;
                     let mut req_state = None;
                     for (k, v) in url.query_pairs() {
@@ -373,23 +377,18 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                             req_state = Some(v.to_string());
                         }
                     }
-                    let res = if let Some(auth_state) = state {
-                        if req_state.is_none()
-                            || req_state.unwrap() != auth_state
-                        {
-                            unimplemented!()
-                        } else {
-                            Ok(req_code.unwrap())
-                        }
+                    if state != req_state {
+                        return Err(Error::ParseHttpRequestCsrf);
+                    }
+                    let code = if let Some(code) = req_code {
+                        code
                     } else {
-                        Ok(req_code.unwrap())
+                        return Err(Error::ParseHttpRequestMissingCode);
                     };
-                    res.map(|code| {
-                        (
-                            crate::protocol::Message::oauth_response(&code),
-                            lines.into_inner().into_inner(),
-                        )
-                    })
+                    Ok((
+                        crate::protocol::Message::oauth_response(&code),
+                        lines.into_inner().into_inner(),
+                    ))
                 })
                 .and_then(|(msg, sock)| {
                     let response = r"HTTP/1.1 200 OK

@@ -34,7 +34,7 @@ pub trait Oauth {
                 let msg = stringify_oauth2_http_error(&e);
                 Error::ExchangeCode { msg }
             })
-            .and_then(move |token| {
+            .and_then(|token| {
                 cache_refresh_token(token_cache_file, &token)
                     .map(move |_| token.access_token().secret().to_string())
             });
@@ -57,7 +57,7 @@ pub trait Oauth {
                 let msg = stringify_oauth2_http_error(&e);
                 Error::ExchangeCode { msg }
             })
-            .and_then(move |token| {
+            .and_then(|token| {
                 cache_refresh_token(token_cache_file, &token)
                     .map(move |_| token.access_token().secret().to_string())
             });

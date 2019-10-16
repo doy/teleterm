@@ -9,6 +9,8 @@ const RECONNECT_BACKOFF_FACTOR: f32 = 2.0;
 const RECONNECT_BACKOFF_MAX: std::time::Duration =
     std::time::Duration::from_secs(60);
 
+const OAUTH_LISTEN_ADDRESS: &str = "127.0.0.1:44141";
+
 enum ReadSocket<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
 > {
@@ -302,8 +304,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             ).unwrap();
         }
 
-        let addr =
-            "127.0.0.1:44141".parse().context(crate::error::ParseAddr)?;
+        let addr = OAUTH_LISTEN_ADDRESS
+            .parse()
+            .context(crate::error::ParseAddr)?;
         let listener = tokio::net::TcpListener::bind(&addr)
             .context(crate::error::Bind)?;
         let (wcode, rcode) = tokio::sync::mpsc::channel(1);
@@ -323,7 +326,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             .and_then(move |(buf, lines)| {
                 let buf = buf.unwrap();
                 let path = &RE.captures(&buf).unwrap()[1];
-                let base = url::Url::parse("http://localhost:44141").unwrap();
+                let base = url::Url::parse(&format!(
+                    "http://{}",
+                    OAUTH_LISTEN_ADDRESS
+                ))
+                .unwrap();
                 let url = base.join(path).unwrap();
                 let mut req_code = None;
                 let mut req_state = None;

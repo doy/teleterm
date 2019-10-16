@@ -183,7 +183,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         } else {
             self.sent_local
         };
-        let truncated = self.buffer.append(buf, written);
+        let truncated = self.buffer.append_client(buf, written);
         self.sent_local -= truncated;
         if self.connected {
             self.sent_remote -= truncated;

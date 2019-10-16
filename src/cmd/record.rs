@@ -101,7 +101,7 @@ impl RecordSession {
     }
 
     fn record_bytes(&mut self, buf: &[u8]) {
-        self.sent_local -= self.buffer.append(buf, self.sent_local);
+        self.sent_local -= self.buffer.append_client(buf, self.sent_local);
     }
 }
 

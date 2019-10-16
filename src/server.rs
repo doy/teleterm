@@ -337,7 +337,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn handle_message_login(
         &mut self,
         conn: &mut Connection<S>,
-        auth: crate::protocol::Auth,
+        auth: &crate::protocol::Auth,
         term_type: &str,
         size: crate::term::Size,
     ) -> Result<()> {
@@ -345,48 +345,65 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             return Err(Error::TermTooBig { size });
         }
 
-        match auth {
+        match &auth {
             crate::protocol::Auth::Plain { username } => {
-                log::info!("{}: login(plain, {})", conn.id, username);
-                conn.state.login_plain(&username, term_type, &size);
+                log::info!(
+                    "{}: login({}, {})",
+                    auth.name(),
+                    conn.id,
+                    username
+                );
+                conn.state.login_plain(username, term_type, &size);
                 conn.send_message(crate::protocol::Message::logged_in(
-                    &username,
+                    username,
                 ));
             }
-            crate::protocol::Auth::RecurseCenter { id } => {
-                // XXX this needs some kind of real configuration system
-                let client_id =
-                    std::env::var("TT_RECURSE_CENTER_CLIENT_ID").unwrap();
-                let client_secret =
-                    std::env::var("TT_RECURSE_CENTER_CLIENT_SECRET").unwrap();
-                let redirect_url =
-                    std::env::var("TT_RECURSE_CENTER_REDIRECT_URL").unwrap();
-                let redirect_url = url::Url::parse(&redirect_url).unwrap();
+            oauth if oauth.is_oauth() => {
+                let (id, client) = match oauth {
+                    crate::protocol::Auth::RecurseCenter { id } => {
+                        // XXX this needs some kind of real configuration
+                        // system
+                        let client_id =
+                            std::env::var("TT_RECURSE_CENTER_CLIENT_ID")
+                                .unwrap();
+                        let client_secret =
+                            std::env::var("TT_RECURSE_CENTER_CLIENT_SECRET")
+                                .unwrap();
+                        let redirect_url =
+                            std::env::var("TT_RECURSE_CENTER_REDIRECT_URL")
+                                .unwrap();
+                        let redirect_url =
+                            url::Url::parse(&redirect_url).unwrap();
 
-                conn.oauth_client =
-                    Some(Box::new(crate::oauth::recurse_center::Oauth::new(
-                        crate::oauth::recurse_center::config(
-                            &client_id,
-                            &client_secret,
-                            redirect_url,
-                        ),
-                    )));
+                        (
+                            id,
+                            Box::new(
+                                crate::oauth::recurse_center::Oauth::new(
+                                    crate::oauth::recurse_center::config(
+                                        &client_id,
+                                        &client_secret,
+                                        redirect_url,
+                                    ),
+                                ),
+                            ),
+                        )
+                    }
+                    _ => unreachable!(),
+                };
 
-                if let Some(id) = id {
-                    log::info!(
-                        "{}: login(recurse_center, {:?})",
-                        conn.id,
-                        id
-                    );
+                log::info!(
+                    "{}: login(oauth({}), {:?})",
+                    conn.id,
+                    auth.name(),
+                    id
+                );
+                conn.oauth_client = Some(client);
+
+                if let Some(_id) = id {
                     // refresh
                     unimplemented!()
                 } else {
                     let id = format!("{}", uuid::Uuid::new_v4());
-                    log::info!(
-                        "{}: login(recurse_center, {:?})",
-                        conn.id,
-                        id
-                    );
 
                     conn.state.login_oauth_start(term_type, &size);
                     conn.send_message(
@@ -401,6 +418,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     );
                 }
             }
+            _ => unreachable!(),
         }
 
         Ok(())
@@ -540,7 +558,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 term_type,
                 size,
                 ..
-            } => self.handle_message_login(conn, auth, &term_type, size),
+            } => self.handle_message_login(conn, &auth, &term_type, size),
             m => Err(Error::UnauthenticatedMessage { message: m }),
         }
     }

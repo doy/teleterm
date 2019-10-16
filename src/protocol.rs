@@ -58,6 +58,22 @@ pub enum Auth {
     RecurseCenter { id: Option<String> },
 }
 
+impl Auth {
+    pub fn is_oauth(&self) -> bool {
+        match self {
+            Self::Plain { .. } => false,
+            Self::RecurseCenter { .. } => true,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Plain { .. } => "plain",
+            Self::RecurseCenter { .. } => "recurse_center",
+        }
+    }
+}
+
 const AUTH_PLAIN: u32 = 0;
 const AUTH_RECURSE_CENTER: u32 = 1;
 

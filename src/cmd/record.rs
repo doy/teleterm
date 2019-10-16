@@ -101,12 +101,7 @@ impl RecordSession {
     }
 
     fn record_bytes(&mut self, buf: &[u8]) {
-        let truncated = self.buffer.append(buf);
-        if truncated > self.sent_local {
-            self.sent_local = 0;
-        } else {
-            self.sent_local -= truncated;
-        }
+        self.sent_local -= self.buffer.append(buf, self.sent_local);
     }
 }
 

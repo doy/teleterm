@@ -542,7 +542,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> Result<()> {
         let saved_data = conn.state.saved_data_mut().unwrap();
 
-        saved_data.append(data);
+        saved_data.append(data, saved_data.len());
         for watch_conn in self.watchers_mut() {
             let watch_id = watch_conn.state.watch_id().unwrap();
             if conn.id == watch_id {

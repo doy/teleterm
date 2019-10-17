@@ -70,36 +70,19 @@ impl<R: tokio::io::AsyncRead + 'static> ResizingProcess<R> {
     fn poll_resize(
         &mut self,
     ) -> crate::component_future::Poll<Option<Event<R>>, Error> {
-        match self.resizer.poll()? {
-            futures::Async::Ready(Some(size)) => {
-                self.process.resize(size.clone());
-                Ok(crate::component_future::Async::Ready(Some(
-                    Event::Resize(size),
-                )))
-            }
-            futures::Async::Ready(None) => unreachable!(),
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
-        }
+        let size = try_ready!(self.resizer.poll()).unwrap();
+        self.process.resize(size.clone());
+        Ok(crate::component_future::Async::Ready(Some(Event::Resize(
+            size,
+        ))))
     }
 
     fn poll_process(
         &mut self,
     ) -> crate::component_future::Poll<Option<Event<R>>, Error> {
-        match self.process.poll()? {
-            futures::Async::Ready(Some(e)) => {
-                Ok(crate::component_future::Async::Ready(Some(
-                    Event::Process(e),
-                )))
-            }
-            futures::Async::Ready(None) => {
-                Ok(crate::component_future::Async::Ready(None))
-            }
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
-        }
+        Ok(crate::component_future::Async::Ready(
+            try_ready!(self.process.poll()).map(Event::Process),
+        ))
     }
 }
 

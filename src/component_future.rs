@@ -24,6 +24,18 @@ pub enum Async<Item> {
     NothingToDo,
 }
 
+macro_rules! try_ready {
+    ($e:expr) => {
+        match $e {
+            Ok(futures::Async::Ready(t)) => t,
+            Ok(futures::Async::NotReady) => {
+                return Ok($crate::component_future::Async::NotReady)
+            }
+            Err(e) => return Err(From::from(e)),
+        }
+    };
+}
+
 pub fn poll_future<T, Item, Error>(
     future: &mut T,
     poll_fns: &'static [&'static dyn for<'a> Fn(

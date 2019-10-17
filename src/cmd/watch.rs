@@ -597,16 +597,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ];
 
     fn poll_resizer(&mut self) -> crate::component_future::Poll<(), Error> {
-        match self.resizer.poll()? {
-            futures::Async::Ready(Some(size)) => {
-                self.resize(size)?;
-                Ok(crate::component_future::Async::DidWork)
-            }
-            futures::Async::Ready(None) => unreachable!(),
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
-        }
+        let size = try_ready!(self.resizer.poll()).unwrap();
+        self.resize(size)?;
+        Ok(crate::component_future::Async::DidWork)
     }
 
     fn poll_input(&mut self) -> crate::component_future::Poll<(), Error> {
@@ -622,55 +615,36 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             }
         }
 
-        match self.key_reader.poll()? {
-            futures::Async::Ready(Some(e)) => {
-                let quit = match &mut self.state {
-                    State::Temporary => unreachable!(),
-                    State::LoggingIn { .. } => self.loading_keypress(&e)?,
-                    State::Choosing { .. } => self.list_keypress(&e)?,
-                    State::Watching { .. } => self.watch_keypress(&e)?,
-                };
-                if quit {
-                    Ok(crate::component_future::Async::Ready(()))
-                } else {
-                    Ok(crate::component_future::Async::DidWork)
-                }
-            }
-            futures::Async::Ready(None) => unreachable!(),
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
+        let e = try_ready!(self.key_reader.poll()).unwrap();
+        let quit = match &mut self.state {
+            State::Temporary => unreachable!(),
+            State::LoggingIn { .. } => self.loading_keypress(&e)?,
+            State::Choosing { .. } => self.list_keypress(&e)?,
+            State::Watching { .. } => self.watch_keypress(&e)?,
+        };
+        if quit {
+            Ok(crate::component_future::Async::Ready(()))
+        } else {
+            Ok(crate::component_future::Async::DidWork)
         }
     }
 
     fn poll_list_client(
         &mut self,
     ) -> crate::component_future::Poll<(), Error> {
-        match self.list_client.poll()? {
-            futures::Async::Ready(Some(e)) => {
-                match e {
-                    crate::client::Event::Disconnect => {
-                        self.reconnect(true)?;
-                    }
-                    crate::client::Event::Connect => {
-                        self.list_client.send_message(
-                            crate::protocol::Message::list_sessions(),
-                        );
-                    }
-                    crate::client::Event::ServerMessage(msg) => {
-                        self.list_server_message(msg)?;
-                    }
-                }
-                Ok(crate::component_future::Async::DidWork)
+        match try_ready!(self.list_client.poll()).unwrap() {
+            crate::client::Event::Disconnect => {
+                self.reconnect(true)?;
             }
-            futures::Async::Ready(None) => {
-                // the client should never exit on its own
-                unreachable!()
+            crate::client::Event::Connect => {
+                self.list_client
+                    .send_message(crate::protocol::Message::list_sessions());
             }
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
+            crate::client::Event::ServerMessage(msg) => {
+                self.list_server_message(msg)?;
             }
         }
+        Ok(crate::component_future::Async::DidWork)
     }
 
     fn poll_watch_client(
@@ -682,27 +656,16 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             return Ok(crate::component_future::Async::NothingToDo);
         };
 
-        match client.poll()? {
-            futures::Async::Ready(Some(e)) => {
-                match e {
-                    crate::client::Event::Disconnect => {
-                        self.reconnect(true)?;
-                    }
-                    crate::client::Event::Connect => {}
-                    crate::client::Event::ServerMessage(msg) => {
-                        self.watch_server_message(msg)?;
-                    }
-                }
-                Ok(crate::component_future::Async::DidWork)
+        match try_ready!(client.poll()).unwrap() {
+            crate::client::Event::Disconnect => {
+                self.reconnect(true)?;
             }
-            futures::Async::Ready(None) => {
-                // the client should never exit on its own
-                unreachable!()
-            }
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
+            crate::client::Event::Connect => {}
+            crate::client::Event::ServerMessage(msg) => {
+                self.watch_server_message(msg)?;
             }
         }
+        Ok(crate::component_future::Async::DidWork)
     }
 }
 

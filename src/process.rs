@@ -99,16 +99,10 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
         &mut self,
     ) -> crate::component_future::Poll<Option<Event>, Error> {
         if let Some(size) = &self.needs_resize {
-            match size.resize_pty(self.state.pty())? {
-                futures::Async::Ready(()) => {
-                    log::debug!("resize({:?})", size);
-                    self.needs_resize = None;
-                    Ok(crate::component_future::Async::DidWork)
-                }
-                futures::Async::NotReady => {
-                    Ok(crate::component_future::Async::NotReady)
-                }
-            }
+            try_ready!(size.resize_pty(self.state.pty()));
+            log::debug!("resize({:?})", size);
+            self.needs_resize = None;
+            Ok(crate::component_future::Async::DidWork)
         } else {
             Ok(crate::component_future::Async::NothingToDo)
         }
@@ -160,25 +154,18 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             return Ok(crate::component_future::Async::NothingToDo);
         }
 
-        match self
+        let n = try_ready!(self
             .input
             .poll_read(&mut self.buf)
-            .context(crate::error::ReadTerminal)?
-        {
-            futures::Async::Ready(n) => {
-                log::debug!("read_stdin({})", n);
-                if n > 0 {
-                    self.input_buf.extend(self.buf[..n].iter());
-                } else {
-                    self.input_buf.push_back(b'\x04');
-                    self.stdin_closed = true;
-                }
-                Ok(crate::component_future::Async::DidWork)
-            }
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
+            .context(crate::error::ReadTerminal));
+        log::debug!("read_stdin({})", n);
+        if n > 0 {
+            self.input_buf.extend(self.buf[..n].iter());
+        } else {
+            self.input_buf.push_back(b'\x04');
+            self.stdin_closed = true;
         }
+        Ok(crate::component_future::Async::DidWork)
     }
 
     fn poll_write_stdin(
@@ -190,23 +177,16 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
 
         let (a, b) = self.input_buf.as_slices();
         let buf = if a.is_empty() { b } else { a };
-        match self
+        let n = try_ready!(self
             .state
             .pty_mut()
             .poll_write(buf)
-            .context(crate::error::WritePty)?
-        {
-            futures::Async::Ready(n) => {
-                log::debug!("write_stdin({})", n);
-                for _ in 0..n {
-                    self.input_buf.pop_front();
-                }
-                Ok(crate::component_future::Async::DidWork)
-            }
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
+            .context(crate::error::WritePty));
+        log::debug!("write_stdin({})", n);
+        for _ in 0..n {
+            self.input_buf.pop_front();
         }
+        Ok(crate::component_future::Async::DidWork)
     }
 
     fn poll_read_stdout(
@@ -253,23 +233,16 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             return Ok(crate::component_future::Async::NothingToDo);
         }
 
-        match self
+        let status = try_ready!(self
             .state
             .process()
             .poll()
-            .context(crate::error::ProcessExitPoll)?
-        {
-            futures::Async::Ready(status) => {
-                log::debug!("exit({})", status);
-                self.exited = true;
-                Ok(crate::component_future::Async::Ready(Some(
-                    Event::CommandExit(status),
-                )))
-            }
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
-        }
+            .context(crate::error::ProcessExitPoll));
+        log::debug!("exit({})", status);
+        self.exited = true;
+        Ok(crate::component_future::Async::Ready(Some(
+            Event::CommandExit(status),
+        )))
     }
 }
 

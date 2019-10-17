@@ -206,19 +206,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         true
     }
 
-    fn should_wait_to_reconnect(&mut self) -> Result<bool> {
-        if let Some(timer) = &mut self.reconnect_timer {
-            match timer.poll().context(crate::error::TimerReconnect)? {
-                futures::Async::NotReady => {
-                    return Ok(true);
-                }
-                _ => {}
-            }
-        }
-
-        Ok(false)
-    }
-
     fn handle_successful_connection(&mut self, s: S) -> Result<()> {
         self.last_server_time = std::time::Instant::now();
 
@@ -415,8 +402,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> crate::component_future::Poll<Option<Event>, Error> {
         match &mut self.wsock {
             WriteSocket::NotConnected => {
-                if self.should_wait_to_reconnect()? {
-                    return Ok(crate::component_future::Async::NotReady);
+                if let Some(timer) = &mut self.reconnect_timer {
+                    try_ready!(timer
+                        .poll()
+                        .context(crate::error::TimerReconnect));
                 }
 
                 self.set_reconnect_timer();
@@ -586,19 +575,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn poll_heartbeat(
         &mut self,
     ) -> crate::component_future::Poll<Option<Event>, Error> {
-        match self
+        let _ = try_ready!(self
             .heartbeat_timer
             .poll()
-            .context(crate::error::TimerHeartbeat)?
-        {
-            futures::Async::Ready(..) => {
-                self.send_message(crate::protocol::Message::heartbeat());
-                Ok(crate::component_future::Async::DidWork)
-            }
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
-        }
+            .context(crate::error::TimerHeartbeat));
+        self.send_message(crate::protocol::Message::heartbeat());
+        Ok(crate::component_future::Async::DidWork)
     }
 }
 

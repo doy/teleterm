@@ -853,23 +853,18 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 }
                 Err(e) => classify_connection_error(e),
             },
-            Some(ReadSocket::Processing(_, fut)) => match fut.poll()? {
-                futures::Async::Ready((state, msg)) => {
-                    if let Some(ReadSocket::Processing(s, _)) =
-                        conn.rsock.take()
-                    {
-                        conn.state = state;
-                        conn.send_message(msg);
-                        conn.rsock = Some(ReadSocket::Connected(s));
-                    } else {
-                        unreachable!()
-                    }
-                    Ok(crate::component_future::Async::DidWork)
+            Some(ReadSocket::Processing(_, fut)) => {
+                let (state, msg) = try_ready!(fut.poll());
+                if let Some(ReadSocket::Processing(s, _)) = conn.rsock.take()
+                {
+                    conn.state = state;
+                    conn.send_message(msg);
+                    conn.rsock = Some(ReadSocket::Connected(s));
+                } else {
+                    unreachable!()
                 }
-                futures::Async::NotReady => {
-                    Ok(crate::component_future::Async::NotReady)
-                }
-            },
+                Ok(crate::component_future::Async::DidWork)
+            }
             _ => Ok(crate::component_future::Async::NothingToDo),
         }
     }
@@ -961,15 +956,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn poll_new_connections(
         &mut self,
     ) -> crate::component_future::Poll<(), Error> {
-        match self.sock_stream.poll()? {
-            futures::Async::Ready(Some(conn)) => {
-                self.connections.insert(conn.id.to_string(), conn);
-                Ok(crate::component_future::Async::DidWork)
-            }
-            futures::Async::Ready(None) => Err(Error::SocketChannelClosed),
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
+        if let Some(conn) = try_ready!(self.sock_stream.poll()) {
+            self.connections.insert(conn.id.to_string(), conn);
+            Ok(crate::component_future::Async::DidWork)
+        } else {
+            Err(Error::SocketChannelClosed)
         }
     }
 

@@ -300,8 +300,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn poll_read_process(
         &mut self,
     ) -> crate::component_future::Poll<(), Error> {
-        match self.process.poll()? {
-            futures::Async::Ready(Some(crate::resize::Event::Process(e))) => {
+        match try_ready!(self.process.poll()) {
+            Some(crate::resize::Event::Process(e)) => {
                 match e {
                     crate::process::Event::CommandStart(..) => {
                         if self.raw_screen.is_none() {
@@ -320,23 +320,18 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 }
                 Ok(crate::component_future::Async::DidWork)
             }
-            futures::Async::Ready(Some(crate::resize::Event::Resize(
-                size,
-            ))) => {
+            Some(crate::resize::Event::Resize(size)) => {
                 self.client
                     .send_message(crate::protocol::Message::resize(&size));
                 Ok(crate::component_future::Async::DidWork)
             }
-            futures::Async::Ready(None) => {
+            None => {
                 if !self.done {
                     unreachable!()
                 }
                 // don't return final event here - wait until we are done
                 // sending all data to the server (see poll_write_server)
                 Ok(crate::component_future::Async::DidWork)
-            }
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
             }
         }
     }
@@ -348,20 +343,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             return Ok(crate::component_future::Async::NothingToDo);
         }
 
-        match self
+        let n = try_ready!(self
             .stdout
             .poll_write(&self.buffer.contents()[self.sent_local..])
-            .context(crate::error::WriteTerminal)?
-        {
-            futures::Async::Ready(n) => {
-                self.sent_local += n;
-                self.needs_flush = true;
-                Ok(crate::component_future::Async::DidWork)
-            }
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
-        }
+            .context(crate::error::WriteTerminal));
+        self.sent_local += n;
+        self.needs_flush = true;
+        Ok(crate::component_future::Async::DidWork)
     }
 
     fn poll_flush_terminal(
@@ -371,19 +359,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             return Ok(crate::component_future::Async::NothingToDo);
         }
 
-        match self
+        try_ready!(self
             .stdout
             .poll_flush()
-            .context(crate::error::FlushTerminal)?
-        {
-            futures::Async::Ready(()) => {
-                self.needs_flush = false;
-                Ok(crate::component_future::Async::DidWork)
-            }
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
-        }
+            .context(crate::error::FlushTerminal));
+        self.needs_flush = false;
+        Ok(crate::component_future::Async::DidWork)
     }
 
     fn poll_write_server(

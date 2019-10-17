@@ -53,19 +53,15 @@ impl Server {
     fn poll_new_connections(
         &mut self,
     ) -> crate::component_future::Poll<(), Error> {
-        match self
+        if let Some(sock) = try_ready!(self
             .sock_r
             .poll()
-            .context(crate::error::SocketChannelReceive)?
+            .context(crate::error::SocketChannelReceive))
         {
-            futures::Async::Ready(Some(sock)) => {
-                self.accepting_sockets.push(sock);
-                Ok(crate::component_future::Async::DidWork)
-            }
-            futures::Async::Ready(None) => Err(Error::SocketChannelClosed),
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
+            self.accepting_sockets.push(sock);
+            Ok(crate::component_future::Async::DidWork)
+        } else {
+            Err(Error::SocketChannelClosed)
         }
     }
 
@@ -112,14 +108,8 @@ impl Server {
     }
 
     fn poll_server(&mut self) -> crate::component_future::Poll<(), Error> {
-        match self.server.poll()? {
-            futures::Async::Ready(()) => {
-                Ok(crate::component_future::Async::Ready(()))
-            }
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
-        }
+        try_ready!(self.server.poll());
+        Ok(crate::component_future::Async::Ready(()))
     }
 }
 

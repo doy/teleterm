@@ -102,16 +102,11 @@ impl PlaySession {
                 Ok(crate::component_future::Async::DidWork)
             }
             FileState::Opening { fut } => {
-                match fut.poll().context(crate::error::OpenFile)? {
-                    futures::Async::Ready(file) => {
-                        let file = crate::ttyrec::File::new(file);
-                        self.file = FileState::Open { file };
-                        Ok(crate::component_future::Async::DidWork)
-                    }
-                    futures::Async::NotReady => {
-                        Ok(crate::component_future::Async::NotReady)
-                    }
-                }
+                let file =
+                    try_ready!(fut.poll().context(crate::error::OpenFile));
+                let file = crate::ttyrec::File::new(file);
+                self.file = FileState::Open { file };
+                Ok(crate::component_future::Async::DidWork)
             }
             _ => Ok(crate::component_future::Async::NothingToDo),
         }
@@ -119,19 +114,12 @@ impl PlaySession {
 
     fn poll_read_file(&mut self) -> crate::component_future::Poll<(), Error> {
         if let FileState::Open { file } = &mut self.file {
-            match file.poll_read()? {
-                futures::Async::Ready(Some(frame)) => {
-                    self.to_write.insert_at(frame.data, frame.time);
-                    Ok(crate::component_future::Async::DidWork)
-                }
-                futures::Async::Ready(None) => {
-                    self.file = FileState::Eof;
-                    Ok(crate::component_future::Async::DidWork)
-                }
-                futures::Async::NotReady => {
-                    Ok(crate::component_future::Async::NotReady)
-                }
+            if let Some(frame) = try_ready!(file.poll_read()) {
+                self.to_write.insert_at(frame.data, frame.time);
+            } else {
+                self.file = FileState::Eof;
             }
+            Ok(crate::component_future::Async::DidWork)
         } else {
             Ok(crate::component_future::Async::NothingToDo)
         }
@@ -140,25 +128,19 @@ impl PlaySession {
     fn poll_write_terminal(
         &mut self,
     ) -> crate::component_future::Poll<(), Error> {
-        match self.to_write.poll().context(crate::error::Sleep)? {
-            futures::Async::Ready(Some(data)) => {
-                // TODO async
-                let stdout = std::io::stdout();
-                let mut stdout = stdout.lock();
-                stdout.write(&data).context(crate::error::WriteTerminal)?;
-                stdout.flush().context(crate::error::FlushTerminal)?;
-                Ok(crate::component_future::Async::DidWork)
-            }
-            futures::Async::Ready(None) => {
-                if let FileState::Eof = self.file {
-                    Ok(crate::component_future::Async::Ready(()))
-                } else {
-                    Ok(crate::component_future::Async::NothingToDo)
-                }
-            }
-            futures::Async::NotReady => {
-                Ok(crate::component_future::Async::NotReady)
-            }
+        if let Some(data) =
+            try_ready!(self.to_write.poll().context(crate::error::Sleep))
+        {
+            // TODO async
+            let stdout = std::io::stdout();
+            let mut stdout = stdout.lock();
+            stdout.write(&data).context(crate::error::WriteTerminal)?;
+            stdout.flush().context(crate::error::FlushTerminal)?;
+            Ok(crate::component_future::Async::DidWork)
+        } else if let FileState::Eof = self.file {
+            Ok(crate::component_future::Async::Ready(()))
+        } else {
+            Ok(crate::component_future::Async::NothingToDo)
         }
     }
 }

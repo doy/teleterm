@@ -9,10 +9,12 @@
 
 mod prelude;
 
+#[macro_use]
+mod component_future;
+
 mod async_stdin;
 mod client;
 mod cmd;
-mod component_future;
 mod config;
 mod dirs;
 mod error;

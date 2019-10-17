@@ -63,11 +63,9 @@ enum WriteSocket<
 }
 
 pub enum Event {
-    Start(crate::term::Size),
     ServerMessage(crate::protocol::Message),
     Disconnect,
-    Connect(),
-    Resize(crate::term::Size),
+    Connect,
 }
 
 pub type Connector<S> = Box<
@@ -92,16 +90,12 @@ pub struct Client<
     reconnect_timer: Option<tokio::timer::Delay>,
     reconnect_backoff_amount: std::time::Duration,
     last_server_time: std::time::Instant,
-    winches: Option<
-        Box<dyn futures::stream::Stream<Item = (), Error = Error> + Send>,
-    >,
 
     rsock: ReadSocket<S>,
     wsock: WriteSocket<S>,
 
     on_login: Vec<crate::protocol::Message>,
     to_send: std::collections::VecDeque<crate::protocol::Message>,
-    started: bool,
 }
 
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
@@ -117,7 +111,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             auth,
             buffer_size,
             &[crate::protocol::Message::start_streaming()],
-            true,
         )
     }
 
@@ -132,7 +125,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             auth,
             buffer_size,
             &[crate::protocol::Message::start_watching(id)],
-            false,
         )
     }
 
@@ -141,7 +133,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         auth: &crate::protocol::Auth,
         buffer_size: usize,
     ) -> Self {
-        Self::new(connect, auth, buffer_size, &[], true)
+        Self::new(connect, auth, buffer_size, &[])
     }
 
     fn new(
@@ -149,25 +141,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         auth: &crate::protocol::Auth,
         buffer_size: usize,
         on_login: &[crate::protocol::Message],
-        handle_sigwinch: bool,
     ) -> Self {
         let term_type =
             std::env::var("TERM").unwrap_or_else(|_| "".to_string());
         let heartbeat_timer =
             tokio::timer::Interval::new_interval(HEARTBEAT_DURATION);
-        let winches: Option<
-            Box<dyn futures::stream::Stream<Item = (), Error = Error> + Send>,
-        > = if handle_sigwinch {
-            let winches = tokio_signal::unix::Signal::new(
-                tokio_signal::unix::libc::SIGWINCH,
-            )
-            .flatten_stream()
-            .map(|_| ())
-            .context(crate::error::SigWinchHandler);
-            Some(Box::new(winches))
-        } else {
-            None
-        };
 
         Self {
             connect,
@@ -180,14 +158,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             reconnect_timer: None,
             reconnect_backoff_amount: RECONNECT_BACKOFF_BASE,
             last_server_time: std::time::Instant::now(),
-            winches,
 
             rsock: ReadSocket::NotConnected,
             wsock: WriteSocket::NotConnected,
 
             on_login: on_login.to_vec(),
             to_send: std::collections::VecDeque::new(),
-            started: false,
         }
     }
 
@@ -308,7 +284,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 }
                 Ok((
                     crate::component_future::Async::Ready(Some(
-                        Event::Connect(),
+                        Event::Connect,
                     )),
                     None,
                 ))
@@ -432,7 +408,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         &Self::poll_read_server,
         &Self::poll_write_server,
         &Self::poll_heartbeat,
-        &Self::poll_sigwinch,
     ];
 
     fn poll_reconnect_server(
@@ -623,37 +598,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             futures::Async::NotReady => {
                 Ok(crate::component_future::Async::NotReady)
             }
-        }
-    }
-
-    fn poll_sigwinch(
-        &mut self,
-    ) -> crate::component_future::Poll<Option<Event>, Error> {
-        if let Some(winches) = &mut self.winches {
-            if !self.started {
-                self.started = true;
-                return Ok(crate::component_future::Async::Ready(Some(
-                    Event::Start(crate::term::Size::get()?),
-                )));
-            }
-
-            match winches.poll()? {
-                futures::Async::Ready(Some(_)) => {
-                    let size = crate::term::Size::get()?;
-                    self.send_message(crate::protocol::Message::resize(
-                        &size,
-                    ));
-                    Ok(crate::component_future::Async::Ready(Some(
-                        Event::Resize(size),
-                    )))
-                }
-                futures::Async::Ready(None) => unreachable!(),
-                futures::Async::NotReady => {
-                    Ok(crate::component_future::Async::NotReady)
-                }
-            }
-        } else {
-            Ok(crate::component_future::Async::NothingToDo)
         }
     }
 }

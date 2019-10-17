@@ -103,7 +103,7 @@ enum FileState {
 
 struct RecordSession {
     file: FileState,
-    process: crate::process::Process<crate::async_stdin::Stdin>,
+    process: crate::resize::ResizingProcess<crate::async_stdin::Stdin>,
     stdout: tokio::io::Stdout,
     buffer: crate::term::Buffer,
     sent_local: usize,
@@ -120,7 +120,9 @@ impl RecordSession {
         args: &[String],
     ) -> Self {
         let input = crate::async_stdin::Stdin::new();
-        let process = crate::process::Process::new(cmd, args, input);
+        let process = crate::resize::ResizingProcess::new(
+            crate::process::Process::new(cmd, args, input),
+        );
 
         Self {
             file: FileState::Closed {
@@ -188,7 +190,7 @@ impl RecordSession {
         &mut self,
     ) -> crate::component_future::Poll<(), Error> {
         match self.process.poll()? {
-            futures::Async::Ready(Some(e)) => {
+            futures::Async::Ready(Some(crate::resize::Event::Process(e))) => {
                 match e {
                     crate::process::Event::CommandStart(..) => {
                         if self.raw_screen.is_none() {
@@ -208,6 +210,9 @@ impl RecordSession {
                         }
                     }
                 }
+                Ok(crate::component_future::Async::DidWork)
+            }
+            futures::Async::Ready(Some(crate::resize::Event::Resize(_))) => {
                 Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::Ready(None) => {

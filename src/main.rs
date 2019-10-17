@@ -20,6 +20,7 @@ mod key_reader;
 mod oauth;
 mod process;
 mod protocol;
+mod resize;
 mod server;
 mod session_list;
 mod term;

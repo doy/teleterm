@@ -180,7 +180,7 @@ struct StreamSession<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
 > {
     client: crate::client::Client<S>,
-    process: crate::process::Process<crate::async_stdin::Stdin>,
+    process: crate::resize::ResizingProcess<crate::async_stdin::Stdin>,
     stdout: tokio::io::Stdout,
     buffer: crate::term::Buffer,
     sent_local: usize,
@@ -209,7 +209,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         // let input = tokio::io::stdin();
         let input = crate::async_stdin::Stdin::new();
 
-        let process = crate::process::Process::new(cmd, args, input);
+        let process = crate::resize::ResizingProcess::new(
+            crate::process::Process::new(cmd, args, input),
+        );
 
         Self {
             client,
@@ -268,11 +270,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     self.connected = false;
                     Ok(crate::component_future::Async::DidWork)
                 }
-                crate::client::Event::Start(size) => {
-                    self.process.resize(size);
-                    Ok(crate::component_future::Async::DidWork)
-                }
-                crate::client::Event::Connect() => {
+                crate::client::Event::Connect => {
                     self.connected = true;
                     self.sent_remote = 0;
                     Ok(crate::component_future::Async::DidWork)
@@ -282,10 +280,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     // start streaming, so if one comes through, assume
                     // something is messed up and try again
                     self.client.reconnect();
-                    Ok(crate::component_future::Async::DidWork)
-                }
-                crate::client::Event::Resize(size) => {
-                    self.process.resize(size);
                     Ok(crate::component_future::Async::DidWork)
                 }
             },
@@ -307,7 +301,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         &mut self,
     ) -> crate::component_future::Poll<(), Error> {
         match self.process.poll()? {
-            futures::Async::Ready(Some(e)) => {
+            futures::Async::Ready(Some(crate::resize::Event::Process(e))) => {
                 match e {
                     crate::process::Event::CommandStart(..) => {
                         if self.raw_screen.is_none() {
@@ -316,7 +310,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                                     .context(crate::error::ToRawMode)?,
                             );
                         }
-                        self.process.resize(crate::term::Size::get()?);
                     }
                     crate::process::Event::CommandExit(..) => {
                         self.done = true;
@@ -325,6 +318,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         self.record_bytes(&output);
                     }
                 }
+                Ok(crate::component_future::Async::DidWork)
+            }
+            futures::Async::Ready(Some(crate::resize::Event::Resize(
+                size,
+            ))) => {
+                self.client
+                    .send_message(crate::protocol::Message::resize(&size));
                 Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::Ready(None) => {

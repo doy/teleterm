@@ -224,6 +224,7 @@ struct WatchSession<
 
     key_reader: crate::key_reader::KeyReader,
     list_client: crate::client::Client<S>,
+    resizer: crate::resize::Resizer,
     state: State<S>,
     raw_screen: Option<crossterm::RawScreen>,
     needs_redraw: bool,
@@ -245,6 +246,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
             key_reader: crate::key_reader::KeyReader::new(),
             list_client,
+            resizer: crate::resize::Resizer::new(),
             state: State::new(),
             raw_screen: None,
             needs_redraw: true,
@@ -588,10 +590,24 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             (),
             Error,
         >] = &[
+        &Self::poll_resizer,
         &Self::poll_input,
         &Self::poll_list_client,
         &Self::poll_watch_client,
     ];
+
+    fn poll_resizer(&mut self) -> crate::component_future::Poll<(), Error> {
+        match self.resizer.poll()? {
+            futures::Async::Ready(Some(size)) => {
+                self.resize(size)?;
+                Ok(crate::component_future::Async::DidWork)
+            }
+            futures::Async::Ready(None) => unreachable!(),
+            futures::Async::NotReady => {
+                Ok(crate::component_future::Async::NotReady)
+            }
+        }
+    }
 
     fn poll_input(&mut self) -> crate::component_future::Poll<(), Error> {
         if self.raw_screen.is_none() {
@@ -633,22 +649,16 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         match self.list_client.poll()? {
             futures::Async::Ready(Some(e)) => {
                 match e {
-                    crate::client::Event::Start(size) => {
-                        self.resize(size)?;
-                    }
                     crate::client::Event::Disconnect => {
                         self.reconnect(true)?;
                     }
-                    crate::client::Event::Connect() => {
+                    crate::client::Event::Connect => {
                         self.list_client.send_message(
                             crate::protocol::Message::list_sessions(),
                         );
                     }
                     crate::client::Event::ServerMessage(msg) => {
                         self.list_server_message(msg)?;
-                    }
-                    crate::client::Event::Resize(size) => {
-                        self.resize(size)?;
                     }
                 }
                 Ok(crate::component_future::Async::DidWork)
@@ -675,20 +685,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         match client.poll()? {
             futures::Async::Ready(Some(e)) => {
                 match e {
-                    crate::client::Event::Start(_) => {
-                        // watch clients don't respond to resize events
-                        unreachable!();
-                    }
                     crate::client::Event::Disconnect => {
                         self.reconnect(true)?;
                     }
-                    crate::client::Event::Connect() => {}
+                    crate::client::Event::Connect => {}
                     crate::client::Event::ServerMessage(msg) => {
                         self.watch_server_message(msg)?;
-                    }
-                    crate::client::Event::Resize(_) => {
-                        // watch clients don't respond to resize events
-                        unreachable!();
                     }
                 }
                 Ok(crate::component_future::Async::DidWork)

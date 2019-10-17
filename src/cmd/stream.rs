@@ -31,23 +31,26 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
     let auth = if matches.is_present("login-recurse-center") {
-        let auth = crate::protocol::Auth::RecurseCenter { id: None };
-        let id_file = crate::dirs::Dirs::new()
-            .data_file(&format!("client-oauth-{}", auth.name()));
+        let id_file = crate::dirs::Dirs::new().data_file(&format!(
+            "client-oauth-{}",
+            crate::protocol::AuthType::RecurseCenter.name()
+        ));
         let id = std::fs::File::open(id_file).ok().and_then(|mut file| {
             let mut id = vec![];
             file.read_to_end(&mut id).ok().map(|_| {
                 std::string::String::from_utf8_lossy(&id).to_string()
             })
         });
-        crate::protocol::Auth::RecurseCenter { id }
+        crate::protocol::Auth::recurse_center(
+            id.as_ref().map(std::string::String::as_str),
+        )
     } else {
         let username = matches
             .value_of("login-plain")
             .map(std::string::ToString::to_string)
             .or_else(|| std::env::var("USER").ok())
             .context(crate::error::CouldntFindUsername)?;
-        crate::protocol::Auth::Plain { username }
+        crate::protocol::Auth::plain(&username)
     };
     let address = matches.value_of("address").unwrap_or("127.0.0.1:4144");
     let (host, address) = crate::util::resolve_address(address)?;

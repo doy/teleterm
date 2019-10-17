@@ -41,7 +41,7 @@ impl super::Oauth for RecurseCenter {
     }
 
     fn name(&self) -> &str {
-        "recurse_center"
+        crate::protocol::AuthType::RecurseCenter.name()
     }
 
     fn get_username_from_access_token(

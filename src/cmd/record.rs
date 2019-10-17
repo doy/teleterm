@@ -142,11 +142,14 @@ impl RecordSession {
 }
 
 impl RecordSession {
-    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
-        &'a mut Self,
-    ) -> Result<
-        crate::component_future::Poll<()>,
-    >] = &[
+    const POLL_FNS:
+        &'static [&'static dyn for<'a> Fn(
+            &'a mut Self,
+        )
+            -> crate::component_future::Poll<
+            (),
+            Error,
+        >] = &[
         &Self::poll_open_file,
         &Self::poll_read_process,
         &Self::poll_write_terminal,
@@ -154,15 +157,13 @@ impl RecordSession {
         &Self::poll_write_file,
     ];
 
-    fn poll_open_file(
-        &mut self,
-    ) -> Result<crate::component_future::Poll<()>> {
+    fn poll_open_file(&mut self) -> crate::component_future::Poll<(), Error> {
         match &mut self.file {
             FileState::Closed { filename } => {
                 self.file = FileState::Opening {
                     fut: tokio::fs::File::create(filename.to_string()),
                 };
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             FileState::Opening { fut } => {
                 match fut.poll().context(crate::error::OpenFile)? {
@@ -170,22 +171,22 @@ impl RecordSession {
                         let mut file = crate::ttyrec::File::new(file);
                         file.write_frame(self.buffer.contents())?;
                         self.file = FileState::Open { file };
-                        Ok(crate::component_future::Poll::DidWork)
+                        Ok(crate::component_future::Async::DidWork)
                     }
                     futures::Async::NotReady => {
-                        Ok(crate::component_future::Poll::NotReady)
+                        Ok(crate::component_future::Async::NotReady)
                     }
                 }
             }
             FileState::Open { .. } => {
-                Ok(crate::component_future::Poll::NothingToDo)
+                Ok(crate::component_future::Async::NothingToDo)
             }
         }
     }
 
     fn poll_read_process(
         &mut self,
-    ) -> Result<crate::component_future::Poll<()>> {
+    ) -> crate::component_future::Poll<(), Error> {
         match self.process.poll()? {
             futures::Async::Ready(Some(e)) => {
                 match e {
@@ -207,7 +208,7 @@ impl RecordSession {
                         }
                     }
                 }
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::Ready(None) => {
                 if !self.done {
@@ -215,19 +216,19 @@ impl RecordSession {
                 }
                 // don't return final event here - wait until we are done
                 // writing all data to the file (see poll_write_file)
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::NotReady => {
-                Ok(crate::component_future::Poll::NotReady)
+                Ok(crate::component_future::Async::NotReady)
             }
         }
     }
 
     fn poll_write_terminal(
         &mut self,
-    ) -> Result<crate::component_future::Poll<()>> {
+    ) -> crate::component_future::Poll<(), Error> {
         if self.sent_local == self.buffer.len() {
-            return Ok(crate::component_future::Poll::NothingToDo);
+            return Ok(crate::component_future::Async::NothingToDo);
         }
 
         match self
@@ -238,19 +239,19 @@ impl RecordSession {
             futures::Async::Ready(n) => {
                 self.sent_local += n;
                 self.needs_flush = true;
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::NotReady => {
-                Ok(crate::component_future::Poll::NotReady)
+                Ok(crate::component_future::Async::NotReady)
             }
         }
     }
 
     fn poll_flush_terminal(
         &mut self,
-    ) -> Result<crate::component_future::Poll<()>> {
+    ) -> crate::component_future::Poll<(), Error> {
         if !self.needs_flush {
-            return Ok(crate::component_future::Poll::NothingToDo);
+            return Ok(crate::component_future::Async::NothingToDo);
         }
 
         match self
@@ -260,34 +261,34 @@ impl RecordSession {
         {
             futures::Async::Ready(()) => {
                 self.needs_flush = false;
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::NotReady => {
-                Ok(crate::component_future::Poll::NotReady)
+                Ok(crate::component_future::Async::NotReady)
             }
         }
     }
 
     fn poll_write_file(
         &mut self,
-    ) -> Result<crate::component_future::Poll<()>> {
+    ) -> crate::component_future::Poll<(), Error> {
         let file = match &mut self.file {
             FileState::Open { file } => file,
             _ => {
-                return Ok(crate::component_future::Poll::NothingToDo);
+                return Ok(crate::component_future::Async::NothingToDo);
             }
         };
 
         match file.poll_write()? {
             futures::Async::Ready(()) => {
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::NotReady => {
                 // ship all data to the server before actually ending
                 if self.done && file.is_empty() {
-                    Ok(crate::component_future::Poll::Event(()))
+                    Ok(crate::component_future::Async::Ready(()))
                 } else {
-                    Ok(crate::component_future::Poll::NotReady)
+                    Ok(crate::component_future::Async::NotReady)
                 }
             }
         }

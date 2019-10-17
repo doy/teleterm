@@ -580,17 +580,20 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     WatchSession<S>
 {
-    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
-        &'a mut Self,
-    ) -> Result<
-        crate::component_future::Poll<()>,
-    >] = &[
+    const POLL_FNS:
+        &'static [&'static dyn for<'a> Fn(
+            &'a mut Self,
+        )
+            -> crate::component_future::Poll<
+            (),
+            Error,
+        >] = &[
         &Self::poll_input,
         &Self::poll_list_client,
         &Self::poll_watch_client,
     ];
 
-    fn poll_input(&mut self) -> Result<crate::component_future::Poll<()>> {
+    fn poll_input(&mut self) -> crate::component_future::Poll<(), Error> {
         if self.raw_screen.is_none() {
             self.raw_screen = Some(
                 crossterm::RawScreen::into_raw_mode()
@@ -612,21 +615,21 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     State::Watching { .. } => self.watch_keypress(&e)?,
                 };
                 if quit {
-                    Ok(crate::component_future::Poll::Event(()))
+                    Ok(crate::component_future::Async::Ready(()))
                 } else {
-                    Ok(crate::component_future::Poll::DidWork)
+                    Ok(crate::component_future::Async::DidWork)
                 }
             }
             futures::Async::Ready(None) => unreachable!(),
             futures::Async::NotReady => {
-                Ok(crate::component_future::Poll::NotReady)
+                Ok(crate::component_future::Async::NotReady)
             }
         }
     }
 
     fn poll_list_client(
         &mut self,
-    ) -> Result<crate::component_future::Poll<()>> {
+    ) -> crate::component_future::Poll<(), Error> {
         match self.list_client.poll()? {
             futures::Async::Ready(Some(e)) => {
                 match e {
@@ -648,25 +651,25 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         self.resize(size)?;
                     }
                 }
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::Ready(None) => {
                 // the client should never exit on its own
                 unreachable!()
             }
             futures::Async::NotReady => {
-                Ok(crate::component_future::Poll::NotReady)
+                Ok(crate::component_future::Async::NotReady)
             }
         }
     }
 
     fn poll_watch_client(
         &mut self,
-    ) -> Result<crate::component_future::Poll<()>> {
+    ) -> crate::component_future::Poll<(), Error> {
         let client = if let State::Watching { client } = &mut self.state {
             client
         } else {
-            return Ok(crate::component_future::Poll::NothingToDo);
+            return Ok(crate::component_future::Async::NothingToDo);
         };
 
         match client.poll()? {
@@ -688,14 +691,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         unreachable!();
                     }
                 }
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::Ready(None) => {
                 // the client should never exit on its own
                 unreachable!()
             }
             futures::Async::NotReady => {
-                Ok(crate::component_future::Poll::NotReady)
+                Ok(crate::component_future::Async::NotReady)
             }
         }
     }

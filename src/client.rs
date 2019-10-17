@@ -270,7 +270,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         &mut self,
         msg: crate::protocol::Message,
     ) -> Result<(
-        crate::component_future::Poll<Event>,
+        crate::component_future::Async<Option<Event>>,
         Option<
             Box<
                 dyn futures::future::Future<
@@ -293,7 +293,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 }
                 open::that(url).context(crate::error::OpenLink)?;
                 Ok((
-                    crate::component_future::Poll::DidWork,
+                    crate::component_future::Async::DidWork,
                     Some(self.wait_for_oauth_response(
                         state.map(|s| s.to_string()),
                         &id,
@@ -307,16 +307,18 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     self.to_send.push_back(msg.clone());
                 }
                 Ok((
-                    crate::component_future::Poll::Event(Event::Connect()),
+                    crate::component_future::Async::Ready(Some(
+                        Event::Connect(),
+                    )),
                     None,
                 ))
             }
             crate::protocol::Message::Heartbeat => {
-                Ok((crate::component_future::Poll::DidWork, None))
+                Ok((crate::component_future::Async::DidWork, None))
             }
             _ => Ok((
-                crate::component_future::Poll::Event(Event::ServerMessage(
-                    msg,
+                crate::component_future::Async::Ready(Some(
+                    Event::ServerMessage(msg),
                 )),
                 None,
             )),
@@ -418,11 +420,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     Client<S>
 {
     // XXX rustfmt does a terrible job here
-    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
-        &'a mut Self,
-    ) -> Result<
-        crate::component_future::Poll<Event>,
-    >] = &[
+    const POLL_FNS:
+        &'static [&'static dyn for<'a> Fn(
+            &'a mut Self,
+        )
+            -> crate::component_future::Poll<
+            Option<Event>,
+            Error,
+        >] = &[
         &Self::poll_reconnect_server,
         &Self::poll_read_server,
         &Self::poll_write_server,
@@ -432,11 +437,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
     fn poll_reconnect_server(
         &mut self,
-    ) -> Result<crate::component_future::Poll<Event>> {
+    ) -> crate::component_future::Poll<Option<Event>, Error> {
         match &mut self.wsock {
             WriteSocket::NotConnected => {
                 if self.should_wait_to_reconnect()? {
-                    return Ok(crate::component_future::Poll::NotReady);
+                    return Ok(crate::component_future::Async::NotReady);
                 }
 
                 self.set_reconnect_timer();
@@ -447,7 +452,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     self.handle_successful_connection(s)?;
                 }
                 Ok(futures::Async::NotReady) => {
-                    return Ok(crate::component_future::Poll::NotReady);
+                    return Ok(crate::component_future::Async::NotReady);
                 }
                 Err(e) => {
                     log::warn!("error while connecting, reconnecting: {}", e);
@@ -458,28 +463,28 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             },
             WriteSocket::Connected(..) | WriteSocket::Writing(..) => {
                 if self.has_seen_server_recently() {
-                    return Ok(crate::component_future::Poll::NothingToDo);
+                    return Ok(crate::component_future::Async::NothingToDo);
                 } else {
                     log::warn!(
                         "haven't seen server in a while, reconnecting",
                     );
                     self.reconnect();
-                    return Ok(crate::component_future::Poll::Event(
+                    return Ok(crate::component_future::Async::Ready(Some(
                         Event::Disconnect,
-                    ));
+                    )));
                 }
             }
         }
 
-        Ok(crate::component_future::Poll::DidWork)
+        Ok(crate::component_future::Async::DidWork)
     }
 
     fn poll_read_server(
         &mut self,
-    ) -> Result<crate::component_future::Poll<Event>> {
+    ) -> crate::component_future::Poll<Option<Event>, Error> {
         match &mut self.rsock {
             ReadSocket::NotConnected => {
-                Ok(crate::component_future::Poll::NothingToDo)
+                Ok(crate::component_future::Async::NothingToDo)
             }
             ReadSocket::Connected(..) => {
                 if let ReadSocket::Connected(s) = std::mem::replace(
@@ -491,7 +496,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 } else {
                     unreachable!()
                 }
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             ReadSocket::Reading(ref mut fut) => match fut.poll() {
                 Ok(futures::Async::Ready((msg, s))) => {
@@ -511,21 +516,21 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                                 e
                             );
                             self.reconnect();
-                            Ok(crate::component_future::Poll::Event(
+                            Ok(crate::component_future::Async::Ready(Some(
                                 Event::Disconnect,
-                            ))
+                            )))
                         }
                     }
                 }
                 Ok(futures::Async::NotReady) => {
-                    Ok(crate::component_future::Poll::NotReady)
+                    Ok(crate::component_future::Async::NotReady)
                 }
                 Err(e) => {
                     log::warn!("error reading message, reconnecting: {}", e);
                     self.reconnect();
-                    Ok(crate::component_future::Poll::Event(
+                    Ok(crate::component_future::Async::Ready(Some(
                         Event::Disconnect,
-                    ))
+                    )))
                 }
             },
             ReadSocket::Processing(_, fut) => match fut.poll() {
@@ -539,10 +544,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     } else {
                         unreachable!()
                     }
-                    Ok(crate::component_future::Poll::DidWork)
+                    Ok(crate::component_future::Async::DidWork)
                 }
                 Ok(futures::Async::NotReady) => {
-                    Ok(crate::component_future::Poll::NotReady)
+                    Ok(crate::component_future::Async::NotReady)
                 }
                 Err(e) => {
                     log::warn!(
@@ -550,9 +555,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         e
                     );
                     self.reconnect();
-                    Ok(crate::component_future::Poll::Event(
+                    Ok(crate::component_future::Async::Ready(Some(
                         Event::Disconnect,
-                    ))
+                    )))
                 }
             },
         }
@@ -560,14 +565,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
     fn poll_write_server(
         &mut self,
-    ) -> Result<crate::component_future::Poll<Event>> {
+    ) -> crate::component_future::Poll<Option<Event>, Error> {
         match &mut self.wsock {
             WriteSocket::NotConnected | WriteSocket::Connecting(..) => {
-                Ok(crate::component_future::Poll::NothingToDo)
+                Ok(crate::component_future::Async::NothingToDo)
             }
             WriteSocket::Connected(..) => {
                 if self.to_send.is_empty() {
-                    return Ok(crate::component_future::Poll::NothingToDo);
+                    return Ok(crate::component_future::Async::NothingToDo);
                 }
 
                 if let WriteSocket::Connected(s) = std::mem::replace(
@@ -582,22 +587,22 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     unreachable!()
                 }
 
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             WriteSocket::Writing(ref mut fut) => match fut.poll() {
                 Ok(futures::Async::Ready(s)) => {
                     self.wsock = WriteSocket::Connected(s);
-                    Ok(crate::component_future::Poll::DidWork)
+                    Ok(crate::component_future::Async::DidWork)
                 }
                 Ok(futures::Async::NotReady) => {
-                    Ok(crate::component_future::Poll::NotReady)
+                    Ok(crate::component_future::Async::NotReady)
                 }
                 Err(e) => {
                     log::warn!("error writing message, reconnecting: {}", e);
                     self.reconnect();
-                    Ok(crate::component_future::Poll::Event(
+                    Ok(crate::component_future::Async::Ready(Some(
                         Event::Disconnect,
-                    ))
+                    )))
                 }
             },
         }
@@ -605,7 +610,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
     fn poll_heartbeat(
         &mut self,
-    ) -> Result<crate::component_future::Poll<Event>> {
+    ) -> crate::component_future::Poll<Option<Event>, Error> {
         match self
             .heartbeat_timer
             .poll()
@@ -613,23 +618,23 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         {
             futures::Async::Ready(..) => {
                 self.send_message(crate::protocol::Message::heartbeat());
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::NotReady => {
-                Ok(crate::component_future::Poll::NotReady)
+                Ok(crate::component_future::Async::NotReady)
             }
         }
     }
 
     fn poll_sigwinch(
         &mut self,
-    ) -> Result<crate::component_future::Poll<Event>> {
+    ) -> crate::component_future::Poll<Option<Event>, Error> {
         if let Some(winches) = &mut self.winches {
             if !self.started {
                 self.started = true;
-                return Ok(crate::component_future::Poll::Event(
+                return Ok(crate::component_future::Async::Ready(Some(
                     Event::Start(crate::term::Size::get()?),
-                ));
+                )));
             }
 
             match winches.poll()? {
@@ -638,17 +643,17 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     self.send_message(crate::protocol::Message::resize(
                         &size,
                     ));
-                    Ok(crate::component_future::Poll::Event(Event::Resize(
-                        size,
+                    Ok(crate::component_future::Async::Ready(Some(
+                        Event::Resize(size),
                     )))
                 }
                 futures::Async::Ready(None) => unreachable!(),
                 futures::Async::NotReady => {
-                    Ok(crate::component_future::Poll::NotReady)
+                    Ok(crate::component_future::Async::NotReady)
                 }
             }
         } else {
-            Ok(crate::component_future::Poll::NothingToDo)
+            Ok(crate::component_future::Async::NothingToDo)
         }
     }
 }

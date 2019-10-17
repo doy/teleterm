@@ -75,11 +75,14 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
 }
 
 impl<R: tokio::io::AsyncRead + 'static> Process<R> {
-    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
-        &'a mut Self,
-    ) -> Result<
-        crate::component_future::Poll<Event>,
-    >] = &[
+    const POLL_FNS:
+        &'static [&'static dyn for<'a> Fn(
+            &'a mut Self,
+        )
+            -> crate::component_future::Poll<
+            Option<Event>,
+            Error,
+        >] = &[
         // order is important here - checking command_exit first so that we
         // don't try to read from a process that has already exited, which
         // causes an error. also, poll_resize needs to happen after
@@ -94,28 +97,28 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
 
     fn poll_resize(
         &mut self,
-    ) -> Result<crate::component_future::Poll<Event>> {
+    ) -> crate::component_future::Poll<Option<Event>, Error> {
         if let Some(size) = &self.needs_resize {
             match size.resize_pty(self.state.pty())? {
                 futures::Async::Ready(()) => {
                     log::debug!("resize({:?})", size);
                     self.needs_resize = None;
-                    Ok(crate::component_future::Poll::DidWork)
+                    Ok(crate::component_future::Async::DidWork)
                 }
                 futures::Async::NotReady => {
-                    Ok(crate::component_future::Poll::NotReady)
+                    Ok(crate::component_future::Async::NotReady)
                 }
             }
         } else {
-            Ok(crate::component_future::Poll::NothingToDo)
+            Ok(crate::component_future::Async::NothingToDo)
         }
     }
 
     fn poll_command_start(
         &mut self,
-    ) -> Result<crate::component_future::Poll<Event>> {
+    ) -> crate::component_future::Poll<Option<Event>, Error> {
         if self.started {
-            return Ok(crate::component_future::Poll::NothingToDo);
+            return Ok(crate::component_future::Async::NothingToDo);
         }
 
         if self.state.pty.is_none() {
@@ -145,17 +148,16 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
         }
 
         self.started = true;
-        Ok(crate::component_future::Poll::Event(Event::CommandStart(
-            self.cmd.clone(),
-            self.args.clone(),
+        Ok(crate::component_future::Async::Ready(Some(
+            Event::CommandStart(self.cmd.clone(), self.args.clone()),
         )))
     }
 
     fn poll_read_stdin(
         &mut self,
-    ) -> Result<crate::component_future::Poll<Event>> {
+    ) -> crate::component_future::Poll<Option<Event>, Error> {
         if self.exited || self.stdin_closed {
-            return Ok(crate::component_future::Poll::NothingToDo);
+            return Ok(crate::component_future::Async::NothingToDo);
         }
 
         match self
@@ -171,19 +173,19 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
                     self.input_buf.push_back(b'\x04');
                     self.stdin_closed = true;
                 }
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::NotReady => {
-                Ok(crate::component_future::Poll::NotReady)
+                Ok(crate::component_future::Async::NotReady)
             }
         }
     }
 
     fn poll_write_stdin(
         &mut self,
-    ) -> Result<crate::component_future::Poll<Event>> {
+    ) -> crate::component_future::Poll<Option<Event>, Error> {
         if self.exited || self.input_buf.is_empty() {
-            return Ok(crate::component_future::Poll::NothingToDo);
+            return Ok(crate::component_future::Async::NothingToDo);
         }
 
         let (a, b) = self.input_buf.as_slices();
@@ -199,17 +201,17 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
                 for _ in 0..n {
                     self.input_buf.pop_front();
                 }
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::NotReady => {
-                Ok(crate::component_future::Poll::NotReady)
+                Ok(crate::component_future::Async::NotReady)
             }
         }
     }
 
     fn poll_read_stdout(
         &mut self,
-    ) -> Result<crate::component_future::Poll<Event>> {
+    ) -> crate::component_future::Poll<Option<Event>, Error> {
         match self
             .state
             .pty_mut()
@@ -219,10 +221,12 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             Ok(futures::Async::Ready(n)) => {
                 log::debug!("read_stdout({})", n);
                 let bytes = self.buf[..n].to_vec();
-                Ok(crate::component_future::Poll::Event(Event::Output(bytes)))
+                Ok(crate::component_future::Async::Ready(Some(
+                    Event::Output(bytes),
+                )))
             }
             Ok(futures::Async::NotReady) => {
-                Ok(crate::component_future::Poll::NotReady)
+                Ok(crate::component_future::Async::NotReady)
             }
             Err(e) => {
                 // XXX this seems to be how eof is returned, but this seems...
@@ -231,7 +235,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
                     if source.kind() == std::io::ErrorKind::Other {
                         log::debug!("read_stdout(eof)");
                         self.stdout_closed = true;
-                        return Ok(crate::component_future::Poll::DidWork);
+                        return Ok(crate::component_future::Async::DidWork);
                     }
                 }
                 Err(e)
@@ -241,12 +245,12 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
 
     fn poll_command_exit(
         &mut self,
-    ) -> Result<crate::component_future::Poll<Event>> {
+    ) -> crate::component_future::Poll<Option<Event>, Error> {
         if self.exited {
-            return Ok(crate::component_future::Poll::Done);
+            return Ok(crate::component_future::Async::Ready(None));
         }
         if !self.stdout_closed {
-            return Ok(crate::component_future::Poll::NothingToDo);
+            return Ok(crate::component_future::Async::NothingToDo);
         }
 
         match self
@@ -258,12 +262,12 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             futures::Async::Ready(status) => {
                 log::debug!("exit({})", status);
                 self.exited = true;
-                Ok(crate::component_future::Poll::Event(Event::CommandExit(
-                    status,
+                Ok(crate::component_future::Async::Ready(Some(
+                    Event::CommandExit(status),
                 )))
             }
             futures::Async::NotReady => {
-                Ok(crate::component_future::Poll::NotReady)
+                Ok(crate::component_future::Async::NotReady)
             }
         }
     }

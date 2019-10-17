@@ -80,67 +80,66 @@ impl PlaySession {
 }
 
 impl PlaySession {
-    const POLL_FNS: &'static [&'static dyn for<'a> Fn(
-        &'a mut Self,
-    ) -> Result<
-        crate::component_future::Poll<()>,
-    >] = &[
+    const POLL_FNS:
+        &'static [&'static dyn for<'a> Fn(
+            &'a mut Self,
+        )
+            -> crate::component_future::Poll<
+            (),
+            Error,
+        >] = &[
         &Self::poll_open_file,
         &Self::poll_read_file,
         &Self::poll_write_terminal,
     ];
 
-    fn poll_open_file(
-        &mut self,
-    ) -> Result<crate::component_future::Poll<()>> {
+    fn poll_open_file(&mut self) -> crate::component_future::Poll<(), Error> {
         match &mut self.file {
             FileState::Closed { filename } => {
                 self.file = FileState::Opening {
                     fut: tokio::fs::File::open(filename.to_string()),
                 };
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             FileState::Opening { fut } => {
                 match fut.poll().context(crate::error::OpenFile)? {
                     futures::Async::Ready(file) => {
                         let file = crate::ttyrec::File::new(file);
                         self.file = FileState::Open { file };
-                        Ok(crate::component_future::Poll::DidWork)
+                        Ok(crate::component_future::Async::DidWork)
                     }
                     futures::Async::NotReady => {
-                        Ok(crate::component_future::Poll::NotReady)
+                        Ok(crate::component_future::Async::NotReady)
                     }
                 }
             }
-            _ => Ok(crate::component_future::Poll::NothingToDo),
+            _ => Ok(crate::component_future::Async::NothingToDo),
         }
     }
 
-    fn poll_read_file(
-        &mut self,
-    ) -> Result<crate::component_future::Poll<()>> {
+    fn poll_read_file(&mut self) -> crate::component_future::Poll<(), Error> {
         if let FileState::Open { file } = &mut self.file {
             match file.poll_read()? {
                 futures::Async::Ready(Some(frame)) => {
                     self.to_write.insert_at(frame.data, frame.time);
-                    Ok(crate::component_future::Poll::DidWork)
+                    Ok(crate::component_future::Async::DidWork)
                 }
                 futures::Async::Ready(None) => {
                     self.file = FileState::Eof;
-                    Ok(crate::component_future::Poll::DidWork)
+                    Ok(crate::component_future::Async::DidWork)
                 }
                 futures::Async::NotReady => {
-                    Ok(crate::component_future::Poll::NotReady)
+                    Ok(crate::component_future::Async::NotReady)
                 }
             }
         } else {
-            Ok(crate::component_future::Poll::NothingToDo)
+            Ok(crate::component_future::Async::NothingToDo)
         }
     }
 
     fn poll_write_terminal(
         &mut self,
-    ) -> Result<crate::component_future::Poll<()>> {
+    ) -> crate::component_future::Poll<(), Error> {
         match self.to_write.poll().context(crate::error::Sleep)? {
             futures::Async::Ready(Some(data)) => {
                 // TODO async
@@ -148,17 +147,17 @@ impl PlaySession {
                 let mut stdout = stdout.lock();
                 stdout.write(&data).context(crate::error::WriteTerminal)?;
                 stdout.flush().context(crate::error::FlushTerminal)?;
-                Ok(crate::component_future::Poll::DidWork)
+                Ok(crate::component_future::Async::DidWork)
             }
             futures::Async::Ready(None) => {
                 if let FileState::Eof = self.file {
-                    Ok(crate::component_future::Poll::Event(()))
+                    Ok(crate::component_future::Async::Ready(()))
                 } else {
-                    Ok(crate::component_future::Poll::NothingToDo)
+                    Ok(crate::component_future::Async::NothingToDo)
                 }
             }
             futures::Async::NotReady => {
-                Ok(crate::component_future::Poll::NotReady)
+                Ok(crate::component_future::Async::NotReady)
             }
         }
     }

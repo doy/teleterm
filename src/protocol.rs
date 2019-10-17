@@ -54,7 +54,7 @@ impl<T: tokio::io::AsyncWrite> FramedWriter<T> {
 pub const PROTO_VERSION: u8 = 1;
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub enum AuthType {
     Plain = 0,
     RecurseCenter,
@@ -124,7 +124,7 @@ impl Auth {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub enum MessageType {
     Login = 0,
     StartStreaming,
@@ -808,6 +808,48 @@ mod test {
             let res = res.unwrap();
             let res = res.unwrap();
             assert!(res.is_err());
+        }
+    }
+
+    #[test]
+    fn test_auth_values() {
+        let mut set = std::collections::HashSet::new();
+        let mut seen_err = false;
+        for i in 0..=255 {
+            if seen_err {
+                assert!(AuthType::try_from(i).is_err());
+            } else {
+                match AuthType::try_from(i) {
+                    Ok(ty) => {
+                        assert!(!set.contains(&ty));
+                        set.insert(ty);
+                    }
+                    Err(_) => {
+                        seen_err = true;
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_message_values() {
+        let mut set = std::collections::HashSet::new();
+        let mut seen_err = false;
+        for i in 0..=255 {
+            if seen_err {
+                assert!(MessageType::try_from(i).is_err());
+            } else {
+                match MessageType::try_from(i) {
+                    Ok(ty) => {
+                        assert!(!set.contains(&ty));
+                        set.insert(ty);
+                    }
+                    Err(_) => {
+                        seen_err = true;
+                    }
+                }
+            }
         }
     }
 

@@ -354,8 +354,10 @@ impl Message {
             }
 
             // these are security-sensitive, keep them out of logs
-            Self::OauthRequest { .. } => format!("OauthRequest {{ .. }})"),
-            Self::OauthResponse { .. } => format!("OauthResponse {{ .. }})"),
+            Self::OauthRequest { .. } => "OauthRequest {{ .. }}".to_string(),
+            Self::OauthResponse { .. } => {
+                "OauthResponse {{ .. }}".to_string()
+            }
 
             _ => format!("{:?}", self),
         }

@@ -339,7 +339,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 stdout.flush().context(crate::error::FlushTerminal)?;
             }
             crate::protocol::Message::Disconnected => {
-                self.reconnect(true)?;
+                self.reconnect(false)?;
             }
             crate::protocol::Message::Error { msg } => {
                 return Err(Error::Server { message: msg });

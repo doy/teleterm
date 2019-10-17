@@ -1,6 +1,150 @@
 use crate::prelude::*;
 use tokio::io::AsyncWrite as _;
 
+#[derive(serde::Deserialize)]
+pub struct Config {
+    #[serde(
+        deserialize_with = "crate::config::auth",
+        default = "crate::config::default_auth"
+    )]
+    auth: crate::protocol::Auth,
+
+    #[serde(
+        deserialize_with = "crate::config::connect_address",
+        default = "crate::config::default_connect_address"
+    )]
+    address: (String, std::net::SocketAddr),
+
+    #[serde(default = "crate::config::default_tls")]
+    tls: bool,
+
+    #[serde(default = "crate::config::default_connection_buffer_size")]
+    buffer_size: usize,
+
+    #[serde(default = "crate::config::default_command")]
+    command: String,
+
+    #[serde(default = "crate::config::default_args")]
+    args: Vec<String>,
+}
+
+impl Config {
+    fn host(&self) -> &str {
+        &self.address.0
+    }
+
+    fn addr(&self) -> &std::net::SocketAddr {
+        &self.address.1
+    }
+}
+
+impl crate::config::Config for Config {
+    fn merge_args<'a>(
+        &mut self,
+        matches: &clap::ArgMatches<'a>,
+    ) -> Result<()> {
+        if matches.is_present("login-recurse-center") {
+            let id = crate::oauth::load_client_auth_id(
+                crate::protocol::AuthType::RecurseCenter,
+            );
+            self.auth = crate::protocol::Auth::recurse_center(
+                id.as_ref().map(std::string::String::as_str),
+            );
+        }
+        if matches.is_present("login-plain") {
+            let username =
+                matches.value_of("login-plain").unwrap().to_string();
+            self.auth = crate::protocol::Auth::plain(&username);
+        }
+        if matches.is_present("address") {
+            let address = matches.value_of("address").unwrap();
+            self.address = crate::config::to_connect_address(address)?;
+        }
+        if matches.is_present("tls") {
+            self.tls = true;
+        }
+        if matches.is_present("buffer-size") {
+            let buffer_size = matches.value_of("buffer-size").unwrap();
+            self.buffer_size = buffer_size.parse().context(
+                crate::error::ParseBufferSize { input: buffer_size },
+            )?;
+        }
+        if matches.is_present("command") {
+            self.command = matches.value_of("command").unwrap().to_string();
+        }
+        if matches.is_present("args") {
+            self.args = matches
+                .values_of("args")
+                .unwrap()
+                .map(std::string::ToString::to_string)
+                .collect();
+        }
+        Ok(())
+    }
+
+    fn run(&self) -> Result<()> {
+        let host = self.host().to_string();
+        let address = *self.addr();
+        let fut: Box<
+            dyn futures::future::Future<Item = (), Error = Error> + Send,
+        > = if self.tls {
+            let connector = native_tls::TlsConnector::new()
+                .context(crate::error::CreateConnector)?;
+            let connect: crate::client::Connector<_> = Box::new(move || {
+                let host = host.clone();
+                let connector = connector.clone();
+                let connector = tokio_tls::TlsConnector::from(connector);
+                let stream = tokio::net::tcp::TcpStream::connect(&address);
+                Box::new(stream.context(crate::error::Connect).and_then(
+                    move |stream| {
+                        connector
+                            .connect(&host, stream)
+                            .context(crate::error::ConnectTls)
+                    },
+                ))
+            });
+            Box::new(StreamSession::new(
+                &self.command,
+                &self.args,
+                connect,
+                self.buffer_size,
+                &self.auth,
+            ))
+        } else {
+            let connect: crate::client::Connector<_> = Box::new(move || {
+                Box::new(
+                    tokio::net::tcp::TcpStream::connect(&address)
+                        .context(crate::error::Connect),
+                )
+            });
+            Box::new(StreamSession::new(
+                &self.command,
+                &self.args,
+                connect,
+                self.buffer_size,
+                &self.auth,
+            ))
+        };
+        tokio::run(fut.map_err(|e| {
+            eprintln!("{}", e);
+        }));
+        Ok(())
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            auth: crate::config::default_auth(),
+            address: crate::config::default_connect_address(),
+            tls: crate::config::default_tls(),
+            buffer_size: crate::config::default_connection_buffer_size(),
+            command: crate::config::default_command(),
+            args: crate::config::default_args(),
+        }
+    }
+}
+
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Stream your terminal")
         .arg(
@@ -28,99 +172,8 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         .arg(clap::Arg::with_name("args").index(2).multiple(true))
 }
 
-pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    let auth = if matches.is_present("login-recurse-center") {
-        let id = crate::oauth::load_client_auth_id(
-            crate::protocol::AuthType::RecurseCenter,
-        );
-        crate::protocol::Auth::recurse_center(
-            id.as_ref().map(std::string::String::as_str),
-        )
-    } else {
-        let username = matches
-            .value_of("login-plain")
-            .map(std::string::ToString::to_string)
-            .or_else(|| std::env::var("USER").ok())
-            .context(crate::error::CouldntFindUsername)?;
-        crate::protocol::Auth::plain(&username)
-    };
-    let address = matches.value_of("address").unwrap_or("127.0.0.1:4144");
-    let (host, address) = crate::util::resolve_address(address)?;
-    let tls = matches.is_present("tls");
-    let buffer_size =
-        matches
-            .value_of("buffer-size")
-            .map_or(Ok(4 * 1024 * 1024), |s| {
-                s.parse()
-                    .context(crate::error::ParseBufferSize { input: s })
-            })?;
-    let command = matches.value_of("command").map_or_else(
-        || std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string()),
-        std::string::ToString::to_string,
-    );
-    let args = if let Some(args) = matches.values_of("args") {
-        args.map(std::string::ToString::to_string).collect()
-    } else {
-        vec![]
-    };
-    run_impl(&auth, &host, address, tls, buffer_size, &command, &args)
-}
-
-fn run_impl(
-    auth: &crate::protocol::Auth,
-    host: &str,
-    address: std::net::SocketAddr,
-    tls: bool,
-    buffer_size: usize,
-    command: &str,
-    args: &[String],
-) -> Result<()> {
-    let host = host.to_string();
-    let fut: Box<
-        dyn futures::future::Future<Item = (), Error = Error> + Send,
-    > = if tls {
-        let connector = native_tls::TlsConnector::new()
-            .context(crate::error::CreateConnector)?;
-        let connect: crate::client::Connector<_> = Box::new(move || {
-            let host = host.clone();
-            let connector = connector.clone();
-            let connector = tokio_tls::TlsConnector::from(connector);
-            let stream = tokio::net::tcp::TcpStream::connect(&address);
-            Box::new(stream.context(crate::error::Connect).and_then(
-                move |stream| {
-                    connector
-                        .connect(&host, stream)
-                        .context(crate::error::ConnectTls)
-                },
-            ))
-        });
-        Box::new(StreamSession::new(
-            command,
-            args,
-            connect,
-            buffer_size,
-            auth,
-        ))
-    } else {
-        let connect: crate::client::Connector<_> = Box::new(move || {
-            Box::new(
-                tokio::net::tcp::TcpStream::connect(&address)
-                    .context(crate::error::Connect),
-            )
-        });
-        Box::new(StreamSession::new(
-            command,
-            args,
-            connect,
-            buffer_size,
-            auth,
-        ))
-    };
-    tokio::run(fut.map_err(|e| {
-        eprintln!("{}", e);
-    }));
-
-    Ok(())
+pub fn config() -> Box<dyn crate::config::Config> {
+    Box::new(Config::default())
 }
 
 struct StreamSession<

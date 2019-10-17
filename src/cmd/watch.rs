@@ -1,6 +1,122 @@
 use crate::prelude::*;
 use std::io::Write as _;
 
+#[derive(serde::Deserialize)]
+pub struct Config {
+    #[serde(
+        deserialize_with = "crate::config::auth",
+        default = "crate::config::default_auth"
+    )]
+    auth: crate::protocol::Auth,
+
+    #[serde(
+        deserialize_with = "crate::config::connect_address",
+        default = "crate::config::default_connect_address"
+    )]
+    address: (String, std::net::SocketAddr),
+
+    #[serde(default = "crate::config::default_tls")]
+    tls: bool,
+}
+
+impl Config {
+    fn host(&self) -> &str {
+        &self.address.0
+    }
+
+    fn addr(&self) -> &std::net::SocketAddr {
+        &self.address.1
+    }
+}
+
+impl crate::config::Config for Config {
+    fn merge_args<'a>(
+        &mut self,
+        matches: &clap::ArgMatches<'a>,
+    ) -> Result<()> {
+        if matches.is_present("login-recurse-center") {
+            let id = crate::oauth::load_client_auth_id(
+                crate::protocol::AuthType::RecurseCenter,
+            );
+            self.auth = crate::protocol::Auth::recurse_center(
+                id.as_ref().map(std::string::String::as_str),
+            );
+        }
+        if matches.is_present("login-plain") {
+            let username =
+                matches.value_of("login-plain").unwrap().to_string();
+            self.auth = crate::protocol::Auth::plain(&username);
+        }
+        if matches.is_present("address") {
+            let address = matches.value_of("address").unwrap();
+            self.address = crate::config::to_connect_address(address)?;
+        }
+        if matches.is_present("tls") {
+            self.tls = true;
+        }
+        Ok(())
+    }
+
+    fn run(&self) -> Result<()> {
+        let host = self.host().to_string();
+        let address = *self.addr();
+        let auth = self.auth.clone();
+        let fut: Box<
+            dyn futures::future::Future<Item = (), Error = Error> + Send,
+        > = if self.tls {
+            let connector = native_tls::TlsConnector::new()
+                .context(crate::error::CreateConnector)?;
+            let make_connector: Box<
+                dyn Fn() -> crate::client::Connector<_> + Send,
+            > = Box::new(move || {
+                let host = host.clone();
+                let connector = connector.clone();
+                Box::new(move || {
+                    let host = host.clone();
+                    let connector = connector.clone();
+                    let connector = tokio_tls::TlsConnector::from(connector);
+                    let stream =
+                        tokio::net::tcp::TcpStream::connect(&address);
+                    Box::new(stream.context(crate::error::Connect).and_then(
+                        move |stream| {
+                            connector
+                                .connect(&host, stream)
+                                .context(crate::error::ConnectTls)
+                        },
+                    ))
+                })
+            });
+            Box::new(WatchSession::new(make_connector, &auth))
+        } else {
+            let make_connector: Box<
+                dyn Fn() -> crate::client::Connector<_> + Send,
+            > = Box::new(move || {
+                Box::new(move || {
+                    Box::new(
+                        tokio::net::tcp::TcpStream::connect(&address)
+                            .context(crate::error::Connect),
+                    )
+                })
+            });
+            Box::new(WatchSession::new(make_connector, &auth))
+        };
+        tokio::run(fut.map_err(|e| {
+            eprintln!("{}", e);
+        }));
+        Ok(())
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            auth: crate::config::default_auth(),
+            address: crate::config::default_connect_address(),
+            tls: crate::config::default_tls(),
+        }
+    }
+}
+
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Watch teleterm streams")
         .arg(
@@ -21,79 +137,8 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         .arg(clap::Arg::with_name("tls").long("tls"))
 }
 
-pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    let auth = if matches.is_present("login-recurse-center") {
-        let id = crate::oauth::load_client_auth_id(
-            crate::protocol::AuthType::RecurseCenter,
-        );
-        crate::protocol::Auth::recurse_center(
-            id.as_ref().map(std::string::String::as_str),
-        )
-    } else {
-        let username = matches
-            .value_of("login-plain")
-            .map(std::string::ToString::to_string)
-            .or_else(|| std::env::var("USER").ok())
-            .context(crate::error::CouldntFindUsername)?;
-        crate::protocol::Auth::plain(&username)
-    };
-    let address = matches.value_of("address").unwrap_or("127.0.0.1:4144");
-    let (host, address) = crate::util::resolve_address(address)?;
-    let tls = matches.is_present("tls");
-    run_impl(&auth, &host, address, tls)
-}
-
-fn run_impl(
-    auth: &crate::protocol::Auth,
-    host: &str,
-    address: std::net::SocketAddr,
-    tls: bool,
-) -> Result<()> {
-    let host = host.to_string();
-    let auth = auth.clone();
-    let fut: Box<
-        dyn futures::future::Future<Item = (), Error = Error> + Send,
-    > = if tls {
-        let connector = native_tls::TlsConnector::new()
-            .context(crate::error::CreateConnector)?;
-        let make_connector: Box<
-            dyn Fn() -> crate::client::Connector<_> + Send,
-        > = Box::new(move || {
-            let host = host.clone();
-            let connector = connector.clone();
-            Box::new(move || {
-                let host = host.clone();
-                let connector = connector.clone();
-                let connector = tokio_tls::TlsConnector::from(connector);
-                let stream = tokio::net::tcp::TcpStream::connect(&address);
-                Box::new(stream.context(crate::error::Connect).and_then(
-                    move |stream| {
-                        connector
-                            .connect(&host, stream)
-                            .context(crate::error::ConnectTls)
-                    },
-                ))
-            })
-        });
-        Box::new(WatchSession::new(make_connector, &auth))
-    } else {
-        let make_connector: Box<
-            dyn Fn() -> crate::client::Connector<_> + Send,
-        > = Box::new(move || {
-            Box::new(move || {
-                Box::new(
-                    tokio::net::tcp::TcpStream::connect(&address)
-                        .context(crate::error::Connect),
-                )
-            })
-        });
-        Box::new(WatchSession::new(make_connector, &auth))
-    };
-    tokio::run(fut.map_err(|e| {
-        eprintln!("{}", e);
-    }));
-
-    Ok(())
+pub fn config() -> Box<dyn crate::config::Config> {
+    Box::new(Config::default())
 }
 
 // XXX https://github.com/rust-lang/rust/issues/64362

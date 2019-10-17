@@ -9,7 +9,7 @@ mod watch;
 struct Command {
     name: &'static str,
     cmd: &'static dyn for<'a, 'b> Fn(clap::App<'a, 'b>) -> clap::App<'a, 'b>,
-    run: &'static dyn for<'a> Fn(&clap::ArgMatches<'a>) -> Result<()>,
+    config: &'static dyn Fn() -> Box<dyn crate::config::Config>,
     log_level: &'static str,
 }
 
@@ -17,37 +17,37 @@ const COMMANDS: &[Command] = &[
     Command {
         name: "stream",
         cmd: &stream::cmd,
-        run: &stream::run,
+        config: &stream::config,
         log_level: "error",
     },
     Command {
         name: "server",
         cmd: &server::cmd,
-        run: &server::run,
+        config: &server::config,
         log_level: "info",
     },
     Command {
         name: "watch",
         cmd: &watch::cmd,
-        run: &watch::run,
+        config: &watch::config,
         log_level: "error",
     },
     Command {
         name: "record",
         cmd: &record::cmd,
-        run: &record::run,
+        config: &record::config,
         log_level: "error",
     },
     Command {
         name: "play",
         cmd: &play::cmd,
-        run: &play::run,
+        config: &play::config,
         log_level: "error",
     },
 ];
 
 pub fn parse<'a>() -> Result<clap::ArgMatches<'a>> {
-    let mut app = clap::App::new(crate::util::program_name()?)
+    let mut app = clap::App::new(program_name()?)
         .about("Stream your terminal for other people to watch")
         .author(clap::crate_authors!())
         .version(clap::crate_version!());
@@ -69,9 +69,26 @@ pub fn run(matches: &clap::ArgMatches<'_>) -> Result<()> {
             chosen_submatches = submatches;
         }
     }
+
     env_logger::from_env(
         env_logger::Env::default().default_filter_or(chosen_cmd.log_level),
     )
     .init();
-    (chosen_cmd.run)(chosen_submatches)
+
+    let mut config = (chosen_cmd.config)();
+    config.merge_args(chosen_submatches)?;
+    config.run()
+}
+
+fn program_name() -> Result<String> {
+    let program =
+        std::env::args().next().context(crate::error::MissingArgv)?;
+    let path = std::path::Path::new(&program);
+    let filename = path.file_name();
+    Ok(filename
+        .ok_or_else(|| Error::NotAFileName {
+            path: path.to_string_lossy().to_string(),
+        })?
+        .to_string_lossy()
+        .to_string())
 }

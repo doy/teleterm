@@ -2,6 +2,116 @@ use crate::prelude::*;
 use std::convert::TryFrom as _;
 use std::io::Read as _;
 
+#[derive(serde::Deserialize)]
+pub struct Config {
+    #[serde(
+        deserialize_with = "crate::config::listen_address",
+        default = "crate::config::default_listen_address"
+    )]
+    address: std::net::SocketAddr,
+
+    #[serde(default = "crate::config::default_connection_buffer_size")]
+    buffer_size: usize,
+
+    #[serde(default = "crate::config::default_read_timeout")]
+    read_timeout: std::time::Duration,
+
+    tls_identity_file: Option<String>,
+
+    #[serde(
+        deserialize_with = "crate::config::allowed_login_methods",
+        default = "crate::config::default_allowed_login_methods"
+    )]
+    allowed_login_methods:
+        std::collections::HashSet<crate::protocol::AuthType>,
+}
+
+impl crate::config::Config for Config {
+    fn merge_args<'a>(
+        &mut self,
+        matches: &clap::ArgMatches<'a>,
+    ) -> Result<()> {
+        if matches.is_present("address") {
+            self.address = matches
+                .value_of("address")
+                .unwrap()
+                .parse()
+                .context(crate::error::ParseAddr)?;
+        }
+        if matches.is_present("buffer-size") {
+            let s = matches.value_of("buffer-size").unwrap();
+            self.buffer_size = s
+                .parse()
+                .context(crate::error::ParseBufferSize { input: s })?;
+        }
+        if matches.is_present("read-timeout") {
+            let s = matches.value_of("read-timeout").unwrap();
+            self.read_timeout = s
+                .parse()
+                .map(std::time::Duration::from_secs)
+                .context(crate::error::ParseReadTimeout { input: s })?;
+        }
+        if matches.is_present("tls-identity-file") {
+            self.tls_identity_file = Some(
+                matches.value_of("tls-identity-file").unwrap().to_string(),
+            );
+        }
+        if matches.is_present("allowed-login-methods") {
+            self.allowed_login_methods = matches
+                .values_of("allowed-login-methods")
+                .unwrap()
+                .map(crate::protocol::AuthType::try_from)
+                .collect::<Result<
+                    std::collections::HashSet<crate::protocol::AuthType>,
+                >>()?;
+        }
+        Ok(())
+    }
+
+    fn run(&self) -> Result<()> {
+        let (acceptor, server) =
+            if let Some(tls_identity_file) = &self.tls_identity_file {
+                create_server_tls(
+                    self.address,
+                    self.buffer_size,
+                    self.read_timeout,
+                    tls_identity_file,
+                    self.allowed_login_methods.clone(),
+                )?
+            } else {
+                create_server(
+                    self.address,
+                    self.buffer_size,
+                    self.read_timeout,
+                    self.allowed_login_methods.clone(),
+                )?
+            };
+        tokio::run(futures::future::lazy(move || {
+            tokio::spawn(server.map_err(|e| {
+                eprintln!("{}", e);
+            }));
+
+            acceptor.map_err(|e| {
+                eprintln!("{}", e);
+            })
+        }));
+        Ok(())
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            address: crate::config::default_listen_address(),
+            buffer_size: crate::config::default_connection_buffer_size(),
+            read_timeout: crate::config::default_read_timeout(),
+            tls_identity_file: None,
+            allowed_login_methods:
+                crate::config::default_allowed_login_methods(),
+        }
+    }
+}
+
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Run a teleterm server")
         .arg(
@@ -32,79 +142,8 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         )
 }
 
-pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
-    let address = matches.value_of("address").map_or_else(
-        || Ok("0.0.0.0:4144".parse().unwrap()),
-        |s| s.parse().context(crate::error::ParseAddr),
-    )?;
-    let buffer_size =
-        matches
-            .value_of("buffer-size")
-            .map_or(Ok(4 * 1024 * 1024), |s| {
-                s.parse()
-                    .context(crate::error::ParseBufferSize { input: s })
-            })?;
-    let read_timeout = matches.value_of("read-timeout").map_or(
-        Ok(std::time::Duration::from_secs(120)),
-        |s| {
-            s.parse()
-                .map(std::time::Duration::from_secs)
-                .context(crate::error::ParseReadTimeout { input: s })
-        },
-    )?;
-    let tls_identity_file = matches.value_of("tls-identity-file");
-    let allowed_login_methods =
-        matches.values_of("allowed-login-methods").map_or_else(
-            || Ok(crate::protocol::AuthType::iter().collect()),
-            |methods| {
-                methods.map(crate::protocol::AuthType::try_from).collect()
-            },
-        )?;
-    run_impl(
-        address,
-        buffer_size,
-        read_timeout,
-        tls_identity_file,
-        allowed_login_methods,
-    )
-}
-
-fn run_impl(
-    address: std::net::SocketAddr,
-    buffer_size: usize,
-    read_timeout: std::time::Duration,
-    tls_identity_file: Option<&str>,
-    allowed_login_methods: std::collections::HashSet<
-        crate::protocol::AuthType,
-    >,
-) -> Result<()> {
-    let (acceptor, server) =
-        if let Some(tls_identity_file) = tls_identity_file {
-            create_server_tls(
-                address,
-                buffer_size,
-                read_timeout,
-                tls_identity_file,
-                allowed_login_methods,
-            )?
-        } else {
-            create_server(
-                address,
-                buffer_size,
-                read_timeout,
-                allowed_login_methods,
-            )?
-        };
-    tokio::run(futures::future::lazy(move || {
-        tokio::spawn(server.map_err(|e| {
-            eprintln!("{}", e);
-        }));
-
-        acceptor.map_err(|e| {
-            eprintln!("{}", e);
-        })
-    }));
-    Ok(())
+pub fn config() -> Box<dyn crate::config::Config> {
+    Box::new(Config::default())
 }
 
 fn create_server(

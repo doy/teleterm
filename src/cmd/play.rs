@@ -1,26 +1,50 @@
 use crate::prelude::*;
 use std::io::Write as _;
 
+#[derive(serde::Deserialize)]
+pub struct Config {
+    #[serde(default = "crate::config::default_ttyrec_filename")]
+    filename: String,
+}
+
+impl crate::config::Config for Config {
+    fn merge_args<'a>(
+        &mut self,
+        matches: &clap::ArgMatches<'a>,
+    ) -> Result<()> {
+        if matches.is_present("filename") {
+            self.filename = matches.value_of("filename").unwrap().to_string();
+        }
+        Ok(())
+    }
+
+    fn run(&self) -> Result<()> {
+        let fut = PlaySession::new(&self.filename);
+        tokio::run(fut.map_err(|e| {
+            eprintln!("{}", e);
+        }));
+        Ok(())
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            filename: crate::config::default_ttyrec_filename(),
+        }
+    }
+}
+
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     app.about("Play recorded terminal sessions").arg(
         clap::Arg::with_name("filename")
             .long("filename")
-            .takes_value(true)
-            .required(true),
+            .takes_value(true),
     )
 }
 
-pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> Result<()> {
-    let filename = matches.value_of("filename").unwrap();
-    run_impl(filename)
-}
-
-fn run_impl(filename: &str) -> Result<()> {
-    let fut = PlaySession::new(filename);
-    tokio::run(fut.map_err(|e| {
-        eprintln!("{}", e);
-    }));
-    Ok(())
+pub fn config() -> Box<dyn crate::config::Config> {
+    Box::new(Config::default())
 }
 
 #[allow(clippy::large_enum_variant)]

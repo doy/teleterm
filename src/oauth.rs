@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use oauth2::TokenResponse as _;
+use std::io::Read as _;
 
 mod recurse_center;
 pub use recurse_center::RecurseCenter;
@@ -69,6 +70,23 @@ pub trait Oauth {
         self: Box<Self>,
         token: &str,
     ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>;
+}
+
+pub fn load_client_auth_id(
+    auth: crate::protocol::AuthType,
+) -> Option<String> {
+    let id_file = client_id_file(auth);
+    std::fs::File::open(id_file).ok().and_then(|mut file| {
+        let mut id = vec![];
+        file.read_to_end(&mut id)
+            .ok()
+            .map(|_| std::string::String::from_utf8_lossy(&id).to_string())
+    })
+}
+
+fn client_id_file(auth: crate::protocol::AuthType) -> std::path::PathBuf {
+    let filename = format!("client-oauth-{}", auth.name());
+    crate::dirs::Dirs::new().data_file(&filename)
 }
 
 fn cache_refresh_token(

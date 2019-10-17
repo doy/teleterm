@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use std::io::Read as _;
 use tokio::io::AsyncWrite as _;
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
@@ -31,16 +30,9 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 
 pub fn run<'a>(matches: &clap::ArgMatches<'a>) -> super::Result<()> {
     let auth = if matches.is_present("login-recurse-center") {
-        let id_file = crate::dirs::Dirs::new().data_file(&format!(
-            "client-oauth-{}",
-            crate::protocol::AuthType::RecurseCenter.name()
-        ));
-        let id = std::fs::File::open(id_file).ok().and_then(|mut file| {
-            let mut id = vec![];
-            file.read_to_end(&mut id).ok().map(|_| {
-                std::string::String::from_utf8_lossy(&id).to_string()
-            })
-        });
+        let id = crate::oauth::load_client_auth_id(
+            crate::protocol::AuthType::RecurseCenter,
+        );
         crate::protocol::Auth::recurse_center(
             id.as_ref().map(std::string::String::as_str),
         )

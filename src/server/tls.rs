@@ -17,10 +17,18 @@ impl Server {
         sock_r: tokio::sync::mpsc::Receiver<
             tokio_tls::Accept<tokio::net::TcpStream>,
         >,
+        allowed_login_methods: std::collections::HashSet<
+            crate::protocol::AuthType,
+        >,
     ) -> Self {
         let (tls_sock_w, tls_sock_r) = tokio::sync::mpsc::channel(100);
         Self {
-            server: super::Server::new(buffer_size, read_timeout, tls_sock_r),
+            server: super::Server::new(
+                buffer_size,
+                read_timeout,
+                tls_sock_r,
+                allowed_login_methods,
+            ),
             sock_r,
             sock_w: tls_sock_w,
             accepting_sockets: vec![],

@@ -329,6 +329,7 @@ pub struct Server<
     >,
     connections: std::collections::HashMap<String, Connection<S>>,
     rate_limiter: ratelimit_meter::KeyedRateLimiter<Option<String>>,
+    allowed_auth_types: std::collections::HashSet<crate::protocol::AuthType>,
 }
 
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
@@ -338,6 +339,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         buffer_size: usize,
         read_timeout: std::time::Duration,
         sock_r: tokio::sync::mpsc::Receiver<S>,
+        allowed_auth_types: std::collections::HashSet<
+            crate::protocol::AuthType,
+        >,
     ) -> Self {
         let sock_stream = sock_r
             .map(move |s| Connection::new(s, buffer_size))
@@ -351,6 +355,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 std::num::NonZeroU32::new(300).unwrap(),
                 std::time::Duration::from_secs(60),
             ),
+            allowed_auth_types,
         }
     }
 
@@ -372,6 +377,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     > {
         if size.rows >= 1000 || size.cols >= 1000 {
             return Err(Error::TermTooBig { size });
+        }
+
+        let ty = auth.auth_type();
+        if !self.allowed_auth_types.contains(&ty) {
+            return Err(Error::AuthTypeNotAllowed { ty });
         }
 
         match &auth {

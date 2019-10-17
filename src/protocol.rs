@@ -74,6 +74,13 @@ impl AuthType {
             Self::RecurseCenter => true,
         }
     }
+
+    pub fn iter() -> impl Iterator<Item = Self> {
+        (0..=255)
+            .map(Self::try_from)
+            .take_while(std::result::Result::is_ok)
+            .map(std::result::Result::unwrap)
+    }
 }
 
 impl std::convert::TryFrom<u8> for AuthType {
@@ -84,6 +91,18 @@ impl std::convert::TryFrom<u8> for AuthType {
             0 => Self::Plain,
             1 => Self::RecurseCenter,
             _ => return Err(Error::InvalidAuthType { ty: n }),
+        })
+    }
+}
+
+impl std::convert::TryFrom<&str> for AuthType {
+    type Error = Error;
+
+    fn try_from(s: &str) -> Result<Self> {
+        Ok(match s {
+            s if Self::Plain.name() == s => Self::Plain,
+            s if Self::RecurseCenter.name() == s => Self::RecurseCenter,
+            _ => return Err(Error::InvalidAuthTypeStr { ty: s.to_string() }),
         })
     }
 }
@@ -115,7 +134,7 @@ impl Auth {
         self.auth_type().name()
     }
 
-    fn auth_type(&self) -> AuthType {
+    pub fn auth_type(&self) -> AuthType {
         match self {
             Self::Plain { .. } => AuthType::Plain,
             Self::RecurseCenter { .. } => AuthType::RecurseCenter,

@@ -4,6 +4,9 @@ pub enum Error {
     #[snafu(display("failed to accept: {}", source))]
     Acceptor { source: tokio::io::Error },
 
+    #[snafu(display("auth type not allowed: {:?}", ty))]
+    AuthTypeNotAllowed { ty: crate::protocol::AuthType },
+
     #[snafu(display("failed to bind: {}", source))]
     Bind { source: tokio::io::Error },
 
@@ -66,6 +69,9 @@ pub enum Error {
 
     #[snafu(display("invalid auth type: {}", ty))]
     InvalidAuthType { ty: u8 },
+
+    #[snafu(display("invalid auth type: {}", ty))]
+    InvalidAuthTypeStr { ty: String },
 
     #[snafu(display("invalid message type: {}", ty))]
     InvalidMessageType { ty: u8 },

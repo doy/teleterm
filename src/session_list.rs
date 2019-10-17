@@ -169,6 +169,7 @@ mod test {
             size: crate::term::Size { rows: 24, cols: 80 },
             idle_time: idle,
             title: "title".to_string(),
+            watchers: 0,
         }
     }
 

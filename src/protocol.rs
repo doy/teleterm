@@ -347,25 +347,17 @@ impl Message {
     // it'd be nice if i could just override the Debug implementation for
     // specific enum variants, but writing the whole impl Debug by hand just
     // to make this one change would be super obnoxious
-    pub fn log(&self, id: &str) {
+    pub fn format_log(&self) -> String {
         match self {
             Self::TerminalOutput { data } => {
-                log::debug!(
-                    "{}: message(TerminalOutput {{ data: ({} bytes) }})",
-                    id,
-                    data.len()
-                );
+                format!("TerminalOutput {{ data: ({} bytes) }}", data.len())
             }
+
             // these are security-sensitive, keep them out of logs
-            Self::OauthRequest { .. } => {
-                log::debug!("{}: message(OauthRequest {{ .. }})", id);
-            }
-            Self::OauthResponse { .. } => {
-                log::debug!("{}: message(OauthResponse {{ .. }})", id);
-            }
-            message => {
-                log::debug!("{}: message({:?})", id, message);
-            }
+            Self::OauthRequest { .. } => format!("OauthRequest {{ .. }})"),
+            Self::OauthResponse { .. } => format!("OauthResponse {{ .. }})"),
+
+            _ => format!("{:?}", self),
         }
     }
 }

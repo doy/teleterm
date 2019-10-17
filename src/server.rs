@@ -792,7 +792,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             }
         }
 
-        message.log(&conn.id);
+        log::debug!("{}: recv({})", conn.id, message.format_log());
 
         match conn.state {
             ConnectionState::Accepted { .. } => {
@@ -883,6 +883,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 if let Some(msg) = conn.to_send.pop_front() {
                     if let Some(WriteSocket::Connected(s)) = conn.wsock.take()
                     {
+                        log::debug!(
+                            "{}: send({})",
+                            conn.id,
+                            msg.format_log()
+                        );
                         let fut = msg
                             .write_async(s)
                             .timeout(self.read_timeout)

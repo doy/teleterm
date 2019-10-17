@@ -246,6 +246,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn handle_successful_connection(&mut self, s: S) -> Result<()> {
         self.last_server_time = std::time::Instant::now();
 
+        log::info!("connected to server");
+
         let (rs, ws) = s.split();
         self.rsock = ReadSocket::Connected(
             crate::protocol::FramedReader::new(rs, self.buffer_size),
@@ -278,7 +280,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             >,
         >,
     )> {
-        msg.log("recv");
+        log::debug!("recv_message({})", msg.format_log());
 
         match msg {
             crate::protocol::Message::OauthRequest { url, id } => {
@@ -298,7 +300,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     )?),
                 ))
             }
-            crate::protocol::Message::LoggedIn { .. } => {
+            crate::protocol::Message::LoggedIn { username } => {
+                log::info!("successfully logged into server as {}", username);
                 self.reset_reconnect_timer();
                 for msg in &self.on_login {
                     self.to_send.push_back(msg.clone());
@@ -447,10 +450,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     return Ok(crate::component_future::Poll::NotReady);
                 }
                 Err(e) => {
-                    log::debug!(
-                        "error while connecting, reconnecting: {}",
-                        e
-                    );
+                    log::warn!("error while connecting, reconnecting: {}", e);
                     self.reconnect();
                     // not sending a disconnect event here because we never
                     // actually connected, so it'd just be spammy
@@ -460,7 +460,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 if self.has_seen_server_recently() {
                     return Ok(crate::component_future::Poll::NothingToDo);
                 } else {
-                    log::debug!(
+                    log::warn!(
                         "haven't seen server in a while, reconnecting",
                     );
                     self.reconnect();
@@ -506,7 +506,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                             Ok(poll)
                         }
                         Err(e) => {
-                            log::debug!(
+                            log::warn!(
                                 "error handling message, reconnecting: {}",
                                 e
                             );
@@ -521,7 +521,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     Ok(crate::component_future::Poll::NotReady)
                 }
                 Err(e) => {
-                    log::debug!("error reading message, reconnecting: {}", e);
+                    log::warn!("error reading message, reconnecting: {}", e);
                     self.reconnect();
                     Ok(crate::component_future::Poll::Event(
                         Event::Disconnect,
@@ -545,7 +545,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     Ok(crate::component_future::Poll::NotReady)
                 }
                 Err(e) => {
-                    log::debug!(
+                    log::warn!(
                         "error processing message, reconnecting: {}",
                         e
                     );
@@ -575,7 +575,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     WriteSocket::NotConnected,
                 ) {
                     let msg = self.to_send.pop_front().unwrap();
-                    msg.log("send");
+                    log::debug!("send_message({})", msg.format_log());
                     let fut = msg.write_async(s);
                     self.wsock = WriteSocket::Writing(Box::new(fut));
                 } else {
@@ -593,7 +593,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     Ok(crate::component_future::Poll::NotReady)
                 }
                 Err(e) => {
-                    log::debug!("error writing message, reconnecting: {}", e);
+                    log::warn!("error writing message, reconnecting: {}", e);
                     self.reconnect();
                     Ok(crate::component_future::Poll::Event(
                         Event::Disconnect,

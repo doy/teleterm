@@ -123,6 +123,47 @@ impl Auth {
     }
 }
 
+#[repr(u8)]
+#[derive(Copy, Clone, Debug)]
+pub enum MessageType {
+    Login = 0,
+    StartStreaming,
+    StartWatching,
+    Heartbeat,
+    TerminalOutput,
+    ListSessions,
+    Sessions,
+    Disconnected,
+    Error,
+    Resize,
+    LoggedIn,
+    OauthRequest,
+    OauthResponse,
+}
+
+impl std::convert::TryFrom<u8> for MessageType {
+    type Error = Error;
+
+    fn try_from(n: u8) -> Result<Self> {
+        Ok(match n {
+            0 => Self::Login,
+            1 => Self::StartStreaming,
+            2 => Self::StartWatching,
+            3 => Self::Heartbeat,
+            4 => Self::TerminalOutput,
+            5 => Self::ListSessions,
+            6 => Self::Sessions,
+            7 => Self::Disconnected,
+            8 => Self::Error,
+            9 => Self::Resize,
+            10 => Self::LoggedIn,
+            11 => Self::OauthRequest,
+            12 => Self::OauthResponse,
+            _ => return Err(Error::InvalidMessageType { ty: n }),
+        })
+    }
+}
+
 // XXX https://github.com/rust-lang/rust/issues/64362
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,20 +204,6 @@ pub enum Message {
         code: String,
     },
 }
-
-const MSG_LOGIN: u8 = 0;
-const MSG_START_STREAMING: u8 = 1;
-const MSG_START_WATCHING: u8 = 2;
-const MSG_HEARTBEAT: u8 = 3;
-const MSG_TERMINAL_OUTPUT: u8 = 4;
-const MSG_LIST_SESSIONS: u8 = 5;
-const MSG_SESSIONS: u8 = 6;
-const MSG_DISCONNECTED: u8 = 7;
-const MSG_ERROR: u8 = 8;
-const MSG_RESIZE: u8 = 9;
-const MSG_LOGGED_IN: u8 = 10;
-const MSG_OAUTH_REQUEST: u8 = 11;
-const MSG_OAUTH_RESPONSE: u8 = 12;
 
 impl Message {
     pub fn login(
@@ -250,6 +277,24 @@ impl Message {
     pub fn oauth_response(code: &str) -> Self {
         Self::OauthResponse {
             code: code.to_string(),
+        }
+    }
+
+    pub fn message_type(&self) -> MessageType {
+        match self {
+            Self::Login { .. } => MessageType::Login,
+            Self::StartStreaming { .. } => MessageType::StartStreaming,
+            Self::StartWatching { .. } => MessageType::StartWatching,
+            Self::Heartbeat { .. } => MessageType::Heartbeat,
+            Self::TerminalOutput { .. } => MessageType::TerminalOutput,
+            Self::ListSessions { .. } => MessageType::ListSessions,
+            Self::Sessions { .. } => MessageType::Sessions,
+            Self::Disconnected { .. } => MessageType::Disconnected,
+            Self::Error { .. } => MessageType::Error,
+            Self::Resize { .. } => MessageType::Resize,
+            Self::LoggedIn { .. } => MessageType::LoggedIn,
+            Self::OauthRequest { .. } => MessageType::OauthRequest,
+            Self::OauthResponse { .. } => MessageType::OauthResponse,
         }
     }
 
@@ -442,6 +487,9 @@ impl From<&Message> for Packet {
             }
         }
 
+        let ty = msg.message_type() as u8;
+        let mut data = vec![];
+
         match msg {
             Message::Login {
                 proto_version,
@@ -449,116 +497,43 @@ impl From<&Message> for Packet {
                 term_type,
                 size,
             } => {
-                let mut data = vec![];
-
                 write_u8(*proto_version, &mut data);
                 write_auth(auth, &mut data);
                 write_str(term_type, &mut data);
                 write_size(size, &mut data);
-
-                Self {
-                    ty: MSG_LOGIN,
-                    data,
-                }
             }
-            Message::StartStreaming => Self {
-                ty: MSG_START_STREAMING,
-                data: vec![],
-            },
+            Message::StartStreaming => {}
             Message::StartWatching { id } => {
-                let mut data = vec![];
-
                 write_str(id, &mut data);
-
-                Self {
-                    ty: MSG_START_WATCHING,
-                    data,
-                }
             }
-            Message::Heartbeat => Self {
-                ty: MSG_HEARTBEAT,
-                data: vec![],
-            },
+            Message::Heartbeat => {}
             Message::TerminalOutput { data: output } => {
-                let mut data = vec![];
-
                 write_bytes(output, &mut data);
-
-                Self {
-                    ty: MSG_TERMINAL_OUTPUT,
-                    data: data.to_vec(),
-                }
             }
-            Message::ListSessions => Self {
-                ty: MSG_LIST_SESSIONS,
-                data: vec![],
-            },
+            Message::ListSessions => {}
             Message::Sessions { sessions } => {
-                let mut data = vec![];
-
                 write_sessions(sessions, &mut data);
-
-                Self {
-                    ty: MSG_SESSIONS,
-                    data,
-                }
             }
-            Message::Disconnected => Self {
-                ty: MSG_DISCONNECTED,
-                data: vec![],
-            },
+            Message::Disconnected => {}
             Message::Error { msg } => {
-                let mut data = vec![];
-
                 write_str(msg, &mut data);
-
-                Self {
-                    ty: MSG_ERROR,
-                    data,
-                }
             }
             Message::Resize { size } => {
-                let mut data = vec![];
-
                 write_size(size, &mut data);
-
-                Self {
-                    ty: MSG_RESIZE,
-                    data,
-                }
             }
             Message::LoggedIn { username } => {
-                let mut data = vec![];
-
                 write_str(username, &mut data);
-
-                Self {
-                    ty: MSG_LOGGED_IN,
-                    data,
-                }
             }
             Message::OauthRequest { url, id } => {
-                let mut data = vec![];
-
                 write_str(url, &mut data);
                 write_str(id, &mut data);
-
-                Self {
-                    ty: MSG_OAUTH_REQUEST,
-                    data,
-                }
             }
             Message::OauthResponse { code } => {
-                let mut data = vec![];
-
                 write_str(code, &mut data);
-
-                Self {
-                    ty: MSG_OAUTH_RESPONSE,
-                    data,
-                }
             }
         }
+
+        Self { ty, data }
     }
 }
 
@@ -678,9 +653,10 @@ impl std::convert::TryFrom<Packet> for Message {
             Ok((auth, data))
         }
 
+        let ty = MessageType::try_from(packet.ty)?;
         let data: &[u8] = packet.data.as_ref();
-        let (msg, rest) = match packet.ty {
-            MSG_LOGIN => {
+        let (msg, rest) = match ty {
+            MessageType::Login => {
                 let (proto_version, data) = read_u8(data)?;
                 let (auth, data) = read_auth(data)?;
                 let (term_type, data) = read_str(data)?;
@@ -696,51 +672,51 @@ impl std::convert::TryFrom<Packet> for Message {
                     data,
                 )
             }
-            MSG_START_STREAMING => (Self::StartStreaming, data),
-            MSG_START_WATCHING => {
+            MessageType::StartStreaming => (Self::StartStreaming, data),
+            MessageType::StartWatching => {
                 let (id, data) = read_str(data)?;
 
                 (Self::StartWatching { id }, data)
             }
-            MSG_HEARTBEAT => (Self::Heartbeat, data),
-            MSG_TERMINAL_OUTPUT => {
+            MessageType::Heartbeat => (Self::Heartbeat, data),
+            MessageType::TerminalOutput => {
                 let (output, data) = read_bytes(data)?;
 
                 (Self::TerminalOutput { data: output }, data)
             }
-            MSG_LIST_SESSIONS => (Self::ListSessions, data),
-            MSG_SESSIONS => {
+            MessageType::ListSessions => (Self::ListSessions, data),
+            MessageType::Sessions => {
                 let (sessions, data) = read_sessions(data)?;
 
                 (Self::Sessions { sessions }, data)
             }
-            MSG_DISCONNECTED => (Self::Disconnected, data),
-            MSG_ERROR => {
+            MessageType::Disconnected => (Self::Disconnected, data),
+            MessageType::Error => {
                 let (msg, data) = read_str(data)?;
+
                 (Self::Error { msg }, data)
             }
-            MSG_RESIZE => {
+            MessageType::Resize => {
                 let (size, data) = read_size(data)?;
 
                 (Self::Resize { size }, data)
             }
-            MSG_LOGGED_IN => {
+            MessageType::LoggedIn => {
                 let (username, data) = read_str(data)?;
 
                 (Self::LoggedIn { username }, data)
             }
-            MSG_OAUTH_REQUEST => {
+            MessageType::OauthRequest => {
                 let (url, data) = read_str(data)?;
                 let (id, data) = read_str(data)?;
 
                 (Self::OauthRequest { url, id }, data)
             }
-            MSG_OAUTH_RESPONSE => {
+            MessageType::OauthResponse => {
                 let (code, data) = read_str(data)?;
 
                 (Self::OauthResponse { code }, data)
             }
-            _ => return Err(Error::InvalidMessageType { ty: packet.ty }),
         };
 
         if !rest.is_empty() {

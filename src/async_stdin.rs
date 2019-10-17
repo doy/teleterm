@@ -1,5 +1,7 @@
 struct EventedStdin;
 
+const STDIN: i32 = 0;
+
 impl std::io::Read for EventedStdin {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let stdin = std::io::stdin();
@@ -16,7 +18,7 @@ impl mio::Evented for EventedStdin {
         interest: mio::Ready,
         opts: mio::PollOpt,
     ) -> std::io::Result<()> {
-        let fd = 0 as std::os::unix::io::RawFd;
+        let fd = STDIN as std::os::unix::io::RawFd;
         let eventedfd = mio::unix::EventedFd(&fd);
         eventedfd.register(poll, token, interest, opts)
     }
@@ -28,13 +30,13 @@ impl mio::Evented for EventedStdin {
         interest: mio::Ready,
         opts: mio::PollOpt,
     ) -> std::io::Result<()> {
-        let fd = 0 as std::os::unix::io::RawFd;
+        let fd = STDIN as std::os::unix::io::RawFd;
         let eventedfd = mio::unix::EventedFd(&fd);
         eventedfd.reregister(poll, token, interest, opts)
     }
 
     fn deregister(&self, poll: &mio::Poll) -> std::io::Result<()> {
-        let fd = 0 as std::os::unix::io::RawFd;
+        let fd = STDIN as std::os::unix::io::RawFd;
         let eventedfd = mio::unix::EventedFd(&fd);
         eventedfd.deregister(poll)
     }

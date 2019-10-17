@@ -10,6 +10,7 @@ const RECONNECT_BACKOFF_MAX: std::time::Duration =
     std::time::Duration::from_secs(60);
 
 const OAUTH_LISTEN_ADDRESS: &str = "127.0.0.1:44141";
+const OAUTH_BROWSER_SUCCESS_MESSAGE: &str = "authenticated successfully! now close this page and return to your terminal.";
 
 enum ReadSocket<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
@@ -398,10 +399,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         .map(|_| (msg, sock))
                 })
                 .and_then(|(msg, sock)| {
-                    let response = r"HTTP/1.1 200 OK
-
-authenticated successfully! now close this page and return to your terminal.
-";
+                    let response = format!(
+                        "HTTP/1.1 200 OK\n\n{}",
+                        OAUTH_BROWSER_SUCCESS_MESSAGE
+                    );
                     tokio::io::write_all(sock, response)
                         .context(crate::error::WriteSocket)
                         .map(|_| msg)

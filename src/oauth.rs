@@ -73,6 +73,20 @@ pub trait Oauth {
     ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>;
 }
 
+pub fn save_client_auth_id(
+    auth: crate::protocol::AuthType,
+    id: &str,
+) -> impl futures::future::Future<Item = (), Error = Error> {
+    let id_file = client_id_file(auth);
+    let id = id.to_string();
+    tokio::fs::File::create(id_file)
+        .context(crate::error::CreateFile)
+        .and_then(|file| {
+            tokio::io::write_all(file, id).context(crate::error::WriteFile)
+        })
+        .map(|_| ())
+}
+
 pub fn load_client_auth_id(
     auth: crate::protocol::AuthType,
 ) -> Option<String> {

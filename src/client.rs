@@ -337,7 +337,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             ).unwrap();
         }
 
-        let auth_name = self.auth.name().to_string();
+        let auth_type = self.auth.auth_type();
         let id = id.to_string();
         let addr = OAUTH_LISTEN_ADDRESS
             .parse()
@@ -394,14 +394,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     ))
                 })
                 .and_then(move |(msg, sock)| {
-                    let id_file = crate::dirs::Dirs::new()
-                        .data_file(&format!("client-oauth-{}", auth_name));
-                    tokio::fs::File::create(id_file)
-                        .context(crate::error::CreateFile)
-                        .and_then(|file| {
-                            tokio::io::write_all(file, id)
-                                .context(crate::error::WriteFile)
-                        })
+                    crate::oauth::save_client_auth_id(auth_type, &id)
                         .map(|_| (msg, sock))
                 })
                 .and_then(|(msg, sock)| {

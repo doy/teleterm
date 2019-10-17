@@ -12,7 +12,7 @@ directories = "2"
 env_logger = "0.7"
 futures = "0.1"
 lazy_static = "1"
-log = "0.4"
+log = { version = "0.4", features = ["release_max_level_info"] }
 mio = "0.6"
 native-tls = "0.2"
 oauth2 = "3.0.0-alpha.3" # need the alpha for async support

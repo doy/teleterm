@@ -434,7 +434,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     let client = conn.oauth_client.take().unwrap();
                     let mut new_state = conn.state.clone();
                     let fut =
-                        tokio::fs::File::open(client.token_cache_file())
+                        tokio::fs::File::open(client.server_token_file())
                             .context(crate::error::OpenFile)
                             .and_then(|file| {
                                 tokio::io::lines(std::io::BufReader::new(

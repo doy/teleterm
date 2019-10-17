@@ -9,9 +9,10 @@ pub trait Oauth {
     fn client(&self) -> &oauth2::basic::BasicClient;
     fn user_id(&self) -> &str;
     fn name(&self) -> &str;
-    fn token_cache_file(&self) -> std::path::PathBuf {
+
+    fn server_token_file(&self) -> std::path::PathBuf {
         let name = format!("server-oauth-{}-{}", self.name(), self.user_id());
-        crate::dirs::Dirs::new().cache_file(&name)
+        crate::dirs::Dirs::new().data_file(&name)
     }
 
     fn generate_authorize_url(&self) -> String {
@@ -27,7 +28,7 @@ pub trait Oauth {
         code: &str,
     ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>
     {
-        let token_cache_file = self.token_cache_file();
+        let token_cache_file = self.server_token_file();
         let fut = self
             .client()
             .exchange_code(oauth2::AuthorizationCode::new(code.to_string()))
@@ -48,7 +49,7 @@ pub trait Oauth {
         token: &str,
     ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>
     {
-        let token_cache_file = self.token_cache_file();
+        let token_cache_file = self.server_token_file();
         let fut = self
             .client()
             .exchange_refresh_token(&oauth2::RefreshToken::new(

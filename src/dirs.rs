@@ -15,19 +15,9 @@ impl Dirs {
     }
 
     pub fn create_all(&self) -> Result<()> {
-        std::fs::create_dir_all(self.cache_dir())
-            .context(crate::error::CreateDir)?;
         std::fs::create_dir_all(self.data_dir())
             .context(crate::error::CreateDir)?;
         Ok(())
-    }
-
-    fn cache_dir(&self) -> &std::path::Path {
-        self.project_dirs.cache_dir()
-    }
-
-    pub fn cache_file(&self, name: &str) -> std::path::PathBuf {
-        self.cache_dir().join(name)
     }
 
     fn data_dir(&self) -> &std::path::Path {

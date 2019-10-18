@@ -13,7 +13,7 @@ const DEFAULT_AUTH_TYPE: crate::protocol::AuthType =
 const DEFAULT_TLS: bool = false;
 const DEFAULT_TTYREC_FILENAME: &str = "teleterm.ttyrec";
 
-pub trait Config {
+pub trait Config: std::fmt::Debug {
     fn merge_args<'a>(
         &mut self,
         matches: &clap::ArgMatches<'a>,

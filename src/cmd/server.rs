@@ -2,7 +2,7 @@ use crate::prelude::*;
 use std::convert::TryFrom as _;
 use std::io::Read as _;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug)]
 pub struct Config {
     #[serde(
         deserialize_with = "crate::config::listen_address",

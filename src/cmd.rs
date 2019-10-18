@@ -100,6 +100,7 @@ pub fn run(matches: &clap::ArgMatches<'_>) -> Result<()> {
 
     let mut cmd_config = (chosen_cmd.config)(config);
     cmd_config.merge_args(chosen_submatches)?;
+    log::debug!("{:?}", cmd_config);
     cmd_config.run()
 }
 

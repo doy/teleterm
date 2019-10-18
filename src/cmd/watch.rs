@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use std::io::Write as _;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug)]
 pub struct Config {
     #[serde(
         deserialize_with = "crate::config::auth",

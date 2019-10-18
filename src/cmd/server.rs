@@ -13,7 +13,10 @@ pub struct Config {
     #[serde(default = "crate::config::default_connection_buffer_size")]
     buffer_size: usize,
 
-    #[serde(default = "crate::config::default_read_timeout")]
+    #[serde(
+        deserialize_with = "crate::config::read_timeout",
+        default = "crate::config::default_read_timeout"
+    )]
     read_timeout: std::time::Duration,
 
     tls_identity_file: Option<String>,

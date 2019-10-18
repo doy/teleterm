@@ -27,7 +27,7 @@ pub fn listen_address<'a, D>(
 where
     D: serde::de::Deserializer<'a>,
 {
-    to_listen_address(<&str>::deserialize(deserializer)?)
+    to_listen_address(&<String>::deserialize(deserializer)?)
         .map_err(serde::de::Error::custom)
 }
 
@@ -45,7 +45,7 @@ pub fn connect_address<'a, D>(
 where
     D: serde::de::Deserializer<'a>,
 {
-    to_connect_address(<&str>::deserialize(deserializer)?)
+    to_connect_address(&<String>::deserialize(deserializer)?)
         .map_err(serde::de::Error::custom)
 }
 
@@ -71,6 +71,17 @@ pub fn to_connect_address(
 
 pub fn default_connection_buffer_size() -> usize {
     DEFAULT_CONNECTION_BUFFER_SIZE
+}
+
+pub fn read_timeout<'a, D>(
+    deserializer: D,
+) -> std::result::Result<std::time::Duration, D::Error>
+where
+    D: serde::de::Deserializer<'a>,
+{
+    Ok(std::time::Duration::from_secs(u64::deserialize(
+        deserializer,
+    )?))
 }
 
 pub fn default_read_timeout() -> std::time::Duration {
@@ -107,14 +118,13 @@ pub fn allowed_login_methods<'a, D>(
 where
     D: serde::de::Deserializer<'a>,
 {
-    Option::<Vec<&str>>::deserialize(deserializer)?
+    Option::<Vec<String>>::deserialize(deserializer)?
         .map_or_else(
             || Ok(default_allowed_login_methods()),
             |methods| {
                 methods
                     .iter()
-                    .copied()
-                    .map(crate::protocol::AuthType::try_from)
+                    .map(|s| crate::protocol::AuthType::try_from(s.as_ref()))
                     .collect()
             },
         )
@@ -166,8 +176,10 @@ fn auth_type<'a, D>(
 where
     D: serde::de::Deserializer<'a>,
 {
-    crate::protocol::AuthType::try_from(<&str>::deserialize(deserializer)?)
-        .map_err(serde::de::Error::custom)
+    crate::protocol::AuthType::try_from(
+        <String>::deserialize(deserializer)?.as_ref(),
+    )
+    .map_err(serde::de::Error::custom)
 }
 
 fn default_auth_type() -> crate::protocol::AuthType {

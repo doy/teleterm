@@ -20,6 +20,14 @@ impl Dirs {
         Ok(())
     }
 
+    fn config_dir(&self) -> &std::path::Path {
+        self.project_dirs.config_dir()
+    }
+
+    pub fn config_file(&self, name: &str) -> std::path::PathBuf {
+        self.config_dir().join(name)
+    }
+
     fn data_dir(&self) -> &std::path::Path {
         self.project_dirs.data_dir()
     }

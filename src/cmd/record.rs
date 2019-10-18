@@ -84,8 +84,11 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         .arg(clap::Arg::with_name("args").index(2).multiple(true))
 }
 
-pub fn config() -> Box<dyn crate::config::Config> {
-    Box::new(Config::default())
+pub fn config(config: config::Config) -> Box<dyn crate::config::Config> {
+    Box::new(config.try_into().unwrap_or_else(|e| {
+        log::warn!("failed to parse config data: {}", e);
+        Config::default()
+    }))
 }
 
 #[allow(clippy::large_enum_variant)]

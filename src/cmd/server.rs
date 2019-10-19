@@ -8,7 +8,7 @@ pub struct Config {
         deserialize_with = "crate::config::listen_address",
         default = "crate::config::default_listen_address"
     )]
-    address: std::net::SocketAddr,
+    listen_address: std::net::SocketAddr,
 
     #[serde(default = "crate::config::default_connection_buffer_size")]
     buffer_size: usize,
@@ -35,7 +35,7 @@ impl crate::config::Config for Config {
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
         if matches.is_present("address") {
-            self.address = matches
+            self.listen_address = matches
                 .value_of("address")
                 .unwrap()
                 .parse()
@@ -75,7 +75,7 @@ impl crate::config::Config for Config {
         let (acceptor, server) =
             if let Some(tls_identity_file) = &self.tls_identity_file {
                 create_server_tls(
-                    self.address,
+                    self.listen_address,
                     self.buffer_size,
                     self.read_timeout,
                     tls_identity_file,
@@ -83,7 +83,7 @@ impl crate::config::Config for Config {
                 )?
             } else {
                 create_server(
-                    self.address,
+                    self.listen_address,
                     self.buffer_size,
                     self.read_timeout,
                     self.allowed_login_methods.clone(),
@@ -105,7 +105,7 @@ impl crate::config::Config for Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            address: crate::config::default_listen_address(),
+            listen_address: crate::config::default_listen_address(),
             buffer_size: crate::config::default_connection_buffer_size(),
             read_timeout: crate::config::default_read_timeout(),
             tls_identity_file: None,

@@ -13,7 +13,7 @@ pub struct Config {
         deserialize_with = "crate::config::connect_address",
         default = "crate::config::default_connect_address"
     )]
-    address: (String, std::net::SocketAddr),
+    connect_address: (String, std::net::SocketAddr),
 
     #[serde(default = "crate::config::default_tls")]
     tls: bool,
@@ -21,11 +21,11 @@ pub struct Config {
 
 impl Config {
     fn host(&self) -> &str {
-        &self.address.0
+        &self.connect_address.0
     }
 
     fn addr(&self) -> &std::net::SocketAddr {
-        &self.address.1
+        &self.connect_address.1
     }
 }
 
@@ -49,7 +49,8 @@ impl crate::config::Config for Config {
         }
         if matches.is_present("address") {
             let address = matches.value_of("address").unwrap();
-            self.address = crate::config::to_connect_address(address)?;
+            self.connect_address =
+                crate::config::to_connect_address(address)?;
         }
         if matches.is_present("tls") {
             self.tls = true;
@@ -113,7 +114,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             auth: crate::config::default_auth(),
-            address: crate::config::default_connect_address(),
+            connect_address: crate::config::default_connect_address(),
             tls: crate::config::default_tls(),
         }
     }

@@ -118,17 +118,52 @@ pub fn allowed_login_methods<'a, D>(
 where
     D: serde::de::Deserializer<'a>,
 {
-    Option::<Vec<String>>::deserialize(deserializer)?
-        .map_or_else(
-            || Ok(default_allowed_login_methods()),
-            |methods| {
-                methods
-                    .iter()
-                    .map(|s| crate::protocol::AuthType::try_from(s.as_ref()))
-                    .collect()
-            },
-        )
-        .map_err(serde::de::Error::custom)
+    struct StringOrVec;
+
+    impl<'a> serde::de::Visitor<'a> for StringOrVec {
+        type Value = Vec<String>;
+
+        fn expecting(
+            &self,
+            formatter: &mut std::fmt::Formatter,
+        ) -> std::fmt::Result {
+            formatter.write_str("string or list")
+        }
+
+        fn visit_str<E>(
+            self,
+            value: &str,
+        ) -> std::result::Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(value
+                .split(',')
+                .map(std::string::ToString::to_string)
+                .collect())
+        }
+
+        fn visit_seq<A>(
+            self,
+            seq: A,
+        ) -> std::result::Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'a>,
+        {
+            serde::de::Deserialize::deserialize(
+                serde::de::value::SeqAccessDeserializer::new(seq),
+            )
+        }
+    }
+
+    deserializer
+        .deserialize_any(StringOrVec)?
+        .iter()
+        .map(|s| {
+            crate::protocol::AuthType::try_from(s.as_str())
+                .map_err(serde::de::Error::custom)
+        })
+        .collect()
 }
 
 pub fn auth<'a, D>(

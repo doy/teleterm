@@ -443,11 +443,17 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         crossterm::terminal()
             .clear(crossterm::ClearType::All)
             .context(crate::error::WriteTerminalCrossterm)?;
-        let data = b"loading...\r\nq: quit --> ";
-        let stdout = std::io::stdout();
-        let mut stdout = stdout.lock();
-        stdout.write(data).context(crate::error::WriteTerminal)?;
-        stdout.flush().context(crate::error::FlushTerminal)?;
+
+        println!("loading...\r");
+        if let Some(err) = self.list_client.last_error() {
+            println!("error: {}\r", err);
+        }
+        print!("q: quit --> ");
+
+        std::io::stdout()
+            .flush()
+            .context(crate::error::FlushTerminal)?;
+
         Ok(())
     }
 

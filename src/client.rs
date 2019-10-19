@@ -96,6 +96,8 @@ pub struct Client<
 
     on_login: Vec<crate::protocol::Message>,
     to_send: std::collections::VecDeque<crate::protocol::Message>,
+
+    last_error: Option<String>,
 }
 
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
@@ -164,6 +166,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
             on_login: on_login.to_vec(),
             to_send: std::collections::VecDeque::new(),
+
+            last_error: None,
         }
     }
 
@@ -174,6 +178,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     pub fn reconnect(&mut self) {
         self.rsock = ReadSocket::NotConnected;
         self.wsock = WriteSocket::NotConnected;
+    }
+
+    pub fn last_error(&self) -> Option<&str> {
+        self.last_error.as_ref().map(std::string::String::as_str)
     }
 
     fn set_reconnect_timer(&mut self) {
@@ -269,6 +277,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 for msg in &self.on_login {
                     self.to_send.push_back(msg.clone());
                 }
+                self.last_error = None;
                 Ok((
                     crate::component_future::Async::Ready(Some(
                         Event::Connect,
@@ -421,8 +430,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 Err(e) => {
                     log::warn!("error while connecting, reconnecting: {}", e);
                     self.reconnect();
-                    // not sending a disconnect event here because we never
-                    // actually connected, so it'd just be spammy
+                    self.last_error = Some(format!("{}", e));
+                    return Ok(crate::component_future::Async::Ready(Some(
+                        Event::Disconnect,
+                    )));
                 }
             },
             WriteSocket::Connected(..) | WriteSocket::Writing(..) => {
@@ -433,6 +444,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         "haven't seen server in a while, reconnecting",
                     );
                     self.reconnect();
+                    self.last_error =
+                        Some("haven't seen server in a while".to_string());
                     return Ok(crate::component_future::Async::Ready(Some(
                         Event::Disconnect,
                     )));
@@ -480,6 +493,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                                 e
                             );
                             self.reconnect();
+                            self.last_error = Some(format!("{}", e));
                             Ok(crate::component_future::Async::Ready(Some(
                                 Event::Disconnect,
                             )))
@@ -492,6 +506,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 Err(e) => {
                     log::warn!("error reading message, reconnecting: {}", e);
                     self.reconnect();
+                    self.last_error = Some(format!("{}", e));
                     Ok(crate::component_future::Async::Ready(Some(
                         Event::Disconnect,
                     )))
@@ -519,6 +534,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         e
                     );
                     self.reconnect();
+                    self.last_error = Some(format!("{}", e));
                     Ok(crate::component_future::Async::Ready(Some(
                         Event::Disconnect,
                     )))
@@ -564,6 +580,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 Err(e) => {
                     log::warn!("error writing message, reconnecting: {}", e);
                     self.reconnect();
+                    self.last_error = Some(format!("{}", e));
                     Ok(crate::component_future::Async::Ready(Some(
                         Event::Disconnect,
                     )))

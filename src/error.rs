@@ -50,7 +50,7 @@ pub enum Error {
         source: tokio::io::Error,
     },
 
-    #[snafu(display("eof"))]
+    #[snafu(display("received EOF from server"))]
     EOF,
 
     #[snafu(display("failed to retrieve access token: {:?}", msg))]

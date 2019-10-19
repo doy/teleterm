@@ -21,10 +21,10 @@ pub struct Config {
     #[serde(default = "crate::config::default_connection_buffer_size")]
     buffer_size: usize,
 
-    #[serde(default = "crate::config::default_command")]
+    #[serde(skip, default = "crate::config::default_command")]
     command: String,
 
-    #[serde(default = "crate::config::default_args")]
+    #[serde(skip, default = "crate::config::default_args")]
     args: Vec<String>,
 }
 

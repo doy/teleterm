@@ -165,7 +165,7 @@ fn create_server(
 )> {
     let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(100);
     let listener = tokio::net::TcpListener::bind(&address)
-        .context(crate::error::Bind)?;
+        .context(crate::error::Bind { address })?;
     let acceptor = listener
         .incoming()
         .context(crate::error::Acceptor)
@@ -197,13 +197,16 @@ fn create_server_tls(
 )> {
     let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(100);
     let listener = tokio::net::TcpListener::bind(&address)
-        .context(crate::error::Bind)?;
+        .context(crate::error::Bind { address })?;
 
-    let mut file = std::fs::File::open(tls_identity_file)
-        .context(crate::error::OpenIdentityFile)?;
+    let mut file = std::fs::File::open(tls_identity_file).context(
+        crate::error::OpenFileSync {
+            filename: tls_identity_file,
+        },
+    )?;
     let mut identity = vec![];
     file.read_to_end(&mut identity)
-        .context(crate::error::ReadIdentityFile)?;
+        .context(crate::error::ReadFileSync)?;
     let identity = native_tls::Identity::from_pkcs12(&identity, "")
         .context(crate::error::ParseIdentity)?;
     let acceptor = native_tls::TlsAcceptor::new(identity)

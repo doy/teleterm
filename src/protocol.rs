@@ -398,7 +398,7 @@ impl Packet {
     ) -> impl futures::future::Future<Item = (Self, FramedReader<T>), Error = Error>
     {
         r.0.into_future()
-            .map_err(|(e, _)| Error::ReadPacketAsync { source: e })
+            .map_err(|(e, _)| Error::ReadPacket { source: e })
             .and_then(|(data, r)| match data {
                 Some(data) => Ok((data, r)),
                 None => Err(Error::EOF),
@@ -434,7 +434,7 @@ impl Packet {
     {
         w.0.send(bytes::Bytes::from(self.as_bytes()))
             .map(FramedWriter)
-            .context(crate::error::WritePacketAsync)
+            .context(crate::error::WritePacket)
     }
 
     fn as_bytes(&self) -> Vec<u8> {
@@ -563,7 +563,7 @@ impl std::convert::TryFrom<Packet> for Message {
             }
             let (buf, rest) = data.split_at(std::mem::size_of::<u32>());
             let val = u32::from_be_bytes(
-                buf.try_into().context(crate::error::ParseInt)?,
+                buf.try_into().context(crate::error::ParseInt { buf })?,
             );
             Ok((val, rest))
         }
@@ -576,7 +576,7 @@ impl std::convert::TryFrom<Packet> for Message {
             }
             let (buf, rest) = data.split_at(std::mem::size_of::<u16>());
             let val = u16::from_be_bytes(
-                buf.try_into().context(crate::error::ParseInt)?,
+                buf.try_into().context(crate::error::ParseInt { buf })?,
             );
             Ok((val, rest))
         }
@@ -589,7 +589,7 @@ impl std::convert::TryFrom<Packet> for Message {
             }
             let (buf, rest) = data.split_at(std::mem::size_of::<u8>());
             let val = u8::from_be_bytes(
-                buf.try_into().context(crate::error::ParseInt)?,
+                buf.try_into().context(crate::error::ParseInt { buf })?,
             );
             Ok((val, rest))
         }
@@ -607,8 +607,11 @@ impl std::convert::TryFrom<Packet> for Message {
         }
         fn read_str(data: &[u8]) -> Result<(String, &[u8])> {
             let (bytes, rest) = read_bytes(data)?;
-            let val = String::from_utf8(bytes)
-                .context(crate::error::ParseString)?;
+            let val =
+                String::from_utf8(bytes).map_err(|e| Error::ParseString {
+                    string: e.as_bytes().to_vec(),
+                    source: e,
+                })?;
             Ok((val, rest))
         }
         fn read_size(data: &[u8]) -> Result<(crate::term::Size, &[u8])> {

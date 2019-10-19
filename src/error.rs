@@ -4,19 +4,32 @@ pub enum Error {
     #[snafu(display("failed to accept: {}", source))]
     Acceptor { source: tokio::io::Error },
 
-    #[snafu(display("auth type not allowed: {:?}", ty))]
+    #[snafu(display("auth type {:?} not allowed", ty))]
     AuthTypeNotAllowed { ty: crate::protocol::AuthType },
 
-    #[snafu(display("failed to bind: {}", source))]
-    Bind { source: tokio::io::Error },
+    #[snafu(display("failed to bind to {}: {}", address, source))]
+    Bind {
+        address: std::net::SocketAddr,
+        source: tokio::io::Error,
+    },
 
-    #[snafu(display("failed to connect: {}", source))]
-    Connect { source: std::io::Error },
+    #[snafu(display("failed to connect to {}: {}", address, source))]
+    Connect {
+        address: std::net::SocketAddr,
+        source: std::io::Error,
+    },
 
-    #[snafu(display("failed to connect: {}", source))]
-    ConnectTls { source: native_tls::Error },
+    #[snafu(display(
+        "failed to make tls connection to {}: {}",
+        host,
+        source
+    ))]
+    ConnectTls {
+        host: String,
+        source: native_tls::Error,
+    },
 
-    #[snafu(display("couldn't find username"))]
+    #[snafu(display("couldn't determine the current username"))]
     CouldntFindUsername,
 
     #[snafu(display("failed to create tls acceptor: {}", source))]
@@ -25,11 +38,17 @@ pub enum Error {
     #[snafu(display("failed to create tls connector: {}", source))]
     CreateConnector { source: native_tls::Error },
 
-    #[snafu(display("failed to create directory: {}", source))]
-    CreateDir { source: std::io::Error },
+    #[snafu(display("failed to create directory {}: {}", filename, source))]
+    CreateDir {
+        filename: String,
+        source: std::io::Error,
+    },
 
-    #[snafu(display("failed to create file: {}", source))]
-    CreateFile { source: tokio::io::Error },
+    #[snafu(display("failed to create file {}: {}", filename, source))]
+    CreateFile {
+        filename: String,
+        source: tokio::io::Error,
+    },
 
     #[snafu(display("eof"))]
     EOF,
@@ -46,37 +65,40 @@ pub enum Error {
         // >
     },
 
-    #[snafu(display("failed to parse string: {:?}", data))]
+    #[snafu(display(
+        "failed to parse string {:?}: unexpected trailing data",
+        data
+    ))]
     ExtraMessageData { data: Vec<u8> },
 
     #[snafu(display("failed to write to stdout: {}", source))]
     FlushTerminal { source: tokio::io::Error },
 
-    #[snafu(display("failed to flush writes to terminal: {}", source))]
+    #[snafu(display("failed to write to stdout: {}", source))]
     FlushTerminalSync { source: std::io::Error },
 
     #[snafu(display(
         "failed to get recurse center profile data: {}",
         source
     ))]
-    GetProfile { source: reqwest::Error },
+    GetRecurseCenterProfile { source: reqwest::Error },
 
     #[snafu(display("failed to get terminal size: {}", source))]
     GetTerminalSize { source: crossterm::ErrorKind },
 
-    #[snafu(display("failed to find any resolved addresses"))]
+    #[snafu(display("failed to find any resolvable addresses"))]
     HasResolvedAddr,
 
-    #[snafu(display("invalid auth type: {}", ty))]
+    #[snafu(display("invalid auth type {}", ty))]
     InvalidAuthType { ty: u8 },
 
-    #[snafu(display("invalid auth type: {}", ty))]
+    #[snafu(display("invalid auth type {}", ty))]
     InvalidAuthTypeStr { ty: String },
 
-    #[snafu(display("invalid message type: {}", ty))]
+    #[snafu(display("invalid message type {}", ty))]
     InvalidMessageType { ty: u8 },
 
-    #[snafu(display("invalid watch id: {}", id))]
+    #[snafu(display("invalid watch id {}", id))]
     InvalidWatchId { id: String },
 
     #[snafu(display(
@@ -97,16 +119,22 @@ pub enum Error {
     MissingArgv,
 
     #[snafu(display(
-        "detected argv path was not a valid filename: {}",
+        "detected argv path {} was not a valid filename",
         path
     ))]
     NotAFileName { path: String },
 
-    #[snafu(display("failed to open file: {}", source))]
-    OpenFile { source: tokio::io::Error },
+    #[snafu(display("failed to open file {}: {}", filename, source))]
+    OpenFile {
+        filename: String,
+        source: tokio::io::Error,
+    },
 
-    #[snafu(display("failed to open identity file: {}", source))]
-    OpenIdentityFile { source: std::io::Error },
+    #[snafu(display("failed to open file {}: {}", filename, source))]
+    OpenFileSync {
+        filename: String,
+        source: std::io::Error,
+    },
 
     #[snafu(display("failed to open link in browser: {}", source))]
     OpenLink { source: std::io::Error },
@@ -123,7 +151,7 @@ pub enum Error {
     #[snafu(display("{}", source))]
     ParseArgs { source: clap::Error },
 
-    #[snafu(display("failed to parse buffer size '{}': {}", input, source))]
+    #[snafu(display("failed to parse buffer size {}: {}", input, source))]
     ParseBufferSize {
         input: String,
         source: std::num::ParseIntError,
@@ -151,32 +179,46 @@ pub enum Error {
     #[snafu(display("failed to parse identity file: {}", source))]
     ParseIdentity { source: native_tls::Error },
 
-    #[snafu(display("failed to parse int: {}", source))]
+    #[snafu(display(
+        "failed to parse int from buffer {:?}: {}",
+        buf,
+        source
+    ))]
     ParseInt {
+        buf: Vec<u8>,
         source: std::array::TryFromSliceError,
     },
 
     #[snafu(display("failed to parse response json: {}", source))]
     ParseJson { source: reqwest::Error },
 
-    #[snafu(display("failed to parse address: {}", source))]
-    ParsePort { source: std::num::ParseIntError },
-
     #[snafu(display(
-        "failed to parse read timeout '{}': {}",
-        input,
+        "failed to parse port {} from address: {}",
+        string,
         source
     ))]
+    ParsePort {
+        string: String,
+        source: std::num::ParseIntError,
+    },
+
+    #[snafu(display("failed to parse read timeout {}: {}", input, source))]
     ParseReadTimeout {
         input: String,
         source: std::num::ParseIntError,
     },
 
-    #[snafu(display("failed to parse string: {}", source))]
-    ParseString { source: std::string::FromUtf8Error },
+    #[snafu(display("failed to parse string {:?}: {}", string, source))]
+    ParseString {
+        string: Vec<u8>,
+        source: std::string::FromUtf8Error,
+    },
 
-    #[snafu(display("failed to parse url: {}", source))]
-    ParseUrl { source: url::ParseError },
+    #[snafu(display("failed to parse url {}: {}", url, source))]
+    ParseUrl {
+        url: String,
+        source: url::ParseError,
+    },
 
     #[snafu(display("failed to poll for process exit: {}", source))]
     ProcessExitPoll { source: std::io::Error },
@@ -197,8 +239,8 @@ pub enum Error {
     #[snafu(display("failed to read from file: {}", source))]
     ReadFile { source: tokio::io::Error },
 
-    #[snafu(display("failed to read identity file: {}", source))]
-    ReadIdentityFile { source: std::io::Error },
+    #[snafu(display("failed to read from file: {}", source))]
+    ReadFileSync { source: std::io::Error },
 
     #[snafu(display("{}", source))]
     ReadMessageWithTimeout {
@@ -207,10 +249,10 @@ pub enum Error {
     },
 
     #[snafu(display("failed to read packet: {}", source))]
-    ReadPacket { source: std::io::Error },
+    ReadPacketSync { source: std::io::Error },
 
     #[snafu(display("failed to read packet: {}", source))]
-    ReadPacketAsync { source: tokio::io::Error },
+    ReadPacket { source: tokio::io::Error },
 
     #[snafu(display("failed to read from pty: {}", source))]
     ReadPty { source: std::io::Error },
@@ -224,8 +266,17 @@ pub enum Error {
     #[snafu(display("failed to resize pty: {}", source))]
     ResizePty { source: std::io::Error },
 
-    #[snafu(display("failed to resolve address: {}", source))]
-    ResolveAddress { source: std::io::Error },
+    #[snafu(display(
+        "failed to resolve address {}:{}: {}",
+        host,
+        port,
+        source
+    ))]
+    ResolveAddress {
+        host: String,
+        port: u16,
+        source: std::io::Error,
+    },
 
     #[snafu(display(
         "failed to send oauth result back to main thread: {}",
@@ -328,10 +379,10 @@ pub enum Error {
     },
 
     #[snafu(display("failed to write packet: {}", source))]
-    WritePacket { source: std::io::Error },
+    WritePacketSync { source: std::io::Error },
 
     #[snafu(display("failed to write packet: {}", source))]
-    WritePacketAsync { source: tokio::io::Error },
+    WritePacket { source: tokio::io::Error },
 
     #[snafu(display("failed to write to pty: {}", source))]
     WritePty { source: std::io::Error },

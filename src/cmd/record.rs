@@ -97,6 +97,7 @@ enum FileState {
         filename: String,
     },
     Opening {
+        filename: String,
         fut: tokio::fs::file::CreateFuture<String>,
     },
     Open {
@@ -166,13 +167,17 @@ impl RecordSession {
         match &mut self.file {
             FileState::Closed { filename } => {
                 self.file = FileState::Opening {
+                    filename: filename.to_string(),
                     fut: tokio::fs::File::create(filename.to_string()),
                 };
                 Ok(crate::component_future::Async::DidWork)
             }
-            FileState::Opening { fut } => {
-                let file =
-                    try_ready!(fut.poll().context(crate::error::OpenFile));
+            FileState::Opening { filename, fut } => {
+                let file = try_ready!(fut.poll().with_context(|| {
+                    crate::error::OpenFile {
+                        filename: filename.clone(),
+                    }
+                }));
                 let mut file = crate::ttyrec::File::new(file);
                 file.write_frame(self.buffer.contents())?;
                 self.file = FileState::Open { file };

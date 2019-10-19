@@ -15,8 +15,12 @@ impl Dirs {
     }
 
     pub fn create_all(&self) -> Result<()> {
-        std::fs::create_dir_all(self.data_dir())
-            .context(crate::error::CreateDir)?;
+        let filename = self.data_dir();
+        std::fs::create_dir_all(filename).with_context(|| {
+            crate::error::CreateDir {
+                filename: filename.to_string_lossy(),
+            }
+        })?;
         Ok(())
     }
 

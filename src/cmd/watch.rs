@@ -77,13 +77,15 @@ impl crate::config::Config for Config {
                     let connector = tokio_tls::TlsConnector::from(connector);
                     let stream =
                         tokio::net::tcp::TcpStream::connect(&address);
-                    Box::new(stream.context(crate::error::Connect).and_then(
-                        move |stream| {
-                            connector
-                                .connect(&host, stream)
-                                .context(crate::error::ConnectTls)
-                        },
-                    ))
+                    Box::new(
+                        stream
+                            .context(crate::error::Connect { address })
+                            .and_then(move |stream| {
+                                connector.connect(&host, stream).context(
+                                    crate::error::ConnectTls { host },
+                                )
+                            }),
+                    )
                 })
             });
             Box::new(WatchSession::new(make_connector, &auth))
@@ -94,7 +96,7 @@ impl crate::config::Config for Config {
                 Box::new(move || {
                     Box::new(
                         tokio::net::tcp::TcpStream::connect(&address)
-                            .context(crate::error::Connect),
+                            .context(crate::error::Connect { address }),
                     )
                 })
             });

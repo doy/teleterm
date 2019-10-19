@@ -443,41 +443,42 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     let term_type = term_type.to_string();
                     let client = conn.oauth_client.take().unwrap();
                     let mut new_state = conn.state.clone();
-                    let fut =
-                        tokio::fs::File::open(client.server_token_file())
-                            .context(crate::error::OpenFile)
-                            .and_then(|file| {
-                                tokio::io::lines(std::io::BufReader::new(
-                                    file,
-                                ))
+                    let token_filename = client.server_token_file();
+                    let fut = tokio::fs::File::open(token_filename.clone())
+                        .with_context(move || crate::error::OpenFile {
+                            filename: token_filename
+                                .to_string_lossy()
+                                .to_string(),
+                        })
+                        .and_then(|file| {
+                            tokio::io::lines(std::io::BufReader::new(file))
                                 .into_future()
                                 .map_err(|(e, _)| e)
                                 .context(crate::error::ReadFile)
-                            })
-                            .and_then(|(refresh_token, _)| {
-                                // XXX unwrap here isn't super safe
-                                let refresh_token = refresh_token.unwrap();
-                                client
-                                    .get_access_token_from_refresh_token(
-                                        refresh_token.trim(),
-                                    )
-                                    .and_then(|access_token| {
-                                        client.get_username_from_access_token(
-                                            &access_token,
-                                        )
-                                    })
-                            })
-                            .map(move |username| {
-                                new_state.login_oauth(
-                                    &term_type, &size, &username,
-                                );
-                                (
-                                    new_state,
-                                    crate::protocol::Message::logged_in(
-                                        &username,
-                                    ),
+                        })
+                        .and_then(|(refresh_token, _)| {
+                            // XXX unwrap here isn't super safe
+                            let refresh_token = refresh_token.unwrap();
+                            client
+                                .get_access_token_from_refresh_token(
+                                    refresh_token.trim(),
                                 )
-                            });
+                                .and_then(|access_token| {
+                                    client.get_username_from_access_token(
+                                        &access_token,
+                                    )
+                                })
+                        })
+                        .map(move |username| {
+                            new_state
+                                .login_oauth(&term_type, &size, &username);
+                            (
+                                new_state,
+                                crate::protocol::Message::logged_in(
+                                    &username,
+                                ),
+                            )
+                        });
                     return Ok(Some(Box::new(fut)));
                 } else {
                     conn.state.login_oauth_start(term_type, &size);
@@ -1055,10 +1056,10 @@ fn classify_connection_error(
     if source.is_inner() {
         let source = source.into_inner().unwrap();
         let tokio_err = match source {
-            Error::ReadPacketAsync {
+            Error::ReadPacket {
                 source: ref tokio_err,
             } => tokio_err,
-            Error::WritePacketAsync {
+            Error::WritePacket {
                 source: ref tokio_err,
             } => tokio_err,
             Error::EOF => {

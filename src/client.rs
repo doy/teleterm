@@ -308,11 +308,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
         let auth_type = self.auth.auth_type();
         let id = id.to_string();
-        let addr = OAUTH_LISTEN_ADDRESS
+        let address = OAUTH_LISTEN_ADDRESS
             .parse()
             .context(crate::error::ParseAddr)?;
-        let listener = tokio::net::TcpListener::bind(&addr)
-            .context(crate::error::Bind)?;
+        let listener = tokio::net::TcpListener::bind(&address)
+            .context(crate::error::Bind { address })?;
         Ok(Box::new(
             listener
                 .incoming()

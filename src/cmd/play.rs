@@ -56,6 +56,7 @@ enum FileState {
         filename: String,
     },
     Opening {
+        filename: String,
         fut: tokio::fs::file::OpenFuture<String>,
     },
     Open {
@@ -100,13 +101,17 @@ impl PlaySession {
         match &mut self.file {
             FileState::Closed { filename } => {
                 self.file = FileState::Opening {
+                    filename: filename.to_string(),
                     fut: tokio::fs::File::open(filename.to_string()),
                 };
                 Ok(crate::component_future::Async::DidWork)
             }
-            FileState::Opening { fut } => {
-                let file =
-                    try_ready!(fut.poll().context(crate::error::OpenFile));
+            FileState::Opening { filename, fut } => {
+                let file = try_ready!(fut.poll().with_context(|| {
+                    crate::error::OpenFile {
+                        filename: filename.to_string(),
+                    }
+                }));
                 let file = crate::ttyrec::File::new(file);
                 self.file = FileState::Open { file };
                 Ok(crate::component_future::Async::DidWork)

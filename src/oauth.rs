@@ -79,8 +79,10 @@ pub fn save_client_auth_id(
 ) -> impl futures::future::Future<Item = (), Error = Error> {
     let id_file = client_id_file(auth);
     let id = id.to_string();
-    tokio::fs::File::create(id_file)
-        .context(crate::error::CreateFile)
+    tokio::fs::File::create(id_file.clone())
+        .with_context(move || crate::error::CreateFile {
+            filename: id_file.to_string_lossy().to_string(),
+        })
         .and_then(|file| {
             tokio::io::write_all(file, id).context(crate::error::WriteFile)
         })
@@ -113,8 +115,10 @@ fn cache_refresh_token(
         token.refresh_token().unwrap().secret(),
         token.access_token().secret(),
     );
-    let fut = tokio::fs::File::create(token_cache_file)
-        .context(crate::error::CreateFile)
+    let fut = tokio::fs::File::create(token_cache_file.clone())
+        .with_context(move || crate::error::CreateFile {
+            filename: token_cache_file.to_string_lossy().to_string(),
+        })
         .and_then(|file| {
             tokio::io::write_all(file, token_data)
                 .context(crate::error::WriteFile)

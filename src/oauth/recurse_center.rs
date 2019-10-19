@@ -53,7 +53,7 @@ impl super::Oauth for RecurseCenter {
             .get("https://www.recurse.com/api/v1/profiles/me")
             .bearer_auth(token)
             .send()
-            .context(crate::error::GetProfile)
+            .context(crate::error::GetRecurseCenterProfile)
             .and_then(|mut res| res.json().context(crate::error::ParseJson))
             .map(|user: User| user.name());
         Box::new(fut)

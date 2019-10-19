@@ -59,11 +59,14 @@ pub fn to_connect_address(
 ) -> Result<(String, std::net::SocketAddr)> {
     let mut address_parts = address.split(':');
     let host = address_parts.next().context(crate::error::ParseAddress)?;
-    let port = address_parts.next().context(crate::error::ParseAddress)?;
-    let port: u16 = port.parse().context(crate::error::ParsePort)?;
+    let port_str =
+        address_parts.next().context(crate::error::ParseAddress)?;
+    let port: u16 = port_str
+        .parse()
+        .context(crate::error::ParsePort { string: port_str })?;
     let socket_addr = (host, port)
         .to_socket_addrs()
-        .context(crate::error::ResolveAddress)?
+        .context(crate::error::ResolveAddress { host, port })?
         .next()
         .context(crate::error::HasResolvedAddr)?;
     Ok((host.to_string(), socket_addr))

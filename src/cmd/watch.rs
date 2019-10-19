@@ -521,7 +521,15 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             idle_width,
             watch_width,
         );
-        println!("{}\r", "-".repeat(sessions.size().cols as usize));
+        println!(
+            "{}+{}+{}+{}+{}+{}\r",
+            "-".repeat(char_width + 1),
+            "-".repeat(name_width + 2),
+            "-".repeat(size_width + 2),
+            "-".repeat(idle_width + 2),
+            "-".repeat(watch_width + 2),
+            "-".repeat(max_title_width + 1)
+        );
 
         let mut prev_name: Option<&str> = None;
         for (c, session) in sessions.visible_sessions_with_chars() {

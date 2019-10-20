@@ -52,7 +52,12 @@ pub fn parse<'a>() -> Result<clap::ArgMatches<'a>> {
     let mut app = clap::App::new(program_name()?)
         .about("Stream your terminal for other people to watch")
         .author(clap::crate_authors!())
-        .version(clap::crate_version!());
+        .version(clap::crate_version!())
+        .arg(
+            clap::Arg::with_name("config-file")
+                .long("config-file")
+                .takes_value(true),
+        );
 
     for cmd in COMMANDS {
         let subcommand = clap::SubCommand::with_name(cmd.name);
@@ -77,7 +82,9 @@ pub fn run(matches: &clap::ArgMatches<'_>) -> Result<()> {
     )
     .init();
 
-    let config = crate::config::config()?;
+    let config = crate::config::config(
+        matches.value_of("config-file").map(std::path::Path::new),
+    )?;
     let mut cmd_config = (chosen_cmd.config)(config)?;
     cmd_config.merge_args(chosen_submatches)?;
     log::debug!("{:?}", cmd_config);

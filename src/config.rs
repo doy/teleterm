@@ -36,9 +36,19 @@ pub trait Config: std::fmt::Debug {
     fn run(&self) -> Result<()>;
 }
 
-pub fn config() -> Result<Option<config::Config>> {
-    let config_filename =
-        crate::dirs::Dirs::new().config_file(CONFIG_FILENAME);
+pub fn config(
+    filename: Option<&std::path::Path>,
+) -> Result<Option<config::Config>> {
+    let config_filename = if let Some(filename) = filename {
+        if !filename.exists() {
+            return Err(Error::ConfigFileDoesntExist {
+                name: filename.to_string_lossy().to_string(),
+            });
+        }
+        Some(filename.to_path_buf())
+    } else {
+        crate::dirs::Dirs::new().config_file(CONFIG_FILENAME)
+    };
     if let Some(config_filename) = config_filename {
         let mut config = config::Config::default();
         config

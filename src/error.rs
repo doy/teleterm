@@ -22,6 +22,9 @@ pub enum Error {
         source: tokio::io::Error,
     },
 
+    #[snafu(display("config file {} doesn't exist", name))]
+    ConfigFileDoesntExist { name: String },
+
     #[snafu(display("failed to connect to {}: {}", address, source))]
     Connect {
         address: std::net::SocketAddr,

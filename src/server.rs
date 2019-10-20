@@ -433,11 +433,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     client.user_id()
                 );
 
-                if refresh {
+                let token_filename = client.server_token_file(true);
+                if let (Some(token_filename), true) =
+                    (token_filename, refresh)
+                {
                     let term_type = term_type.to_string();
                     let client = conn.oauth_client.take().unwrap();
                     let mut new_state = conn.state.clone();
-                    let token_filename = client.server_token_file();
                     let fut = tokio::fs::File::open(token_filename.clone())
                         .with_context(move || crate::error::OpenFile {
                             filename: token_filename

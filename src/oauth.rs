@@ -13,9 +13,12 @@ pub trait Oauth {
     fn user_id(&self) -> &str;
     fn name(&self) -> &str;
 
-    fn server_token_file(&self) -> std::path::PathBuf {
+    fn server_token_file(
+        &self,
+        must_exist: bool,
+    ) -> Option<std::path::PathBuf> {
         let name = format!("server-oauth-{}-{}", self.name(), self.user_id());
-        crate::dirs::Dirs::new().data_file(&name)
+        crate::dirs::Dirs::new().data_file(&name, must_exist)
     }
 
     fn generate_authorize_url(&self) -> String {
@@ -31,7 +34,7 @@ pub trait Oauth {
         code: &str,
     ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>
     {
-        let token_cache_file = self.server_token_file();
+        let token_cache_file = self.server_token_file(false).unwrap();
         let fut = self
             .client()
             .exchange_code(oauth2::AuthorizationCode::new(code.to_string()))
@@ -52,7 +55,7 @@ pub trait Oauth {
         token: &str,
     ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>
     {
-        let token_cache_file = self.server_token_file();
+        let token_cache_file = self.server_token_file(false).unwrap();
         let fut = self
             .client()
             .exchange_refresh_token(&oauth2::RefreshToken::new(
@@ -80,7 +83,7 @@ pub fn save_client_auth_id(
     auth: crate::protocol::AuthType,
     id: &str,
 ) -> impl futures::future::Future<Item = (), Error = Error> {
-    let id_file = client_id_file(auth);
+    let id_file = client_id_file(auth, false).unwrap();
     let id = id.to_string();
     tokio::fs::File::create(id_file.clone())
         .with_context(move || crate::error::CreateFile {
@@ -95,18 +98,22 @@ pub fn save_client_auth_id(
 pub fn load_client_auth_id(
     auth: crate::protocol::AuthType,
 ) -> Option<String> {
-    let id_file = client_id_file(auth);
-    std::fs::File::open(id_file).ok().and_then(|mut file| {
-        let mut id = vec![];
-        file.read_to_end(&mut id)
-            .ok()
-            .map(|_| std::string::String::from_utf8_lossy(&id).to_string())
+    client_id_file(auth, true).and_then(|id_file| {
+        std::fs::File::open(id_file).ok().and_then(|mut file| {
+            let mut id = vec![];
+            file.read_to_end(&mut id).ok().map(|_| {
+                std::string::String::from_utf8_lossy(&id).to_string()
+            })
+        })
     })
 }
 
-fn client_id_file(auth: crate::protocol::AuthType) -> std::path::PathBuf {
+fn client_id_file(
+    auth: crate::protocol::AuthType,
+    must_exist: bool,
+) -> Option<std::path::PathBuf> {
     let filename = format!("client-oauth-{}", auth.name());
-    crate::dirs::Dirs::new().data_file(&filename)
+    crate::dirs::Dirs::new().data_file(&filename, must_exist)
 }
 
 fn cache_refresh_token(

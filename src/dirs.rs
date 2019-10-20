@@ -1,42 +1,80 @@
 use crate::prelude::*;
 
 pub struct Dirs {
-    project_dirs: directories::ProjectDirs,
+    project_dirs: Option<directories::ProjectDirs>,
 }
 
 impl Dirs {
     pub fn new() -> Self {
-        // TODO: fall back to /var, /etc, etc if we're running without $HOME
-        // set
         Self {
-            project_dirs: directories::ProjectDirs::from("", "", "teleterm")
-                .expect("failed to find valid home directory"),
+            project_dirs: directories::ProjectDirs::from("", "", "teleterm"),
         }
     }
 
     pub fn create_all(&self) -> Result<()> {
-        let filename = self.data_dir();
-        std::fs::create_dir_all(filename).with_context(|| {
-            crate::error::CreateDir {
-                filename: filename.to_string_lossy(),
-            }
-        })?;
+        if let Some(filename) = self.data_dir() {
+            std::fs::create_dir_all(filename).with_context(|| {
+                crate::error::CreateDir {
+                    filename: filename.to_string_lossy(),
+                }
+            })?;
+        }
         Ok(())
     }
 
-    fn config_dir(&self) -> &std::path::Path {
-        self.project_dirs.config_dir()
+    fn global_config_dir(&self) -> &std::path::Path {
+        std::path::Path::new("/etc/teleterm")
     }
 
-    pub fn config_file(&self, name: &str) -> std::path::PathBuf {
-        self.config_dir().join(name)
+    fn config_dir(&self) -> Option<&std::path::Path> {
+        self.project_dirs
+            .as_ref()
+            .map(directories::ProjectDirs::config_dir)
     }
 
-    fn data_dir(&self) -> &std::path::Path {
-        self.project_dirs.data_dir()
+    pub fn config_file(&self, name: &str) -> Option<std::path::PathBuf> {
+        if let Some(config_dir) = self.config_dir() {
+            let file = config_dir.join(name);
+            if file.exists() {
+                return Some(file);
+            }
+        }
+
+        let file = self.global_config_dir().join(name);
+        if file.exists() {
+            return Some(file);
+        }
+
+        None
     }
 
-    pub fn data_file(&self, name: &str) -> std::path::PathBuf {
-        self.data_dir().join(name)
+    fn global_data_dir(&self) -> &std::path::Path {
+        std::path::Path::new("/var/lib/teleterm")
+    }
+
+    fn data_dir(&self) -> Option<&std::path::Path> {
+        self.project_dirs
+            .as_ref()
+            .map(directories::ProjectDirs::data_dir)
+    }
+
+    pub fn data_file(
+        &self,
+        name: &str,
+        must_exist: bool,
+    ) -> Option<std::path::PathBuf> {
+        if let Some(data_dir) = self.data_dir() {
+            let file = data_dir.join(name);
+            if !must_exist || file.exists() {
+                return Some(file);
+            }
+        }
+
+        let file = self.global_data_dir().join(name);
+        if !must_exist || file.exists() {
+            return Some(file);
+        }
+
+        None
     }
 }

@@ -223,8 +223,8 @@ impl Server {
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("read-timeout")
-                .long("read-timeout")
+            clap::Arg::with_name("read-timeout-secs")
+                .long("read-timeout-secs")
                 .takes_value(true),
         )
         .arg(
@@ -257,8 +257,8 @@ impl Server {
                 .parse()
                 .context(crate::error::ParseBufferSize { input: s })?;
         }
-        if matches.is_present("read-timeout") {
-            let s = matches.value_of("read-timeout").unwrap();
+        if matches.is_present("read-timeout-secs") {
+            let s = matches.value_of("read-timeout-secs").unwrap();
             self.read_timeout = s
                 .parse()
                 .map(std::time::Duration::from_secs)

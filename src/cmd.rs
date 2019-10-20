@@ -90,13 +90,6 @@ pub fn run(matches: &clap::ArgMatches<'_>) -> Result<()> {
         // work, so we should recreate it from scratch.
         config = config::Config::default();
     }
-    // as far as i can tell, the Environment source can never actually fail.
-    // this is good because figuring out the logic to handle recreating the
-    // config object correctly (as per the previous comment) would be quite
-    // complicated.
-    config
-        .merge(config::Environment::with_prefix("TELETERM"))
-        .unwrap();
 
     let mut cmd_config = (chosen_cmd.config)(config);
     cmd_config.merge_args(chosen_submatches)?;

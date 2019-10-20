@@ -46,33 +46,7 @@ impl crate::config::Config for Config {
 }
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
-    app.about("Run a teleterm server")
-        .arg(
-            clap::Arg::with_name("address")
-                .long("address")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("buffer-size")
-                .long("buffer-size")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("read-timeout")
-                .long("read-timeout")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("tls-identity-file")
-                .long("tls-identity-file")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("allowed-login-methods")
-                .long("allowed-login-methods")
-                .use_delimiter(true)
-                .takes_value(true),
-        )
+    crate::config::Server::cmd(app.about("Run a teleterm server"))
 }
 
 pub fn config(config: config::Config) -> Box<dyn crate::config::Config> {

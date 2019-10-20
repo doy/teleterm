@@ -24,11 +24,7 @@ impl crate::config::Config for Config {
 }
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
-    app.about("Play recorded terminal sessions").arg(
-        clap::Arg::with_name("filename")
-            .long("filename")
-            .takes_value(true),
-    )
+    crate::config::Ttyrec::cmd(app.about("Play recorded terminal sessions"))
 }
 
 pub fn config(config: config::Config) -> Box<dyn crate::config::Config> {

@@ -32,19 +32,9 @@ impl crate::config::Config for Config {
 }
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
-    app.about("Record a terminal session to a file")
-        .arg(
-            clap::Arg::with_name("filename")
-                .long("filename")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("buffer-size")
-                .long("buffer-size")
-                .takes_value(true),
-        )
-        .arg(clap::Arg::with_name("command").index(1))
-        .arg(clap::Arg::with_name("args").index(2).multiple(true))
+    crate::config::Command::cmd(crate::config::Ttyrec::cmd(
+        app.about("Record a terminal session to a file"),
+    ))
 }
 
 pub fn config(config: config::Config) -> Box<dyn crate::config::Config> {

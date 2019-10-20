@@ -82,23 +82,7 @@ impl crate::config::Config for Config {
 }
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
-    app.about("Watch teleterm streams")
-        .arg(
-            clap::Arg::with_name("login-plain")
-                .long("login-plain")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("login-recurse-center")
-                .long("login-recurse-center")
-                .conflicts_with("login-plain"),
-        )
-        .arg(
-            clap::Arg::with_name("address")
-                .long("address")
-                .takes_value(true),
-        )
-        .arg(clap::Arg::with_name("tls").long("tls"))
+    crate::config::Client::cmd(app.about("Watch teleterm streams"))
 }
 
 pub fn config(config: config::Config) -> Box<dyn crate::config::Config> {

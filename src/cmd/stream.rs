@@ -86,30 +86,9 @@ impl crate::config::Config for Config {
 }
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
-    app.about("Stream your terminal")
-        .arg(
-            clap::Arg::with_name("login-plain")
-                .long("login-plain")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("login-recurse-center")
-                .long("login-recurse-center")
-                .conflicts_with("login-plain"),
-        )
-        .arg(
-            clap::Arg::with_name("address")
-                .long("address")
-                .takes_value(true),
-        )
-        .arg(clap::Arg::with_name("tls").long("tls"))
-        .arg(
-            clap::Arg::with_name("buffer-size")
-                .long("buffer-size")
-                .takes_value(true),
-        )
-        .arg(clap::Arg::with_name("command").index(1))
-        .arg(clap::Arg::with_name("args").index(2).multiple(true))
+    crate::config::Client::cmd(crate::config::Command::cmd(
+        app.about("Stream your terminal"),
+    ))
 }
 
 pub fn config(config: config::Config) -> Box<dyn crate::config::Config> {

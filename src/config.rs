@@ -70,6 +70,25 @@ impl Client {
         &self.connect_address.1
     }
 
+    pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
+        app.arg(
+            clap::Arg::with_name("login-plain")
+                .long("login-plain")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("login-recurse-center")
+                .long("login-recurse-center")
+                .conflicts_with("login-plain"),
+        )
+        .arg(
+            clap::Arg::with_name("address")
+                .long("address")
+                .takes_value(true),
+        )
+        .arg(clap::Arg::with_name("tls").long("tls"))
+    }
+
     pub fn merge_args<'a>(
         &mut self,
         matches: &clap::ArgMatches<'a>,
@@ -192,6 +211,35 @@ pub struct Server {
 }
 
 impl Server {
+    pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
+        app.arg(
+            clap::Arg::with_name("address")
+                .long("address")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("buffer-size")
+                .long("buffer-size")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("read-timeout")
+                .long("read-timeout")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("tls-identity-file")
+                .long("tls-identity-file")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("allowed-login-methods")
+                .long("allowed-login-methods")
+                .use_delimiter(true)
+                .takes_value(true),
+        )
+    }
+
     pub fn merge_args<'a>(
         &mut self,
         matches: &clap::ArgMatches<'a>,
@@ -358,6 +406,15 @@ pub struct Command {
 }
 
 impl Command {
+    pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
+        app.arg(
+            clap::Arg::with_name("buffer-size")
+                .long("buffer-size")
+                .takes_value(true),
+        )
+        .arg(clap::Arg::with_name("command").index(1))
+        .arg(clap::Arg::with_name("args").index(2).multiple(true))
+    }
     pub fn merge_args<'a>(
         &mut self,
         matches: &clap::ArgMatches<'a>,
@@ -407,6 +464,14 @@ pub struct Ttyrec {
 }
 
 impl Ttyrec {
+    pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
+        app.arg(
+            clap::Arg::with_name("filename")
+                .long("filename")
+                .takes_value(true),
+        )
+    }
+
     pub fn merge_args<'a>(
         &mut self,
         matches: &clap::ArgMatches<'a>,

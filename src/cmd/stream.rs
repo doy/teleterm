@@ -3,7 +3,10 @@ use tokio::io::AsyncWrite as _;
 
 #[derive(serde::Deserialize, Debug, Default)]
 pub struct Config {
+    #[serde(default)]
     client: crate::config::Client,
+
+    #[serde(default)]
     command: crate::config::Command,
 }
 

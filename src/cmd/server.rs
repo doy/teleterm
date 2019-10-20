@@ -3,6 +3,7 @@ use std::io::Read as _;
 
 #[derive(serde::Deserialize, Debug, Default)]
 pub struct Config {
+    #[serde(default)]
     server: crate::config::Server,
 }
 

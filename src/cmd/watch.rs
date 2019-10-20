@@ -3,6 +3,7 @@ use std::io::Write as _;
 
 #[derive(serde::Deserialize, Debug, Default)]
 pub struct Config {
+    #[serde(default)]
     client: crate::config::Client,
 }
 

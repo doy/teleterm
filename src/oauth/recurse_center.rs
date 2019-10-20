@@ -6,13 +6,15 @@ pub struct RecurseCenter {
 }
 
 impl RecurseCenter {
-    pub fn new(
-        client_id: &str,
-        client_secret: &str,
-        redirect_url: url::Url,
-        user_id: &str,
-    ) -> Self {
-        let config = super::Config {
+    pub fn new(config: super::Config, user_id: &str) -> Self {
+        Self {
+            client: config.into_basic_client(),
+            user_id: user_id.to_string(),
+        }
+    }
+
+    pub fn config(client_id: &str, client_secret: &str) -> super::Config {
+        super::Config {
             client_id: client_id.to_string(),
             client_secret: client_secret.to_string(),
             auth_url: url::Url::parse(
@@ -21,12 +23,7 @@ impl RecurseCenter {
             .unwrap(),
             token_url: url::Url::parse("https://www.recurse.com/oauth/token")
                 .unwrap(),
-            redirect_url,
-        };
-
-        Self {
-            client: config.into_basic_client(),
-            user_id: user_id.to_string(),
+            redirect_url: url::Url::parse(super::REDIRECT_URL).unwrap(),
         }
     }
 }

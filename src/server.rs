@@ -330,6 +330,10 @@ pub struct Server<
     connections: std::collections::HashMap<String, Connection<S>>,
     rate_limiter: ratelimit_meter::KeyedRateLimiter<Option<String>>,
     allowed_auth_types: std::collections::HashSet<crate::protocol::AuthType>,
+    oauth_configs: std::collections::HashMap<
+        crate::protocol::AuthType,
+        crate::oauth::Config,
+    >,
 }
 
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
@@ -341,6 +345,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         sock_r: tokio::sync::mpsc::Receiver<S>,
         allowed_auth_types: std::collections::HashSet<
             crate::protocol::AuthType,
+        >,
+        oauth_configs: std::collections::HashMap<
+            crate::protocol::AuthType,
+            crate::oauth::Config,
         >,
     ) -> Self {
         let sock_stream = sock_r
@@ -356,6 +364,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 std::time::Duration::from_secs(60),
             ),
             allowed_auth_types,
+            oauth_configs,
         }
     }
 
@@ -398,34 +407,19 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 ));
             }
             oauth if oauth.is_oauth() => {
+                let config = self.oauth_configs.get(&ty).context(
+                    crate::error::AuthTypeMissingOauthConfig { ty },
+                )?;
                 let (refresh, client) = match oauth {
-                    crate::protocol::Auth::RecurseCenter { id } => {
-                        // XXX this needs some kind of real configuration
-                        // system
-                        let client_id =
-                            std::env::var("TT_RECURSE_CENTER_CLIENT_ID")
-                                .unwrap();
-                        let client_secret =
-                            std::env::var("TT_RECURSE_CENTER_CLIENT_SECRET")
-                                .unwrap();
-                        let redirect_url =
-                            std::env::var("TT_RECURSE_CENTER_REDIRECT_URL")
-                                .unwrap();
-                        let redirect_url =
-                            url::Url::parse(&redirect_url).unwrap();
-
-                        (
-                            id.is_some(),
-                            Box::new(crate::oauth::RecurseCenter::new(
-                                &client_id,
-                                &client_secret,
-                                redirect_url,
-                                &id.clone().unwrap_or_else(|| {
-                                    format!("{}", uuid::Uuid::new_v4())
-                                }),
-                            )),
-                        )
-                    }
+                    crate::protocol::Auth::RecurseCenter { id } => (
+                        id.is_some(),
+                        Box::new(crate::oauth::RecurseCenter::new(
+                            config.clone(),
+                            &id.clone().unwrap_or_else(|| {
+                                format!("{}", uuid::Uuid::new_v4())
+                            }),
+                        )),
+                    ),
                     _ => unreachable!(),
                 };
 

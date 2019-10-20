@@ -4,8 +4,17 @@ pub enum Error {
     #[snafu(display("failed to accept: {}", source))]
     Acceptor { source: tokio::io::Error },
 
+    #[snafu(display(
+        "oauth configuration for auth type {:?} not found",
+        ty
+    ))]
+    AuthTypeMissingOauthConfig { ty: crate::protocol::AuthType },
+
     #[snafu(display("auth type {:?} not allowed", ty))]
     AuthTypeNotAllowed { ty: crate::protocol::AuthType },
+
+    #[snafu(display("auth type {:?} does not use oauth", ty))]
+    AuthTypeNotOauth { ty: crate::protocol::AuthType },
 
     #[snafu(display("failed to bind to {}: {}", address, source))]
     Bind {
@@ -126,6 +135,16 @@ pub enum Error {
         path
     ))]
     NotAFileName { path: String },
+
+    #[snafu(display(
+        "missing oauth configuration item {} for auth type {}",
+        field,
+        auth_type.name(),
+    ))]
+    OauthMissingConfiguration {
+        field: String,
+        auth_type: crate::protocol::AuthType,
+    },
 
     #[snafu(display("failed to open file {}: {}", filename, source))]
     OpenFile {

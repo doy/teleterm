@@ -5,6 +5,16 @@ use std::io::Read as _;
 pub struct Config {
     #[serde(default)]
     server: crate::config::Server,
+
+    #[serde(
+        rename = "oauth",
+        deserialize_with = "crate::config::oauth_configs",
+        default
+    )]
+    oauth_configs: std::collections::HashMap<
+        crate::protocol::AuthType,
+        crate::oauth::Config,
+    >,
 }
 
 impl crate::config::Config for Config {
@@ -24,6 +34,7 @@ impl crate::config::Config for Config {
                     self.server.read_timeout,
                     tls_identity_file,
                     self.server.allowed_login_methods.clone(),
+                    self.oauth_configs.clone(),
                 )?
             } else {
                 create_server(
@@ -31,6 +42,7 @@ impl crate::config::Config for Config {
                     self.server.buffer_size,
                     self.server.read_timeout,
                     self.server.allowed_login_methods.clone(),
+                    self.oauth_configs.clone(),
                 )?
             };
         tokio::run(futures::future::lazy(move || {
@@ -66,6 +78,10 @@ fn create_server(
     allowed_login_methods: std::collections::HashSet<
         crate::protocol::AuthType,
     >,
+    oauth_configs: std::collections::HashMap<
+        crate::protocol::AuthType,
+        crate::oauth::Config,
+    >,
 ) -> Result<(
     Box<dyn futures::future::Future<Item = (), Error = Error> + Send>,
     Box<dyn futures::future::Future<Item = (), Error = Error> + Send>,
@@ -86,6 +102,7 @@ fn create_server(
         read_timeout,
         sock_r,
         allowed_login_methods,
+        oauth_configs,
     );
     Ok((Box::new(acceptor), Box::new(server)))
 }
@@ -97,6 +114,10 @@ fn create_server_tls(
     tls_identity_file: &str,
     allowed_login_methods: std::collections::HashSet<
         crate::protocol::AuthType,
+    >,
+    oauth_configs: std::collections::HashMap<
+        crate::protocol::AuthType,
+        crate::oauth::Config,
     >,
 ) -> Result<(
     Box<dyn futures::future::Future<Item = (), Error = Error> + Send>,
@@ -134,6 +155,7 @@ fn create_server_tls(
         read_timeout,
         sock_r,
         allowed_login_methods,
+        oauth_configs,
     );
     Ok((Box::new(acceptor), Box::new(server)))
 }

@@ -5,6 +5,9 @@ use std::io::Read as _;
 mod recurse_center;
 pub use recurse_center::RecurseCenter;
 
+// this needs to be fixed because we listen for it in a hardcoded place
+pub const REDIRECT_URL: &str = "http://localhost:44141/oauth";
+
 pub trait Oauth {
     fn client(&self) -> &oauth2::basic::BasicClient;
     fn user_id(&self) -> &str;
@@ -127,6 +130,7 @@ fn cache_refresh_token(
     Box::new(fut)
 }
 
+#[derive(Debug, Clone)]
 pub struct Config {
     client_id: String,
     client_secret: String,

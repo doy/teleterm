@@ -20,6 +20,10 @@ impl Server {
         allowed_login_methods: std::collections::HashSet<
             crate::protocol::AuthType,
         >,
+        oauth_configs: std::collections::HashMap<
+            crate::protocol::AuthType,
+            crate::oauth::Config,
+        >,
     ) -> Self {
         let (tls_sock_w, tls_sock_r) = tokio::sync::mpsc::channel(100);
         Self {
@@ -28,6 +32,7 @@ impl Server {
                 read_timeout,
                 tls_sock_r,
                 allowed_login_methods,
+                oauth_configs,
             ),
             sock_r,
             sock_w: tls_sock_w,

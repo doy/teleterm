@@ -36,28 +36,18 @@ pub trait Config: std::fmt::Debug {
     fn run(&self) -> Result<()>;
 }
 
-pub fn config() -> config::Config {
+pub fn config() -> Result<Option<config::Config>> {
     let config_filename =
         crate::dirs::Dirs::new().config_file(CONFIG_FILENAME);
-
-    let mut config = config::Config::default();
     if let Some(config_filename) = config_filename {
-        if let Err(e) =
-            config.merge(config::File::from(config_filename.clone()))
-        {
-            log::warn!(
-                "failed to read config file {}: {}",
-                config_filename.to_string_lossy(),
-                e
-            );
-            // if merge returns an error, the config source will still have been
-            // added to the config object, so the config object will likely never
-            // work, so we should recreate it from scratch.
-            config = config::Config::default();
-        }
+        let mut config = config::Config::default();
+        config
+            .merge(config::File::from(config_filename))
+            .context(crate::error::ParseConfigFile)?;
+        Ok(Some(config))
+    } else {
+        Ok(None)
     }
-
-    config
 }
 
 #[derive(serde::Deserialize, Debug)]

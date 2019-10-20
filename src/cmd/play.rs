@@ -29,11 +29,15 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 }
 
 pub fn config(
-    config: config::Config,
+    config: Option<config::Config>,
 ) -> Result<Box<dyn crate::config::Config>> {
-    let config: Config = config
-        .try_into()
-        .context(crate::error::CouldntParseConfig)?;
+    let config: Config = if let Some(config) = config {
+        config
+            .try_into()
+            .context(crate::error::CouldntParseConfig)?
+    } else {
+        Config::default()
+    };
     Ok(Box::new(config))
 }
 

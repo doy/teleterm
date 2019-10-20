@@ -179,6 +179,9 @@ pub enum Error {
         source: std::num::ParseIntError,
     },
 
+    #[snafu(display("failed to parse config file: {}", source))]
+    ParseConfigFile { source: config::ConfigError },
+
     #[snafu(display("failed to parse incoming http request"))]
     ParseHttpRequest,
 

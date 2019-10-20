@@ -10,7 +10,7 @@ struct Command {
     name: &'static str,
     cmd: &'static dyn for<'a, 'b> Fn(clap::App<'a, 'b>) -> clap::App<'a, 'b>,
     config: &'static dyn Fn(
-        config::Config,
+        Option<config::Config>,
     ) -> Result<Box<dyn crate::config::Config>>,
     log_level: &'static str,
 }
@@ -77,7 +77,7 @@ pub fn run(matches: &clap::ArgMatches<'_>) -> Result<()> {
     )
     .init();
 
-    let config = crate::config::config();
+    let config = crate::config::config()?;
     let mut cmd_config = (chosen_cmd.config)(config)?;
     cmd_config.merge_args(chosen_submatches)?;
     log::debug!("{:?}", cmd_config);

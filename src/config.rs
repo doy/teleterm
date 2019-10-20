@@ -4,6 +4,20 @@ use std::convert::TryFrom as _;
 use std::net::ToSocketAddrs as _;
 
 const CONFIG_FILENAME: &str = "config.toml";
+
+const ALLOWED_LOGIN_METHODS_OPTION: &str = "allowed-login-methods";
+const ARGS_OPTION: &str = "args";
+const BUFFER_SIZE_OPTION: &str = "buffer-size";
+const COMMAND_OPTION: &str = "command";
+const CONNECT_ADDRESS_OPTION: &str = "connect-address";
+const FILENAME_OPTION: &str = "filename";
+const LISTEN_ADDRESS_OPTION: &str = "listen-address";
+const LOGIN_PLAIN_OPTION: &str = "login-plain";
+const LOGIN_RECURSE_CENTER_OPTION: &str = "login-recurse-center";
+const READ_TIMEOUT_OPTION: &str = "read-timeout-secs";
+const TLS_IDENTITY_FILE_OPTION: &str = "tls-identity-file";
+const TLS_OPTION: &str = "tls";
+
 const DEFAULT_LISTEN_ADDRESS: &str = "127.0.0.1:4144";
 const DEFAULT_CONNECT_ADDRESS: &str = "127.0.0.1:4144";
 const DEFAULT_BUFFER_SIZE: usize = 4 * 1024 * 1024;
@@ -72,42 +86,42 @@ impl Client {
 
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         app.arg(
-            clap::Arg::with_name("login-plain")
-                .long("login-plain")
+            clap::Arg::with_name(LOGIN_PLAIN_OPTION)
+                .long(LOGIN_PLAIN_OPTION)
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("login-recurse-center")
-                .long("login-recurse-center")
-                .conflicts_with("login-plain"),
+            clap::Arg::with_name(LOGIN_RECURSE_CENTER_OPTION)
+                .long(LOGIN_RECURSE_CENTER_OPTION)
+                .conflicts_with(LOGIN_PLAIN_OPTION),
         )
         .arg(
-            clap::Arg::with_name("address")
-                .long("address")
+            clap::Arg::with_name(CONNECT_ADDRESS_OPTION)
+                .long(CONNECT_ADDRESS_OPTION)
                 .takes_value(true),
         )
-        .arg(clap::Arg::with_name("tls").long("tls"))
+        .arg(clap::Arg::with_name(TLS_OPTION).long(TLS_OPTION))
     }
 
     pub fn merge_args<'a>(
         &mut self,
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
-        if matches.is_present("login-recurse-center") {
+        if matches.is_present(LOGIN_RECURSE_CENTER_OPTION) {
             self.auth = crate::protocol::AuthType::RecurseCenter;
         }
-        if matches.is_present("login-plain") {
+        if matches.is_present(LOGIN_PLAIN_OPTION) {
             let username = matches
-                .value_of("login-plain")
+                .value_of(LOGIN_PLAIN_OPTION)
                 .map(std::string::ToString::to_string);
             self.auth = crate::protocol::AuthType::Plain;
             self.username = username;
         }
-        if matches.is_present("address") {
-            let address = matches.value_of("address").unwrap();
+        if matches.is_present(CONNECT_ADDRESS_OPTION) {
+            let address = matches.value_of(CONNECT_ADDRESS_OPTION).unwrap();
             self.connect_address = to_connect_address(address)?;
         }
-        if matches.is_present("tls") {
+        if matches.is_present(TLS_OPTION) {
             self.tls = true;
         }
         Ok(())
@@ -213,28 +227,28 @@ pub struct Server {
 impl Server {
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         app.arg(
-            clap::Arg::with_name("address")
-                .long("address")
+            clap::Arg::with_name(LISTEN_ADDRESS_OPTION)
+                .long(LISTEN_ADDRESS_OPTION)
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("buffer-size")
-                .long("buffer-size")
+            clap::Arg::with_name(BUFFER_SIZE_OPTION)
+                .long(BUFFER_SIZE_OPTION)
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("read-timeout-secs")
-                .long("read-timeout-secs")
+            clap::Arg::with_name(READ_TIMEOUT_OPTION)
+                .long(READ_TIMEOUT_OPTION)
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("tls-identity-file")
-                .long("tls-identity-file")
+            clap::Arg::with_name(TLS_IDENTITY_FILE_OPTION)
+                .long(TLS_IDENTITY_FILE_OPTION)
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("allowed-login-methods")
-                .long("allowed-login-methods")
+            clap::Arg::with_name(ALLOWED_LOGIN_METHODS_OPTION)
+                .long(ALLOWED_LOGIN_METHODS_OPTION)
                 .use_delimiter(true)
                 .takes_value(true),
         )
@@ -244,34 +258,37 @@ impl Server {
         &mut self,
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
-        if matches.is_present("address") {
+        if matches.is_present(LISTEN_ADDRESS_OPTION) {
             self.listen_address = matches
-                .value_of("address")
+                .value_of(LISTEN_ADDRESS_OPTION)
                 .unwrap()
                 .parse()
                 .context(crate::error::ParseAddr)?;
         }
-        if matches.is_present("buffer-size") {
-            let s = matches.value_of("buffer-size").unwrap();
+        if matches.is_present(BUFFER_SIZE_OPTION) {
+            let s = matches.value_of(BUFFER_SIZE_OPTION).unwrap();
             self.buffer_size = s
                 .parse()
                 .context(crate::error::ParseBufferSize { input: s })?;
         }
-        if matches.is_present("read-timeout-secs") {
-            let s = matches.value_of("read-timeout-secs").unwrap();
+        if matches.is_present(READ_TIMEOUT_OPTION) {
+            let s = matches.value_of(READ_TIMEOUT_OPTION).unwrap();
             self.read_timeout = s
                 .parse()
                 .map(std::time::Duration::from_secs)
                 .context(crate::error::ParseReadTimeout { input: s })?;
         }
-        if matches.is_present("tls-identity-file") {
+        if matches.is_present(TLS_IDENTITY_FILE_OPTION) {
             self.tls_identity_file = Some(
-                matches.value_of("tls-identity-file").unwrap().to_string(),
+                matches
+                    .value_of(TLS_IDENTITY_FILE_OPTION)
+                    .unwrap()
+                    .to_string(),
             );
         }
-        if matches.is_present("allowed-login-methods") {
+        if matches.is_present(ALLOWED_LOGIN_METHODS_OPTION) {
             self.allowed_login_methods = matches
-                .values_of("allowed-login-methods")
+                .values_of(ALLOWED_LOGIN_METHODS_OPTION)
                 .unwrap()
                 .map(crate::protocol::AuthType::try_from)
                 .collect::<Result<
@@ -408,29 +425,30 @@ pub struct Command {
 impl Command {
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         app.arg(
-            clap::Arg::with_name("buffer-size")
-                .long("buffer-size")
+            clap::Arg::with_name(BUFFER_SIZE_OPTION)
+                .long(BUFFER_SIZE_OPTION)
                 .takes_value(true),
         )
-        .arg(clap::Arg::with_name("command").index(1))
-        .arg(clap::Arg::with_name("args").index(2).multiple(true))
+        .arg(clap::Arg::with_name(COMMAND_OPTION).index(1))
+        .arg(clap::Arg::with_name(ARGS_OPTION).index(2).multiple(true))
     }
     pub fn merge_args<'a>(
         &mut self,
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
-        if matches.is_present("buffer-size") {
-            let buffer_size = matches.value_of("buffer-size").unwrap();
+        if matches.is_present(BUFFER_SIZE_OPTION) {
+            let buffer_size = matches.value_of(BUFFER_SIZE_OPTION).unwrap();
             self.buffer_size = buffer_size.parse().context(
                 crate::error::ParseBufferSize { input: buffer_size },
             )?;
         }
-        if matches.is_present("command") {
-            self.command = matches.value_of("command").unwrap().to_string();
+        if matches.is_present(COMMAND_OPTION) {
+            self.command =
+                matches.value_of(COMMAND_OPTION).unwrap().to_string();
         }
-        if matches.is_present("args") {
+        if matches.is_present(ARGS_OPTION) {
             self.args = matches
-                .values_of("args")
+                .values_of(ARGS_OPTION)
                 .unwrap()
                 .map(std::string::ToString::to_string)
                 .collect();
@@ -466,8 +484,8 @@ pub struct Ttyrec {
 impl Ttyrec {
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         app.arg(
-            clap::Arg::with_name("filename")
-                .long("filename")
+            clap::Arg::with_name(FILENAME_OPTION)
+                .long(FILENAME_OPTION)
                 .takes_value(true),
         )
     }
@@ -476,8 +494,9 @@ impl Ttyrec {
         &mut self,
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
-        if matches.is_present("filename") {
-            self.filename = matches.value_of("filename").unwrap().to_string();
+        if matches.is_present(FILENAME_OPTION) {
+            self.filename =
+                matches.value_of(FILENAME_OPTION).unwrap().to_string();
         }
         Ok(())
     }

@@ -35,6 +35,8 @@ impl crate::config::Config for Config {
                     tls_identity_file,
                     self.server.allowed_login_methods.clone(),
                     self.oauth_configs.clone(),
+                    self.server.uid,
+                    self.server.gid,
                 )?
             } else {
                 create_server(
@@ -43,6 +45,8 @@ impl crate::config::Config for Config {
                     self.server.read_timeout,
                     self.server.allowed_login_methods.clone(),
                     self.oauth_configs.clone(),
+                    self.server.uid,
+                    self.server.gid,
                 )?
             };
         tokio::run(futures::future::lazy(move || {
@@ -82,6 +86,8 @@ fn create_server(
         crate::protocol::AuthType,
         crate::oauth::Config,
     >,
+    uid: Option<users::uid_t>,
+    gid: Option<users::gid_t>,
 ) -> Result<(
     Box<dyn futures::future::Future<Item = (), Error = Error> + Send>,
     Box<dyn futures::future::Future<Item = (), Error = Error> + Send>,
@@ -89,6 +95,7 @@ fn create_server(
     let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(100);
     let listener = tokio::net::TcpListener::bind(&address)
         .context(crate::error::Bind { address })?;
+    drop_privs(uid, gid)?;
     let acceptor = listener
         .incoming()
         .context(crate::error::Acceptor)
@@ -119,6 +126,8 @@ fn create_server_tls(
         crate::protocol::AuthType,
         crate::oauth::Config,
     >,
+    uid: Option<users::uid_t>,
+    gid: Option<users::gid_t>,
 ) -> Result<(
     Box<dyn futures::future::Future<Item = (), Error = Error> + Send>,
     Box<dyn futures::future::Future<Item = (), Error = Error> + Send>,
@@ -126,6 +135,7 @@ fn create_server_tls(
     let (mut sock_w, sock_r) = tokio::sync::mpsc::channel(100);
     let listener = tokio::net::TcpListener::bind(&address)
         .context(crate::error::Bind { address })?;
+    drop_privs(uid, gid)?;
 
     let mut file = std::fs::File::open(tls_identity_file).context(
         crate::error::OpenFileSync {
@@ -158,4 +168,19 @@ fn create_server_tls(
         oauth_configs,
     );
     Ok((Box::new(acceptor), Box::new(server)))
+}
+
+fn drop_privs(
+    uid: Option<users::uid_t>,
+    gid: Option<users::gid_t>,
+) -> Result<()> {
+    if let Some(gid) = gid {
+        users::switch::set_effective_gid(gid)
+            .context(crate::error::SwitchGid)?;
+    }
+    if let Some(uid) = uid {
+        users::switch::set_effective_uid(uid)
+            .context(crate::error::SwitchUid)?;
+    }
+    Ok(())
 }

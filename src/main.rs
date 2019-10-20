@@ -5,6 +5,7 @@
 #![allow(clippy::similar_names)]
 #![allow(clippy::single_match)]
 #![allow(clippy::single_match_else)]
+#![allow(clippy::too_many_arguments)]
 #![allow(clippy::type_complexity)]
 
 mod prelude;

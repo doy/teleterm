@@ -347,6 +347,12 @@ pub enum Error {
     #[snafu(display("failed to spawn process for `{}`: {}", cmd, source))]
     SpawnProcess { cmd: String, source: std::io::Error },
 
+    #[snafu(display("failed to switch gid: {}", source))]
+    SwitchGid { source: std::io::Error },
+
+    #[snafu(display("failed to switch uid: {}", source))]
+    SwitchUid { source: std::io::Error },
+
     #[snafu(display(
         "failed to spawn a background thread to read terminal input: {}",
         source
@@ -385,6 +391,18 @@ pub enum Error {
 
     #[snafu(display("unexpected message: {:?}", message))]
     UnexpectedMessage { message: crate::protocol::Message },
+
+    #[snafu(display("failed to find group with gid {}", gid))]
+    UnknownGid { gid: users::gid_t },
+
+    #[snafu(display("failed to find group with group name {}", name))]
+    UnknownGroup { name: String },
+
+    #[snafu(display("failed to find user with uid {}", uid))]
+    UnknownUid { uid: users::uid_t },
+
+    #[snafu(display("failed to find user with username {}", name))]
+    UnknownUser { name: String },
 
     #[snafu(display("failed to write to event channel: {}", source))]
     WriteChannel {

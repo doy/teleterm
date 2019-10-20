@@ -415,10 +415,10 @@ pub struct Command {
     #[serde(default = "default_buffer_size")]
     pub buffer_size: usize,
 
-    #[serde(skip, default = "default_command")]
+    #[serde(default = "default_command")]
     pub command: String,
 
-    #[serde(skip, default = "default_args")]
+    #[serde(default = "default_args")]
     pub args: Vec<String>,
 }
 

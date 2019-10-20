@@ -75,22 +75,7 @@ pub fn run(matches: &clap::ArgMatches<'_>) -> Result<()> {
     )
     .init();
 
-    let config_filename = crate::dirs::Dirs::new().config_file("config.toml");
-
-    let mut config = config::Config::default();
-    if let Err(e) = config.merge(config::File::from(config_filename.clone()))
-    {
-        log::warn!(
-            "failed to read config file {}: {}",
-            config_filename.to_string_lossy(),
-            e
-        );
-        // if merge returns an error, the config source will still have been
-        // added to the config object, so the config object will likely never
-        // work, so we should recreate it from scratch.
-        config = config::Config::default();
-    }
-
+    let config = crate::config::config();
     let mut cmd_config = (chosen_cmd.config)(config);
     cmd_config.merge_args(chosen_submatches)?;
     log::debug!("{:?}", cmd_config);

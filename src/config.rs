@@ -3,6 +3,7 @@ use serde::de::Deserialize as _;
 use std::convert::TryFrom as _;
 use std::net::ToSocketAddrs as _;
 
+const CONFIG_FILENAME: &str = "config.toml";
 const DEFAULT_LISTEN_ADDRESS: &str = "127.0.0.1:4144";
 const DEFAULT_CONNECT_ADDRESS: &str = "127.0.0.1:4144";
 const DEFAULT_BUFFER_SIZE: usize = 4 * 1024 * 1024;
@@ -19,6 +20,27 @@ pub trait Config: std::fmt::Debug {
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()>;
     fn run(&self) -> Result<()>;
+}
+
+pub fn config() -> config::Config {
+    let config_filename =
+        crate::dirs::Dirs::new().config_file(CONFIG_FILENAME);
+
+    let mut config = config::Config::default();
+    if let Err(e) = config.merge(config::File::from(config_filename.clone()))
+    {
+        log::warn!(
+            "failed to read config file {}: {}",
+            config_filename.to_string_lossy(),
+            e
+        );
+        // if merge returns an error, the config source will still have been
+        // added to the config object, so the config object will likely never
+        // work, so we should recreate it from scratch.
+        config = config::Config::default();
+    }
+
+    config
 }
 
 #[derive(serde::Deserialize, Debug)]

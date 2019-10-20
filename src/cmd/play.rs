@@ -1,10 +1,9 @@
 use crate::prelude::*;
 use std::io::Write as _;
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(serde::Deserialize, Debug, Default)]
 pub struct Config {
-    #[serde(default = "crate::config::default_ttyrec_filename")]
-    filename: String,
+    ttyrec: crate::config::Ttyrec,
 }
 
 impl crate::config::Config for Config {
@@ -12,26 +11,15 @@ impl crate::config::Config for Config {
         &mut self,
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
-        if matches.is_present("filename") {
-            self.filename = matches.value_of("filename").unwrap().to_string();
-        }
-        Ok(())
+        self.ttyrec.merge_args(matches)
     }
 
     fn run(&self) -> Result<()> {
-        let fut = PlaySession::new(&self.filename);
+        let fut = PlaySession::new(&self.ttyrec.filename);
         tokio::run(fut.map_err(|e| {
             eprintln!("{}", e);
         }));
         Ok(())
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            filename: crate::config::default_ttyrec_filename(),
-        }
     }
 }
 

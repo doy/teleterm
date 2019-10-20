@@ -1,32 +1,9 @@
 use crate::prelude::*;
-use std::convert::TryFrom as _;
 use std::io::Read as _;
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(serde::Deserialize, Debug, Default)]
 pub struct Config {
-    #[serde(
-        deserialize_with = "crate::config::listen_address",
-        default = "crate::config::default_listen_address"
-    )]
-    listen_address: std::net::SocketAddr,
-
-    #[serde(default = "crate::config::default_connection_buffer_size")]
-    buffer_size: usize,
-
-    #[serde(
-        deserialize_with = "crate::config::read_timeout",
-        default = "crate::config::default_read_timeout"
-    )]
-    read_timeout: std::time::Duration,
-
-    tls_identity_file: Option<String>,
-
-    #[serde(
-        deserialize_with = "crate::config::allowed_login_methods",
-        default = "crate::config::default_allowed_login_methods"
-    )]
-    allowed_login_methods:
-        std::collections::HashSet<crate::protocol::AuthType>,
+    server: crate::config::Server,
 }
 
 impl crate::config::Config for Config {
@@ -34,59 +11,25 @@ impl crate::config::Config for Config {
         &mut self,
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
-        if matches.is_present("address") {
-            self.listen_address = matches
-                .value_of("address")
-                .unwrap()
-                .parse()
-                .context(crate::error::ParseAddr)?;
-        }
-        if matches.is_present("buffer-size") {
-            let s = matches.value_of("buffer-size").unwrap();
-            self.buffer_size = s
-                .parse()
-                .context(crate::error::ParseBufferSize { input: s })?;
-        }
-        if matches.is_present("read-timeout") {
-            let s = matches.value_of("read-timeout").unwrap();
-            self.read_timeout = s
-                .parse()
-                .map(std::time::Duration::from_secs)
-                .context(crate::error::ParseReadTimeout { input: s })?;
-        }
-        if matches.is_present("tls-identity-file") {
-            self.tls_identity_file = Some(
-                matches.value_of("tls-identity-file").unwrap().to_string(),
-            );
-        }
-        if matches.is_present("allowed-login-methods") {
-            self.allowed_login_methods = matches
-                .values_of("allowed-login-methods")
-                .unwrap()
-                .map(crate::protocol::AuthType::try_from)
-                .collect::<Result<
-                    std::collections::HashSet<crate::protocol::AuthType>,
-                >>()?;
-        }
-        Ok(())
+        self.server.merge_args(matches)
     }
 
     fn run(&self) -> Result<()> {
         let (acceptor, server) =
-            if let Some(tls_identity_file) = &self.tls_identity_file {
+            if let Some(tls_identity_file) = &self.server.tls_identity_file {
                 create_server_tls(
-                    self.listen_address,
-                    self.buffer_size,
-                    self.read_timeout,
+                    self.server.listen_address,
+                    self.server.buffer_size,
+                    self.server.read_timeout,
                     tls_identity_file,
-                    self.allowed_login_methods.clone(),
+                    self.server.allowed_login_methods.clone(),
                 )?
             } else {
                 create_server(
-                    self.listen_address,
-                    self.buffer_size,
-                    self.read_timeout,
-                    self.allowed_login_methods.clone(),
+                    self.server.listen_address,
+                    self.server.buffer_size,
+                    self.server.read_timeout,
+                    self.server.allowed_login_methods.clone(),
                 )?
             };
         tokio::run(futures::future::lazy(move || {
@@ -99,19 +42,6 @@ impl crate::config::Config for Config {
             })
         }));
         Ok(())
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            listen_address: crate::config::default_listen_address(),
-            buffer_size: crate::config::default_connection_buffer_size(),
-            read_timeout: crate::config::default_read_timeout(),
-            tls_identity_file: None,
-            allowed_login_methods:
-                crate::config::default_allowed_login_methods(),
-        }
     }
 }
 

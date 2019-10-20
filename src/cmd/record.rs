@@ -1,19 +1,10 @@
 use crate::prelude::*;
 use tokio::io::AsyncWrite as _;
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(serde::Deserialize, Debug, Default)]
 pub struct Config {
-    #[serde(default = "crate::config::default_ttyrec_filename")]
-    filename: String,
-
-    #[serde(default = "crate::config::default_connection_buffer_size")]
-    buffer_size: usize,
-
-    #[serde(skip, default = "crate::config::default_command")]
-    command: String,
-
-    #[serde(skip, default = "crate::config::default_args")]
-    args: Vec<String>,
+    command: crate::config::Command,
+    ttyrec: crate::config::Ttyrec,
 }
 
 impl crate::config::Config for Config {
@@ -21,50 +12,22 @@ impl crate::config::Config for Config {
         &mut self,
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
-        if matches.is_present("filename") {
-            self.filename = matches.value_of("filename").unwrap().to_string();
-        }
-        if matches.is_present("buffer-size") {
-            let buffer_size = matches.value_of("buffer-size").unwrap();
-            self.buffer_size = buffer_size.parse().context(
-                crate::error::ParseBufferSize { input: buffer_size },
-            )?;
-        }
-        if matches.is_present("command") {
-            self.command = matches.value_of("command").unwrap().to_string();
-        }
-        if matches.is_present("args") {
-            self.args = matches
-                .values_of("args")
-                .unwrap()
-                .map(std::string::ToString::to_string)
-                .collect();
-        }
+        self.command.merge_args(matches)?;
+        self.ttyrec.merge_args(matches)?;
         Ok(())
     }
 
     fn run(&self) -> Result<()> {
         let fut = RecordSession::new(
-            &self.filename,
-            self.buffer_size,
-            &self.command,
-            &self.args,
+            &self.ttyrec.filename,
+            self.command.buffer_size,
+            &self.command.command,
+            &self.command.args,
         );
         tokio::run(fut.map_err(|e| {
             eprintln!("{}", e);
         }));
         Ok(())
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            filename: crate::config::default_ttyrec_filename(),
-            buffer_size: crate::config::default_connection_buffer_size(),
-            command: crate::config::default_command(),
-            args: crate::config::default_args(),
-        }
     }
 }
 

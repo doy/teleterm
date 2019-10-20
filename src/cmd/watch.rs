@@ -1,32 +1,9 @@
 use crate::prelude::*;
 use std::io::Write as _;
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(serde::Deserialize, Debug, Default)]
 pub struct Config {
-    #[serde(
-        deserialize_with = "crate::config::auth",
-        default = "crate::config::default_auth"
-    )]
-    auth: crate::protocol::Auth,
-
-    #[serde(
-        deserialize_with = "crate::config::connect_address",
-        default = "crate::config::default_connect_address"
-    )]
-    connect_address: (String, std::net::SocketAddr),
-
-    #[serde(default = "crate::config::default_tls")]
-    tls: bool,
-}
-
-impl Config {
-    fn host(&self) -> &str {
-        &self.connect_address.0
-    }
-
-    fn addr(&self) -> &std::net::SocketAddr {
-        &self.connect_address.1
-    }
+    client: crate::config::Client,
 }
 
 impl crate::config::Config for Config {
@@ -34,37 +11,31 @@ impl crate::config::Config for Config {
         &mut self,
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
-        if matches.is_present("login-recurse-center") {
-            let id = crate::oauth::load_client_auth_id(
-                crate::protocol::AuthType::RecurseCenter,
-            );
-            self.auth = crate::protocol::Auth::recurse_center(
-                id.as_ref().map(std::string::String::as_str),
-            );
-        }
-        if matches.is_present("login-plain") {
-            let username =
-                matches.value_of("login-plain").unwrap().to_string();
-            self.auth = crate::protocol::Auth::plain(&username);
-        }
-        if matches.is_present("address") {
-            let address = matches.value_of("address").unwrap();
-            self.connect_address =
-                crate::config::to_connect_address(address)?;
-        }
-        if matches.is_present("tls") {
-            self.tls = true;
-        }
-        Ok(())
+        self.client.merge_args(matches)
     }
 
     fn run(&self) -> Result<()> {
-        let host = self.host().to_string();
-        let address = *self.addr();
-        let auth = self.auth.clone();
+        let host = self.client.host().to_string();
+        let address = *self.client.addr();
+        let auth = match self.client.auth {
+            crate::protocol::AuthType::Plain => {
+                let username = self
+                    .client
+                    .username
+                    .clone()
+                    .context(crate::error::CouldntFindUsername)?;
+                crate::protocol::Auth::plain(&username)
+            }
+            crate::protocol::AuthType::RecurseCenter => {
+                let id = crate::oauth::load_client_auth_id(self.client.auth);
+                crate::protocol::Auth::recurse_center(
+                    id.as_ref().map(std::string::String::as_str),
+                )
+            }
+        };
         let fut: Box<
             dyn futures::future::Future<Item = (), Error = Error> + Send,
-        > = if self.tls {
+        > = if self.client.tls {
             let connector = native_tls::TlsConnector::new()
                 .context(crate::error::CreateConnector)?;
             let make_connector: Box<
@@ -107,16 +78,6 @@ impl crate::config::Config for Config {
             eprintln!("{}", e);
         }));
         Ok(())
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            auth: crate::config::default_auth(),
-            connect_address: crate::config::default_connect_address(),
-            tls: crate::config::default_tls(),
-        }
     }
 }
 

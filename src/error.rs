@@ -32,6 +32,9 @@ pub enum Error {
     #[snafu(display("couldn't determine the current username"))]
     CouldntFindUsername,
 
+    #[snafu(display("failed to parse configuration: {}", source))]
+    CouldntParseConfig { source: config::ConfigError },
+
     #[snafu(display("failed to create tls acceptor: {}", source))]
     CreateAcceptor { source: native_tls::Error },
 

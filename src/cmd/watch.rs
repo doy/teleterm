@@ -85,11 +85,13 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
     crate::config::Client::cmd(app.about("Watch teleterm streams"))
 }
 
-pub fn config(config: config::Config) -> Box<dyn crate::config::Config> {
-    Box::new(config.try_into().unwrap_or_else(|e| {
-        log::warn!("failed to parse config data: {}", e);
-        Config::default()
-    }))
+pub fn config(
+    config: config::Config,
+) -> Result<Box<dyn crate::config::Config>> {
+    let config: Config = config
+        .try_into()
+        .context(crate::error::CouldntParseConfig)?;
+    Ok(Box::new(config))
 }
 
 // XXX https://github.com/rust-lang/rust/issues/64362

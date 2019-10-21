@@ -3,6 +3,8 @@ use serde::de::Deserialize as _;
 use std::convert::TryFrom as _;
 use std::net::ToSocketAddrs as _;
 
+pub mod wizard;
+
 const CONFIG_FILENAME: &str = "config.toml";
 
 const ALLOWED_LOGIN_METHODS_OPTION: &str = "allowed-login-methods";
@@ -47,17 +49,21 @@ pub fn config(
         }
         Some(filename.to_path_buf())
     } else {
-        crate::dirs::Dirs::new().config_file(CONFIG_FILENAME)
+        crate::dirs::Dirs::new().config_file(CONFIG_FILENAME, true)
     };
-    if let Some(config_filename) = config_filename {
-        let mut config = config::Config::default();
-        config
-            .merge(config::File::from(config_filename))
-            .context(crate::error::ParseConfigFile)?;
-        Ok(Some(config))
-    } else {
-        Ok(None)
-    }
+    config_filename
+        .map(|config_filename| config_from_filename(&config_filename))
+        .transpose()
+}
+
+fn config_from_filename(
+    filename: &std::path::Path,
+) -> Result<config::Config> {
+    let mut config = config::Config::default();
+    config
+        .merge(config::File::from(filename))
+        .context(crate::error::ParseConfigFile)?;
+    Ok(config)
 }
 
 #[derive(serde::Deserialize, Debug)]

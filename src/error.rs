@@ -65,6 +65,12 @@ pub enum Error {
         source: tokio::io::Error,
     },
 
+    #[snafu(display("failed to create file {}: {}", filename, source))]
+    CreateFileSync {
+        filename: String,
+        source: std::io::Error,
+    },
+
     #[snafu(display("received EOF from server"))]
     EOF,
 
@@ -417,6 +423,9 @@ pub enum Error {
 
     #[snafu(display("failed to write to file: {}", source))]
     WriteFile { source: tokio::io::Error },
+
+    #[snafu(display("failed to write to file: {}", source))]
+    WriteFileSync { source: std::io::Error },
 
     #[snafu(display("{}", source))]
     WriteMessageWithTimeout {

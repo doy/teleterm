@@ -32,16 +32,20 @@ impl Dirs {
             .map(directories::ProjectDirs::config_dir)
     }
 
-    pub fn config_file(&self, name: &str) -> Option<std::path::PathBuf> {
+    pub fn config_file(
+        &self,
+        name: &str,
+        must_exist: bool,
+    ) -> Option<std::path::PathBuf> {
         if let Some(config_dir) = self.config_dir() {
             let file = config_dir.join(name);
-            if file.exists() {
+            if !must_exist || file.exists() {
                 return Some(file);
             }
         }
 
         let file = self.global_config_dir().join(name);
-        if file.exists() {
+        if !must_exist || file.exists() {
             return Some(file);
         }
 

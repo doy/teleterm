@@ -87,8 +87,11 @@ pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
 }
 
 pub fn config(
-    config: Option<config::Config>,
+    mut config: Option<config::Config>,
 ) -> Result<Box<dyn crate::config::Config>> {
+    if config.is_none() {
+        config = crate::config::wizard::run()?;
+    }
     let config: Config = if let Some(config) = config {
         config
             .try_into()

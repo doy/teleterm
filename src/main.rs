@@ -11,6 +11,8 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::type_complexity)]
 
+const _DUMMY_DEPENDENCY: &str = include_str!("../Cargo.toml");
+
 mod prelude;
 
 #[macro_use]

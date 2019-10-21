@@ -14,24 +14,24 @@ license = "MIT"
 [dependencies]
 bytes = "0.4"
 clap = { version = "2", features = ["wrap_help"] }
-config = "0.9"
-crossterm = "0.11"
+config = { version = "0.9", features = ["toml"], default_features = false }
+crossterm = { version = "0.11", features = ["terminal", "input", "screen"], default_features = false }
 directories = "2"
 env_logger = "0.7"
-futures = "0.1"
+futures = "0.1.29"
 lazy_static = "1"
 log = { version = "0.4", features = ["release_max_level_info"] }
-mio = "0.6"
+mio = "0.6.19"
 native-tls = "0.2"
-oauth2 = "3.0.0-alpha.3" # need the alpha for async support
-open = "1"
+oauth2 = "3.0.0-alpha.4" # need the alpha for async support
+open = "1.1"
 rand = "0.7"
 ratelimit_meter = "5"
-regex = "1"
-reqwest = "0.9"
+regex = { version = "1", features = ["std", "perf"], default_features = false }
+reqwest = "0.9.22"
 serde = "1"
-snafu = { version = "0.5", features = ["futures-01"] }
-tokio = "0.1"
+snafu = { version = "0.5", features = ["rust_1_30", "futures-01"], default_features = false }
+tokio = { version = "0.1.22", features = ["codec", "fs", "io", "reactor", "rt-full", "sync", "tcp", "timer"], default_features = false }
 tokio-pty-process = "0.4"
 tokio-signal = "0.2"
 tokio-tls = "0.2"

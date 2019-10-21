@@ -94,22 +94,38 @@ impl Client {
     }
 
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
+        let login_plain_help = "Use the 'plain' authentication method (default), with username USERNAME (defaults to $USER)";
+        let login_recurse_center_help =
+            "Use the 'recurse_center' authentication method";
+        let connect_address_help =
+            "Host and port to connect to (defaults to localhost:4144)";
+        let tls_help = "Connect to the server using TLS";
+
         app.arg(
             clap::Arg::with_name(LOGIN_PLAIN_OPTION)
                 .long(LOGIN_PLAIN_OPTION)
-                .takes_value(true),
+                .takes_value(true)
+                .value_name("USERNAME")
+                .help(login_plain_help),
         )
         .arg(
             clap::Arg::with_name(LOGIN_RECURSE_CENTER_OPTION)
                 .long(LOGIN_RECURSE_CENTER_OPTION)
-                .conflicts_with(LOGIN_PLAIN_OPTION),
+                .conflicts_with(LOGIN_PLAIN_OPTION)
+                .help(login_recurse_center_help),
         )
         .arg(
             clap::Arg::with_name(CONNECT_ADDRESS_OPTION)
                 .long(CONNECT_ADDRESS_OPTION)
-                .takes_value(true),
+                .takes_value(true)
+                .value_name("HOST:PORT")
+                .help(connect_address_help),
         )
-        .arg(clap::Arg::with_name(TLS_OPTION).long(TLS_OPTION))
+        .arg(
+            clap::Arg::with_name(TLS_OPTION)
+                .long(TLS_OPTION)
+                .help(tls_help),
+        )
     }
 
     pub fn merge_args<'a>(
@@ -241,31 +257,47 @@ pub struct Server {
 
 impl Server {
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
+        let listen_address_help =
+            "Host and port to listen on (defaults to localhost:4144)";
+        let buffer_size_help = "Number of bytes to store for each connection in order to send them to newly connected watchers (defaults to 4194304)";
+        let read_timeout_help = "Number of idle seconds to wait before disconnecting a client (defaults to 30)";
+        let tls_identity_file_help = "File containing the TLS certificate and private key to use for accepting TLS connections. Must be in pfx format. The server will only allow connections over TLS if this option is set.";
+        let allowed_login_methods_help = "Comma separated list containing the auth methods this server should allow. Allows everything by default, valid values are plain, recurse_center";
         app.arg(
             clap::Arg::with_name(LISTEN_ADDRESS_OPTION)
                 .long(LISTEN_ADDRESS_OPTION)
-                .takes_value(true),
+                .takes_value(true)
+                .value_name("HOST:PORT")
+                .help(listen_address_help),
         )
         .arg(
             clap::Arg::with_name(BUFFER_SIZE_OPTION)
                 .long(BUFFER_SIZE_OPTION)
-                .takes_value(true),
+                .takes_value(true)
+                .value_name("BYTES")
+                .help(buffer_size_help),
         )
         .arg(
             clap::Arg::with_name(READ_TIMEOUT_OPTION)
                 .long(READ_TIMEOUT_OPTION)
-                .takes_value(true),
+                .takes_value(true)
+                .value_name("SECS")
+                .help(read_timeout_help),
         )
         .arg(
             clap::Arg::with_name(TLS_IDENTITY_FILE_OPTION)
                 .long(TLS_IDENTITY_FILE_OPTION)
-                .takes_value(true),
+                .takes_value(true)
+                .value_name("FILE")
+                .help(tls_identity_file_help),
         )
         .arg(
             clap::Arg::with_name(ALLOWED_LOGIN_METHODS_OPTION)
                 .long(ALLOWED_LOGIN_METHODS_OPTION)
                 .use_delimiter(true)
-                .takes_value(true),
+                .takes_value(true)
+                .value_name("AUTH_METHODS")
+                .help(allowed_login_methods_help),
         )
     }
 
@@ -552,13 +584,28 @@ pub struct Command {
 
 impl Command {
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
+        let buffer_size_help = "Max number of bytes to buffer in order to be able to resend them when reconnecting to the server (defaults to 4194304)";
+        let command_help = "Command to run";
+        let args_help = "Arguments for the command";
+
         app.arg(
             clap::Arg::with_name(BUFFER_SIZE_OPTION)
                 .long(BUFFER_SIZE_OPTION)
-                .takes_value(true),
+                .takes_value(true)
+                .value_name("BYTES")
+                .help(buffer_size_help),
         )
-        .arg(clap::Arg::with_name(COMMAND_OPTION).index(1))
-        .arg(clap::Arg::with_name(ARGS_OPTION).index(2).multiple(true))
+        .arg(
+            clap::Arg::with_name(COMMAND_OPTION)
+                .index(1)
+                .help(command_help),
+        )
+        .arg(
+            clap::Arg::with_name(ARGS_OPTION)
+                .index(2)
+                .multiple(true)
+                .help(args_help),
+        )
     }
     pub fn merge_args<'a>(
         &mut self,
@@ -611,10 +658,14 @@ pub struct Ttyrec {
 
 impl Ttyrec {
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
+        let filename_help =
+            "TTYrec file to use (defaults to teleterm.ttyrec)";
         app.arg(
             clap::Arg::with_name(FILENAME_OPTION)
                 .long(FILENAME_OPTION)
-                .takes_value(true),
+                .takes_value(true)
+                .value_name("FILE")
+                .help(filename_help),
         )
     }
 

@@ -56,12 +56,20 @@ pub fn parse<'a>() -> Result<clap::ArgMatches<'a>> {
         .arg(
             clap::Arg::with_name("config-file")
                 .long("config-file")
-                .takes_value(true),
-        );
+                .takes_value(true)
+                .value_name("FILE")
+                .help("Read configuration from FILE"),
+        )
+        .global_setting(clap::AppSettings::DontCollapseArgsInUsage)
+        .global_setting(clap::AppSettings::GlobalVersion)
+        .global_setting(clap::AppSettings::UnifiedHelpMessage)
+        .global_setting(clap::AppSettings::VersionlessSubcommands);
 
     for cmd in COMMANDS {
         let subcommand = clap::SubCommand::with_name(cmd.name);
-        app = app.subcommand((cmd.cmd)(subcommand));
+        app = app.subcommand(
+            (cmd.cmd)(subcommand).setting(clap::AppSettings::NextLineHelp),
+        );
     }
 
     app.get_matches_safe().context(crate::error::ParseArgs)

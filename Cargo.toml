@@ -13,7 +13,7 @@ license = "MIT"
 
 [dependencies]
 bytes = "0.4"
-clap = "2"
+clap = { version = "2", features = ["wrap_help"] }
 config = "0.9"
 crossterm = "0.11"
 directories = "2"

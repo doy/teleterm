@@ -1,7 +1,10 @@
+// XXX this is broken with ale
+// #![warn(clippy::cargo)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]
 #![allow(clippy::match_same_arms)]
 #![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::multiple_crate_versions)]
 #![allow(clippy::similar_names)]
 #![allow(clippy::single_match)]
 #![allow(clippy::single_match_else)]

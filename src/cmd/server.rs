@@ -100,6 +100,7 @@ fn create_server(
     let listener = tokio::net::TcpListener::bind(&address)
         .context(crate::error::Bind { address })?;
     drop_privs(uid, gid)?;
+    log::info!("Listening on {}", address);
     let acceptor = listener
         .incoming()
         .context(crate::error::Acceptor)
@@ -140,6 +141,7 @@ fn create_server_tls(
     let listener = tokio::net::TcpListener::bind(&address)
         .context(crate::error::Bind { address })?;
     drop_privs(uid, gid)?;
+    log::info!("Listening on {}", address);
 
     let mut file = std::fs::File::open(tls_identity_file).context(
         crate::error::OpenFileSync {

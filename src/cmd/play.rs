@@ -18,7 +18,7 @@ impl crate::config::Config for Config {
     fn run(&self) -> Result<()> {
         let fut = PlaySession::new(&self.ttyrec.filename);
         tokio::run(fut.map_err(|e| {
-            eprintln!("{}", e);
+            log::error!("{}", e);
         }));
         Ok(())
     }

@@ -76,7 +76,7 @@ impl crate::config::Config for Config {
             Box::new(WatchSession::new(make_connector, &auth))
         };
         tokio::run(fut.map_err(|e| {
-            eprintln!("{}", e);
+            log::error!("{}", e);
         }));
         Ok(())
     }

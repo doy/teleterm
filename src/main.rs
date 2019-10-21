@@ -34,6 +34,7 @@ fn main() {
     match crate::cmd::parse().and_then(|m| crate::cmd::run(&m)) {
         Ok(_) => {}
         Err(err) => {
+            // we don't know if the log crate has been initialized yet
             eprintln!("{}", err);
             std::process::exit(1);
         }

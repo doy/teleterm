@@ -51,11 +51,11 @@ impl crate::config::Config for Config {
             };
         tokio::run(futures::future::lazy(move || {
             tokio::spawn(server.map_err(|e| {
-                eprintln!("{}", e);
+                log::error!("{}", e);
             }));
 
             acceptor.map_err(|e| {
-                eprintln!("{}", e);
+                log::error!("{}", e);
             })
         }));
         Ok(())

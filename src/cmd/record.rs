@@ -28,7 +28,7 @@ impl crate::config::Config for Config {
             &self.command.args,
         );
         tokio::run(fut.map_err(|e| {
-            eprintln!("{}", e);
+            log::error!("{}", e);
         }));
         Ok(())
     }

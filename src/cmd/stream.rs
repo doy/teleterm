@@ -82,7 +82,7 @@ impl crate::config::Config for Config {
             ))
         };
         tokio::run(fut.map_err(|e| {
-            eprintln!("{}", e);
+            log::error!("{}", e);
         }));
         Ok(())
     }

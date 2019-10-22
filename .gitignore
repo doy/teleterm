@@ -1,2 +1,4 @@
+/*.log
+/pkg
 /target
 **/*.rs.bk

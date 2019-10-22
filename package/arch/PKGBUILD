@@ -1,0 +1,21 @@
+# Maintainer: Jesse Luehrs <doy@tozt.net>
+pkgname=teleterm
+pkgver=0.1.0
+pkgrel=1
+makedepends=('rust' 'cargo')
+depends=('openssl')
+arch=('i686' 'x86_64' 'armv6h' 'armv7h')
+pkgdesc="share your terminals!"
+license=('MIT')
+
+build() {
+    cargo build --release --locked
+}
+
+check() {
+    cargo test --release --locked
+}
+
+package() {
+    install -Dm 755 ../../../target/release/tt -t "${pkgdir}/usr/bin"
+}

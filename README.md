@@ -5,7 +5,7 @@
 When I was first learning to program, one of the things I did in my spare time
 was play NetHack. In particular, I played on the
 [nethack.alt.org](https://alt.org/nethack/) public server, and hung out in
-#nethack on IRC. One of the things that made this a great learning environment
+\#nethack on IRC. One of the things that made this a great learning environment
 was that all games played on this server are automatically recorded and
 livestreamed. This allowed you to both watch other people play to pick up tips,
 as well as ask other people to look at your game and give you advice.

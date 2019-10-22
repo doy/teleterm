@@ -2,6 +2,8 @@ these are things that i know need work (and i would welcome patches for), but
 i'm also interested in anything else you think would make this software more
 useful.
 
+* packages for more operating systems
+    * homebrew is probably a big one?
 * grpc
     * although the existing hand-rolled protocol works fine, it does make it
       annoying to deal with things like sending the traffic through http

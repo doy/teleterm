@@ -20,17 +20,20 @@ impl crate::config::Config for Config {
         Ok(())
     }
 
-    fn run(&self) -> Result<()> {
-        let host = self.client.host().to_string();
-        let address = *self.client.addr();
+    fn run(
+        &self,
+    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send> {
         let auth = match self.client.auth {
             crate::protocol::AuthType::Plain => {
                 let username = self
                     .client
                     .username
                     .clone()
-                    .context(crate::error::CouldntFindUsername)?;
-                crate::protocol::Auth::plain(&username)
+                    .context(crate::error::CouldntFindUsername);
+                match username {
+                    Ok(username) => crate::protocol::Auth::plain(&username),
+                    Err(e) => return Box::new(futures::future::err(e)),
+                }
             }
             crate::protocol::AuthType::RecurseCenter => {
                 let id = crate::oauth::load_client_auth_id(self.client.auth);
@@ -39,11 +42,16 @@ impl crate::config::Config for Config {
                 )
             }
         };
-        let fut: Box<
-            dyn futures::future::Future<Item = (), Error = Error> + Send,
-        > = if self.client.tls {
-            let connector = native_tls::TlsConnector::new()
-                .context(crate::error::CreateConnector)?;
+
+        let host = self.client.host().to_string();
+        let address = *self.client.addr();
+        if self.client.tls {
+            let connector = match native_tls::TlsConnector::new()
+                .context(crate::error::CreateConnector)
+            {
+                Ok(connector) => connector,
+                Err(e) => return Box::new(futures::future::err(e)),
+            };
             let connect: crate::client::Connector<_> = Box::new(move || {
                 let host = host.clone();
                 let connector = connector.clone();
@@ -80,11 +88,7 @@ impl crate::config::Config for Config {
                 self.command.buffer_size,
                 &auth,
             ))
-        };
-        tokio::run(fut.map_err(|e| {
-            log::error!("{}", e);
-        }));
-        Ok(())
+        }
     }
 }
 

@@ -20,17 +20,15 @@ impl crate::config::Config for Config {
         Ok(())
     }
 
-    fn run(&self) -> Result<()> {
-        let fut = RecordSession::new(
+    fn run(
+        &self,
+    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send> {
+        Box::new(RecordSession::new(
             &self.ttyrec.filename,
             self.command.buffer_size,
             &self.command.command,
             &self.command.args,
-        );
-        tokio::run(fut.map_err(|e| {
-            log::error!("{}", e);
-        }));
-        Ok(())
+        ))
     }
 }
 

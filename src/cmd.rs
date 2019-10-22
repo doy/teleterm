@@ -96,7 +96,10 @@ pub fn run(matches: &clap::ArgMatches<'_>) -> Result<()> {
     let mut cmd_config = (chosen_cmd.config)(config)?;
     cmd_config.merge_args(chosen_submatches)?;
     log::debug!("{:?}", cmd_config);
-    cmd_config.run()
+    tokio::run(cmd_config.run().map_err(|e| {
+        log::error!("{}", e);
+    }));
+    Ok(())
 }
 
 fn program_name() -> Result<String> {

@@ -15,12 +15,10 @@ impl crate::config::Config for Config {
         self.ttyrec.merge_args(matches)
     }
 
-    fn run(&self) -> Result<()> {
-        let fut = PlaySession::new(&self.ttyrec.filename);
-        tokio::run(fut.map_err(|e| {
-            log::error!("{}", e);
-        }));
-        Ok(())
+    fn run(
+        &self,
+    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send> {
+        Box::new(PlaySession::new(&self.ttyrec.filename))
     }
 }
 

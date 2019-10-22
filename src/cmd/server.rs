@@ -25,10 +25,12 @@ impl crate::config::Config for Config {
         self.server.merge_args(matches)
     }
 
-    fn run(&self) -> Result<()> {
+    fn run(
+        &self,
+    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send> {
         let (acceptor, server) =
             if let Some(tls_identity_file) = &self.server.tls_identity_file {
-                create_server_tls(
+                match create_server_tls(
                     self.server.listen_address,
                     self.server.buffer_size,
                     self.server.read_timeout,
@@ -37,9 +39,12 @@ impl crate::config::Config for Config {
                     self.oauth_configs.clone(),
                     self.server.uid,
                     self.server.gid,
-                )?
+                ) {
+                    Ok(futs) => futs,
+                    Err(e) => return Box::new(futures::future::err(e)),
+                }
             } else {
-                create_server(
+                match create_server(
                     self.server.listen_address,
                     self.server.buffer_size,
                     self.server.read_timeout,
@@ -47,18 +52,18 @@ impl crate::config::Config for Config {
                     self.oauth_configs.clone(),
                     self.server.uid,
                     self.server.gid,
-                )?
+                ) {
+                    Ok(futs) => futs,
+                    Err(e) => return Box::new(futures::future::err(e)),
+                }
             };
-        tokio::run(futures::future::lazy(move || {
+        Box::new(futures::future::lazy(move || {
             tokio::spawn(server.map_err(|e| {
                 log::error!("{}", e);
             }));
 
-            acceptor.map_err(|e| {
-                log::error!("{}", e);
-            })
-        }));
-        Ok(())
+            acceptor
+        }))
     }
 }
 

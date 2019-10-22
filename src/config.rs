@@ -35,7 +35,9 @@ pub trait Config: std::fmt::Debug {
         &mut self,
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()>;
-    fn run(&self) -> Result<()>;
+    fn run(
+        &self,
+    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send>;
 }
 
 pub fn config(

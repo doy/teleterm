@@ -96,9 +96,24 @@ pub fn run(matches: &clap::ArgMatches<'_>) -> Result<()> {
     let mut cmd_config = (chosen_cmd.config)(config)?;
     cmd_config.merge_args(chosen_submatches)?;
     log::debug!("{:?}", cmd_config);
+
+    // XXX ideally we'd be able to run everything on the current_thread
+    // runtime, but this is blocked on
+    // https://github.com/tokio-rs/tokio/issues/1356 (fixed in the 0.2 branch
+    // which is not yet stable)
+
+    // let mut runtime = tokio::runtime::current_thread::Runtime::new()
+    //     .unwrap();
+    // runtime
+    //     .block_on(cmd_config.run().map_err(|e| {
+    //         log::error!("{}", e);
+    //     }))
+    //     .unwrap();
+
     tokio::run(cmd_config.run().map_err(|e| {
         log::error!("{}", e);
     }));
+
     Ok(())
 }
 

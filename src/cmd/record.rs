@@ -22,7 +22,8 @@ impl crate::config::Config for Config {
 
     fn run(
         &self,
-    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send> {
+    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send>
+    {
         Box::new(RecordSession::new(
             &self.ttyrec.filename,
             self.command.buffer_size,

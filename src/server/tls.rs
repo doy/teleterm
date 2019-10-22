@@ -2,8 +2,12 @@ use crate::prelude::*;
 
 pub struct Server {
     server: super::Server<tokio_tls::TlsStream<tokio::net::TcpStream>>,
-    sock_r:
-        tokio::sync::mpsc::Receiver<tokio_tls::Accept<tokio::net::TcpStream>>,
+    acceptor: Box<
+        dyn futures::stream::Stream<
+                Item = tokio_tls::Accept<tokio::net::TcpStream>,
+                Error = Error,
+            > + Send,
+    >,
     sock_w: tokio::sync::mpsc::Sender<
         tokio_tls::TlsStream<tokio::net::TcpStream>,
     >,
@@ -12,11 +16,14 @@ pub struct Server {
 
 impl Server {
     pub fn new(
+        acceptor: Box<
+            dyn futures::stream::Stream<
+                    Item = tokio_tls::Accept<tokio::net::TcpStream>,
+                    Error = Error,
+                > + Send,
+        >,
         buffer_size: usize,
         read_timeout: std::time::Duration,
-        sock_r: tokio::sync::mpsc::Receiver<
-            tokio_tls::Accept<tokio::net::TcpStream>,
-        >,
         allowed_login_methods: std::collections::HashSet<
             crate::protocol::AuthType,
         >,
@@ -28,13 +35,15 @@ impl Server {
         let (tls_sock_w, tls_sock_r) = tokio::sync::mpsc::channel(100);
         Self {
             server: super::Server::new(
+                Box::new(
+                    tls_sock_r.context(crate::error::SocketChannelReceive),
+                ),
                 buffer_size,
                 read_timeout,
-                tls_sock_r,
                 allowed_login_methods,
                 oauth_configs,
             ),
-            sock_r,
+            acceptor,
             sock_w: tls_sock_w,
             accepting_sockets: vec![],
         }
@@ -50,19 +59,13 @@ impl Server {
             (),
             Error,
         >] = &[
-        &Self::poll_new_connections,
+        &Self::poll_accept,
         &Self::poll_handshake_connections,
         &Self::poll_server,
     ];
 
-    fn poll_new_connections(
-        &mut self,
-    ) -> crate::component_future::Poll<(), Error> {
-        if let Some(sock) = try_ready!(self
-            .sock_r
-            .poll()
-            .context(crate::error::SocketChannelReceive))
-        {
+    fn poll_accept(&mut self) -> crate::component_future::Poll<(), Error> {
+        if let Some(sock) = try_ready!(self.acceptor.poll()) {
             self.accepting_sockets.push(sock);
             Ok(crate::component_future::Async::DidWork)
         } else {

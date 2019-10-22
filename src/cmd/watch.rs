@@ -17,7 +17,8 @@ impl crate::config::Config for Config {
 
     fn run(
         &self,
-    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send> {
+    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send>
+    {
         let auth = match self.client.auth {
             crate::protocol::AuthType::Plain => {
                 let username = self

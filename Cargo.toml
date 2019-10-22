@@ -43,3 +43,6 @@ uuid = { version = "0.8", features = ["v4"] }
 [[bin]]
 name = "tt"
 path = "src/main.rs"
+
+[package.metadata.deb]
+depends = "openssl"

@@ -22,14 +22,24 @@ impl Dirs {
         Ok(())
     }
 
+    fn has_home(&self) -> bool {
+        directories::BaseDirs::new().map_or(false, |dirs| {
+            dirs.home_dir() != std::path::Path::new("/")
+        })
+    }
+
     fn global_config_dir(&self) -> &std::path::Path {
         std::path::Path::new("/etc/teleterm")
     }
 
     fn config_dir(&self) -> Option<&std::path::Path> {
-        self.project_dirs
-            .as_ref()
-            .map(directories::ProjectDirs::config_dir)
+        if self.has_home() {
+            self.project_dirs
+                .as_ref()
+                .map(directories::ProjectDirs::config_dir)
+        } else {
+            None
+        }
     }
 
     pub fn config_file(
@@ -57,9 +67,13 @@ impl Dirs {
     }
 
     fn data_dir(&self) -> Option<&std::path::Path> {
-        self.project_dirs
-            .as_ref()
-            .map(directories::ProjectDirs::data_dir)
+        if self.has_home() {
+            self.project_dirs
+                .as_ref()
+                .map(directories::ProjectDirs::data_dir)
+        } else {
+            None
+        }
     }
 
     pub fn data_file(

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2] - 2019-10-23
+
+### Fixed
+
+* set both the real and effective uid and gid instead of just effective when
+  dropping privileges
+
 ## [0.1.1] - 2019-10-23
 
 ### Fixed

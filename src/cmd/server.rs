@@ -117,13 +117,13 @@ fn create_server_tls(
     uid: Option<users::uid_t>,
     gid: Option<users::gid_t>,
 ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send> {
-    let listener = match listen(address, uid, gid) {
-        Ok(listener) => listener,
+    let tls_acceptor = match accept_tls(tls_identity_file) {
+        Ok(acceptor) => acceptor,
         Err(e) => return Box::new(futures::future::err(e)),
     };
 
-    let tls_acceptor = match accept_tls(tls_identity_file) {
-        Ok(acceptor) => acceptor,
+    let listener = match listen(address, uid, gid) {
+        Ok(listener) => listener,
         Err(e) => return Box::new(futures::future::err(e)),
     };
 

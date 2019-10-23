@@ -39,15 +39,16 @@ communication methods.
 ## Installation
 
 If you have a working [rust](https://www.rust-lang.org/) installation,
-`teleterm` can be installed from source by running `cargo install teleterm`. Otherwise, we provide prebuilt packages for a couple operating systems:
+`teleterm` can be installed from source by running `cargo install teleterm`.
+Otherwise, we provide prebuilt packages for a couple operating systems:
 
-### Arch Linux
+### [Arch Linux](https://git.tozt.net/teleterm/releases/arch/)
 
-TODO
+### [Ubuntu/Debian](https://git.tozt.net/teleterm/releases/deb/)
 
-### Ubuntu/Debian
-
-TODO
+All packages are signed, and can be verified with
+[minisign](https://jedisct1.github.io/minisign/) using the public key
+`RWTM0AZ5RpROOfAIWx1HvYQ6pw1+FKwN6526UFTKNImP/Hz3ynCFst3r`.
 
 ## Usage
 

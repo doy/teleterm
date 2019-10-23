@@ -1,5 +1,7 @@
 # teleterm
 
+share your terminals!
+
 ## Overview
 
 When I was first learning to program, one of the things I did in my spare time

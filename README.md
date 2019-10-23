@@ -82,14 +82,30 @@ You can play back previously recorded ttyrec files by using `tt play`.
 
 ## Configuration
 
-Besides command line flags (which have documentation available via `tt help`),
+### Command line flags
+
+These are documented via `tt help`.
+
+### Environment variables
+
+`tt` respects the `RUST_LOG` environment variable to adjust the logging
+verbosity. By default, `tt server` displays logs at the `info` level and the
+rest of the commands display logs at the `error` level, but you can run a
+command like `RUST_LOG=tt=info tt stream` to see more information. Note that
+for interactive commands like `tt stream`, this will likely be disruptive, but
+you can send the output to a file by redirecting `STDERR` (since all process
+output is written to `tt`'s `STDOUT` and all log output is written to `tt`'s
+`STDERR`), like this: `RUST_LOG=tt=info tt stream 2>>stream.log`.
+
+### Configuration file
+
 `teleterm` also optionally reads configuration from a configuration file. This
 file should be in [TOML](https://en.wikipedia.org/wiki/TOML) format, and stored
 either in `~/.config/teleterm/config.toml` or `/etc/teleterm/config.toml`. If a
 configuration file does not exist, `tt stream` and `tt watch` will offer to
 create one for you automatically. The configuration has several sections:
 
-### `[server]` (used by `tt server`)
+#### `[server]` (used by `tt server`)
 
 * `listen_address`
     * Local address for the server to listen on, in the format `HOST:PORT`.
@@ -136,7 +152,7 @@ create one for you automatically. The configuration has several sections:
     * Same as `uid`, except sets the user's primary group.
     * Default: unset
 
-### `[oauth.<method>]` (used by `tt server`)
+#### `[oauth.<method>]` (used by `tt server`)
 
 `<method>` corresponds to an OAuth-using login method - for instance, a section
 would be named something like `[oauth.recurse_center]`. Note that OAuth login
@@ -147,7 +163,7 @@ methods are required to use `http://localhost:44141` as their redirect URL.
 * `client_secret`
     * OAuth client secret.
 
-### `[client]` (used by `tt stream` and `tt watch`)
+#### `[client]` (used by `tt stream` and `tt watch`)
 
 * `auth`
     * Login method to use (must be one of the methods that the server has been
@@ -166,7 +182,7 @@ methods are required to use `http://localhost:44141` as their redirect URL.
     * Whether to connect to the server using TLS.
     * Default: `false`
 
-### `[command]` (used by `tt stream` and `tt record`)
+#### `[command]` (used by `tt stream` and `tt record`)
 
 * `buffer_size`
     * Maximum size of the buffer to maintain, which will be sent to the server
@@ -181,7 +197,7 @@ methods are required to use `http://localhost:44141` as their redirect URL.
     * List of arguments to pass to `command`.
     * Default: `[]`
 
-### `[ttyrec]` (used by `tt record` and `tt play`)
+#### `[ttyrec]` (used by `tt record` and `tt play`)
 
 * `filename`
     * Name of the TTYrec file to save to or read from.

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3] - 2019-10-23
+
+### Fixed
+
+* if a system user defines a home directory of `/`, treat it as not having a
+  home directory
+
 ## [0.1.2] - 2019-10-23
 
 ### Fixed

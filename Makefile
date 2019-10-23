@@ -5,6 +5,9 @@ INTERACTIVE_SUBCOMMANDS = stream watch record play
 NONINTERACTIVE_SUBCOMMANDS = server
 SUBCOMMANDS = $(INTERACTIVE_SUBCOMMANDS) $(NONINTERACTIVE_SUBCOMMANDS)
 
+DEB_PACKAGE = $(NAME)_$(VERSION)_amd64.deb
+ARCH_PACKAGE = $(NAME)-$(VERSION)-1-x86_64.pkg.tar.xz
+
 all:
 	@cargo build
 .PHONY: all
@@ -38,16 +41,48 @@ cleanall: clean
 	@cargo clean
 .PHONY: cleanall
 
-package: pkg-deb pkg-arch
+package: pkg/$(DEB_PACKAGE) pkg/$(ARCH_PACKAGE)
 .PHONY: package
 
 pkg:
 	@mkdir pkg
 
-pkg-deb: pkg
-	@cargo deb && mv target/debian/$(NAME)_$(VERSION)_amd64.deb pkg
-.PHONY: pkg-deb
+pkg/$(DEB_PACKAGE): pkg
+	@cargo deb && mv target/debian/$(DEB_PACKAGE) pkg
 
-pkg-arch: pkg package/arch/PKGBUILD
-	@cd package/arch && makepkg -c && mv $(NAME)-$(VERSION)-1-x86_64.pkg.tar.xz ../../pkg
-.PHONY: pkg-arch
+pkg/$(DEB_PACKAGE).minisig: pkg/$(DEB_PACKAGE)
+	@minisign -Sm pkg/$(DEB_PACKAGE)
+
+pkg/$(ARCH_PACKAGE): pkg package/arch/PKGBUILD
+	@cd package/arch && makepkg -c && mv $(ARCH_PACKAGE) ../../pkg
+
+pkg/$(ARCH_PACKAGE).minisig: pkg/$(ARCH_PACKAGE)
+	@minisign -Sm pkg/$(ARCH_PACKAGE)
+
+release-dir-deb:
+	@ssh tozt.net mkdir -p releases/teleterm/deb
+.PHONY: release-dir-deb
+
+publish: publish-crates-io publish-git-tags publish-deb publish-arch
+.PHONY: publish
+
+publish-crates-io:
+	@cargo publish
+.PHONY: publish-crates-io
+
+publish-git-tags:
+	@git tag $(VERSION)
+	@git push --tags
+.PHONY: publish-git-tags
+
+publish-deb: pkg/$(DEB_PACKAGE) pkg/$(DEB_PACKAGE).minisig release-dir-deb
+	@scp pkg/$(DEB_PACKAGE) pkg/$(DEB_PACKAGE).minisig tozt.net:releases/teleterm/deb
+.PHONY: publish-deb
+
+release-dir-arch:
+	@ssh tozt.net mkdir -p releases/teleterm/arch
+.PHONY: release-dir-arch
+
+publish-arch: pkg/$(ARCH_PACKAGE) pkg/$(ARCH_PACKAGE).minisig release-dir-arch
+	@scp pkg/$(ARCH_PACKAGE) pkg/$(ARCH_PACKAGE).minisig tozt.net:releases/teleterm/arch
+.PHONY: publish-arch

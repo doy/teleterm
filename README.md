@@ -206,6 +206,40 @@ methods are required to use `http://localhost:44141` as their redirect URL.
     * Name of the TTYrec file to save to or read from.
     * Default: `teleterm.ttyrec`
 
+## Troubleshooting
+
+### I'm trying to watch someone and the output is a garbled mess!
+
+There are three main causes of this:
+
+1. *Your local terminal size is not the same as the terminal size of the person
+   streaming.* A smaller terminal will almost definitely cause problems here
+   (and the `tt watch` menu will display the terminal size in red if this is
+   the case), but a terminal which is too large can also occasionally cause
+   issues if the person is running a full-screen application that relies on the
+   details of the terminal's line wrapping behavior.
+2. *Your terminal type is incompatible with the terminal type of the person
+   streaming.* Different terminals use different escape sequences to represent
+   various behavior (such as moving the cursor or clearing the screen) and
+   while many of these are shared across terminals, many also aren't. In this
+   case, you should switch to using a terminal which is compatible. Note that
+   `screen` or `tmux` counts as a terminal in this sense, and so an easy fix
+   here is often to just always run `tt` inside a `screen` or `tmux` session,
+   both when streaming and watching (and convincing the person you're watching
+   to do the same).
+3. *The person you are watching has produced a large amount of terminal output
+   without clearing their screen.* Terminal output is determined by a sequence
+   of drawing commands (issued via escape sequences) starting from a blank
+   terminal, and this means that, depending on the output, it can require an
+   arbitrarily large amount of data to recreate the current terminal
+   accurately. `teleterm` puts a limit on the amount of data to save, however
+   (to avoid running out of memory), and so long sequences of output without
+   screen clears can cause display corruption. This can be fixed by just asking
+   the streamer to clear their screen (either by running `reset` or `clear`
+   from the command line, or by using the redraw functionality of the
+   application they are running, typically bound to something like `^L` or
+   `^R`).
+
 ## Contributing
 
 I'm very interested in contributions! I have a list of todo items in this

@@ -16,6 +16,10 @@ release:
 	@cargo build --release
 .PHONY: release
 
+test:
+	@cargo test
+.PHONY: test
+
 $(SUBCOMMANDS):
 	@cargo run $@
 .PHONY: $(SUBCOMMANDS)
@@ -66,16 +70,16 @@ release-dir-deb:
 publish: publish-crates-io publish-git-tags publish-deb publish-arch
 .PHONY: publish
 
-publish-crates-io:
+publish-crates-io: test
 	@cargo publish
 .PHONY: publish-crates-io
 
-publish-git-tags:
+publish-git-tags: test
 	@git tag $(VERSION)
 	@git push --tags
 .PHONY: publish-git-tags
 
-publish-deb: pkg/$(DEB_PACKAGE) pkg/$(DEB_PACKAGE).minisig release-dir-deb
+publish-deb: test pkg/$(DEB_PACKAGE) pkg/$(DEB_PACKAGE).minisig release-dir-deb
 	@scp pkg/$(DEB_PACKAGE) pkg/$(DEB_PACKAGE).minisig tozt.net:releases/teleterm/deb
 .PHONY: publish-deb
 
@@ -83,6 +87,6 @@ release-dir-arch:
 	@ssh tozt.net mkdir -p releases/teleterm/arch
 .PHONY: release-dir-arch
 
-publish-arch: pkg/$(ARCH_PACKAGE) pkg/$(ARCH_PACKAGE).minisig release-dir-arch
+publish-arch: test pkg/$(ARCH_PACKAGE) pkg/$(ARCH_PACKAGE).minisig release-dir-arch
 	@scp pkg/$(ARCH_PACKAGE) pkg/$(ARCH_PACKAGE).minisig tozt.net:releases/teleterm/arch
 .PHONY: publish-arch

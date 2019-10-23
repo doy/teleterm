@@ -176,11 +176,11 @@ fn drop_privs(
     gid: Option<users::gid_t>,
 ) -> Result<()> {
     if let Some(gid) = gid {
-        users::switch::set_effective_gid(gid)
+        users::switch::set_both_gid(gid, gid)
             .context(crate::error::SwitchGid)?;
     }
     if let Some(uid) = uid {
-        users::switch::set_effective_uid(uid)
+        users::switch::set_both_uid(uid, uid)
             .context(crate::error::SwitchUid)?;
     }
     Ok(())

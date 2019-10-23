@@ -88,14 +88,15 @@ These are documented via `tt help`.
 
 ### Environment variables
 
-`tt` respects the `RUST_LOG` environment variable to adjust the logging
-verbosity. By default, `tt server` displays logs at the `info` level and the
-rest of the commands display logs at the `error` level, but you can run a
-command like `RUST_LOG=tt=info tt stream` to see more information. Note that
-for interactive commands like `tt stream`, this will likely be disruptive, but
-you can send the output to a file by redirecting `STDERR` (since all process
-output is written to `tt`'s `STDOUT` and all log output is written to `tt`'s
-`STDERR`), like this: `RUST_LOG=tt=info tt stream 2>>stream.log`.
+`tt` respects the [`RUST_LOG`](https://docs.rs/env_logger/*/env_logger/)
+environment variable to adjust the logging verbosity. By default, `tt server`
+displays logs at the `info` level and the rest of the commands display logs at
+the `error` level, but you can run a command like `RUST_LOG=tt=info tt stream`
+to see more information. Note that for interactive commands like `tt stream`,
+this will likely be disruptive, but you can send the output to a file by
+redirecting `STDERR` (since all process output is written to `tt`'s `STDOUT`
+and all log output is written to `tt`'s `STDERR`), like this: `RUST_LOG=tt=info
+tt stream 2>>stream.log`.
 
 ### Configuration file
 

@@ -566,7 +566,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         &'static [&'static dyn for<'a> Fn(
             &'a mut Self,
         )
-            -> crate::component_future::Poll<
+            -> component_future::Poll<
             (),
             Error,
         >] = &[
@@ -576,13 +576,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         &Self::poll_watch_client,
     ];
 
-    fn poll_resizer(&mut self) -> crate::component_future::Poll<(), Error> {
-        let size = try_ready!(self.resizer.poll()).unwrap();
+    fn poll_resizer(&mut self) -> component_future::Poll<(), Error> {
+        let size = component_future::try_ready!(self.resizer.poll()).unwrap();
         self.resize(size)?;
-        Ok(crate::component_future::Async::DidWork)
+        Ok(component_future::Async::DidWork)
     }
 
-    fn poll_input(&mut self) -> crate::component_future::Poll<(), Error> {
+    fn poll_input(&mut self) -> component_future::Poll<(), Error> {
         if self.raw_screen.is_none() {
             self.raw_screen = Some(
                 crossterm::RawScreen::into_raw_mode()
@@ -595,7 +595,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             }
         }
 
-        let e = try_ready!(self.key_reader.poll()).unwrap();
+        let e = component_future::try_ready!(self.key_reader.poll()).unwrap();
         let quit = match &mut self.state {
             State::Temporary => unreachable!(),
             State::LoggingIn { .. } => self.loading_keypress(&e)?,
@@ -603,16 +603,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             State::Watching { .. } => self.watch_keypress(&e)?,
         };
         if quit {
-            Ok(crate::component_future::Async::Ready(()))
+            Ok(component_future::Async::Ready(()))
         } else {
-            Ok(crate::component_future::Async::DidWork)
+            Ok(component_future::Async::DidWork)
         }
     }
 
-    fn poll_list_client(
-        &mut self,
-    ) -> crate::component_future::Poll<(), Error> {
-        match try_ready!(self.list_client.poll()).unwrap() {
+    fn poll_list_client(&mut self) -> component_future::Poll<(), Error> {
+        match component_future::try_ready!(self.list_client.poll()).unwrap() {
             crate::client::Event::Disconnect => {
                 self.reconnect(true)?;
             }
@@ -624,19 +622,17 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 self.list_server_message(msg)?;
             }
         }
-        Ok(crate::component_future::Async::DidWork)
+        Ok(component_future::Async::DidWork)
     }
 
-    fn poll_watch_client(
-        &mut self,
-    ) -> crate::component_future::Poll<(), Error> {
+    fn poll_watch_client(&mut self) -> component_future::Poll<(), Error> {
         let client = if let State::Watching { client } = &mut self.state {
             client
         } else {
-            return Ok(crate::component_future::Async::NothingToDo);
+            return Ok(component_future::Async::NothingToDo);
         };
 
-        match try_ready!(client.poll()).unwrap() {
+        match component_future::try_ready!(client.poll()).unwrap() {
             crate::client::Event::Disconnect => {
                 self.reconnect(true)?;
             }
@@ -645,7 +641,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 self.watch_server_message(msg)?;
             }
         }
-        Ok(crate::component_future::Async::DidWork)
+        Ok(component_future::Async::DidWork)
     }
 }
 
@@ -657,7 +653,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-        let res = crate::component_future::poll_future(self, Self::POLL_FNS);
+        let res = component_future::poll_future(self, Self::POLL_FNS);
         if res.is_err() {
             self.state = State::Temporary; // drop alternate screen
             self.raw_screen = None;

@@ -62,26 +62,25 @@ impl<R: tokio::io::AsyncRead + 'static> ResizingProcess<R> {
         &'static [&'static dyn for<'a> Fn(
             &'a mut Self,
         )
-            -> crate::component_future::Poll<
+            -> component_future::Poll<
             Option<Event<R>>,
             Error,
         >] = &[&Self::poll_resize, &Self::poll_process];
 
     fn poll_resize(
         &mut self,
-    ) -> crate::component_future::Poll<Option<Event<R>>, Error> {
-        let size = try_ready!(self.resizer.poll()).unwrap();
+    ) -> component_future::Poll<Option<Event<R>>, Error> {
+        let size = component_future::try_ready!(self.resizer.poll()).unwrap();
         self.process.resize(size.clone());
-        Ok(crate::component_future::Async::Ready(Some(Event::Resize(
-            size,
-        ))))
+        Ok(component_future::Async::Ready(Some(Event::Resize(size))))
     }
 
     fn poll_process(
         &mut self,
-    ) -> crate::component_future::Poll<Option<Event<R>>, Error> {
-        Ok(crate::component_future::Async::Ready(
-            try_ready!(self.process.poll()).map(Event::Process),
+    ) -> component_future::Poll<Option<Event<R>>, Error> {
+        Ok(component_future::Async::Ready(
+            component_future::try_ready!(self.process.poll())
+                .map(Event::Process),
         ))
     }
 }
@@ -95,6 +94,6 @@ impl<R: tokio::io::AsyncRead + 'static> futures::stream::Stream
         <crate::process::Process<R> as futures::stream::Stream>::Error;
 
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
-        crate::component_future::poll_stream(self, Self::POLL_FNS)
+        component_future::poll_stream(self, Self::POLL_FNS)
     }
 }

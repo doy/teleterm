@@ -55,7 +55,7 @@ impl Server {
         &'static [&'static dyn for<'a> Fn(
             &'a mut Self,
         )
-            -> crate::component_future::Poll<
+            -> component_future::Poll<
             (),
             Error,
         >] = &[
@@ -64,10 +64,11 @@ impl Server {
         &Self::poll_server,
     ];
 
-    fn poll_accept(&mut self) -> crate::component_future::Poll<(), Error> {
-        if let Some(sock) = try_ready!(self.acceptor.poll()) {
+    fn poll_accept(&mut self) -> component_future::Poll<(), Error> {
+        if let Some(sock) = component_future::try_ready!(self.acceptor.poll())
+        {
             self.accepting_sockets.push(sock);
-            Ok(crate::component_future::Async::DidWork)
+            Ok(component_future::Async::DidWork)
         } else {
             Err(Error::SocketChannelClosed)
         }
@@ -75,7 +76,7 @@ impl Server {
 
     fn poll_handshake_connections(
         &mut self,
-    ) -> crate::component_future::Poll<(), Error> {
+    ) -> component_future::Poll<(), Error> {
         let mut did_work = false;
         let mut not_ready = false;
 
@@ -107,17 +108,17 @@ impl Server {
         }
 
         if did_work {
-            Ok(crate::component_future::Async::DidWork)
+            Ok(component_future::Async::DidWork)
         } else if not_ready {
-            Ok(crate::component_future::Async::NotReady)
+            Ok(component_future::Async::NotReady)
         } else {
-            Ok(crate::component_future::Async::NothingToDo)
+            Ok(component_future::Async::NothingToDo)
         }
     }
 
-    fn poll_server(&mut self) -> crate::component_future::Poll<(), Error> {
-        try_ready!(self.server.poll());
-        Ok(crate::component_future::Async::Ready(()))
+    fn poll_server(&mut self) -> component_future::Poll<(), Error> {
+        component_future::try_ready!(self.server.poll());
+        Ok(component_future::Async::Ready(()))
     }
 }
 
@@ -127,6 +128,6 @@ impl futures::future::Future for Server {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-        crate::component_future::poll_future(self, Self::POLL_FNS)
+        component_future::poll_future(self, Self::POLL_FNS)
     }
 }

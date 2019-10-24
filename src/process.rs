@@ -79,7 +79,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
         &'static [&'static dyn for<'a> Fn(
             &'a mut Self,
         )
-            -> crate::component_future::Poll<
+            -> component_future::Poll<
             Option<Event>,
             Error,
         >] = &[
@@ -97,22 +97,22 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
 
     fn poll_resize(
         &mut self,
-    ) -> crate::component_future::Poll<Option<Event>, Error> {
+    ) -> component_future::Poll<Option<Event>, Error> {
         if let Some(size) = &self.needs_resize {
-            try_ready!(size.resize_pty(self.state.pty()));
+            component_future::try_ready!(size.resize_pty(self.state.pty()));
             log::debug!("resize({:?})", size);
             self.needs_resize = None;
-            Ok(crate::component_future::Async::DidWork)
+            Ok(component_future::Async::DidWork)
         } else {
-            Ok(crate::component_future::Async::NothingToDo)
+            Ok(component_future::Async::NothingToDo)
         }
     }
 
     fn poll_command_start(
         &mut self,
-    ) -> crate::component_future::Poll<Option<Event>, Error> {
+    ) -> component_future::Poll<Option<Event>, Error> {
         if self.started {
-            return Ok(crate::component_future::Async::NothingToDo);
+            return Ok(component_future::Async::NothingToDo);
         }
 
         if self.state.pty.is_none() {
@@ -142,19 +142,20 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
         }
 
         self.started = true;
-        Ok(crate::component_future::Async::Ready(Some(
-            Event::CommandStart(self.cmd.clone(), self.args.clone()),
-        )))
+        Ok(component_future::Async::Ready(Some(Event::CommandStart(
+            self.cmd.clone(),
+            self.args.clone(),
+        ))))
     }
 
     fn poll_read_stdin(
         &mut self,
-    ) -> crate::component_future::Poll<Option<Event>, Error> {
+    ) -> component_future::Poll<Option<Event>, Error> {
         if self.exited || self.stdin_closed {
-            return Ok(crate::component_future::Async::NothingToDo);
+            return Ok(component_future::Async::NothingToDo);
         }
 
-        let n = try_ready!(self
+        let n = component_future::try_ready!(self
             .input
             .poll_read(&mut self.buf)
             .context(crate::error::ReadTerminal));
@@ -165,19 +166,19 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             self.input_buf.push_back(b'\x04');
             self.stdin_closed = true;
         }
-        Ok(crate::component_future::Async::DidWork)
+        Ok(component_future::Async::DidWork)
     }
 
     fn poll_write_stdin(
         &mut self,
-    ) -> crate::component_future::Poll<Option<Event>, Error> {
+    ) -> component_future::Poll<Option<Event>, Error> {
         if self.exited || self.input_buf.is_empty() {
-            return Ok(crate::component_future::Async::NothingToDo);
+            return Ok(component_future::Async::NothingToDo);
         }
 
         let (a, b) = self.input_buf.as_slices();
         let buf = if a.is_empty() { b } else { a };
-        let n = try_ready!(self
+        let n = component_future::try_ready!(self
             .state
             .pty_mut()
             .poll_write(buf)
@@ -186,12 +187,12 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
         for _ in 0..n {
             self.input_buf.pop_front();
         }
-        Ok(crate::component_future::Async::DidWork)
+        Ok(component_future::Async::DidWork)
     }
 
     fn poll_read_stdout(
         &mut self,
-    ) -> crate::component_future::Poll<Option<Event>, Error> {
+    ) -> component_future::Poll<Option<Event>, Error> {
         match self
             .state
             .pty_mut()
@@ -201,12 +202,10 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
             Ok(futures::Async::Ready(n)) => {
                 log::debug!("read_stdout({})", n);
                 let bytes = self.buf[..n].to_vec();
-                Ok(crate::component_future::Async::Ready(Some(
-                    Event::Output(bytes),
-                )))
+                Ok(component_future::Async::Ready(Some(Event::Output(bytes))))
             }
             Ok(futures::Async::NotReady) => {
-                Ok(crate::component_future::Async::NotReady)
+                Ok(component_future::Async::NotReady)
             }
             Err(e) => {
                 // XXX this seems to be how eof is returned, but this seems...
@@ -215,7 +214,7 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
                     if source.kind() == std::io::ErrorKind::Other {
                         log::debug!("read_stdout(eof)");
                         self.stdout_closed = true;
-                        return Ok(crate::component_future::Async::DidWork);
+                        return Ok(component_future::Async::DidWork);
                     }
                 }
                 Err(e)
@@ -225,24 +224,24 @@ impl<R: tokio::io::AsyncRead + 'static> Process<R> {
 
     fn poll_command_exit(
         &mut self,
-    ) -> crate::component_future::Poll<Option<Event>, Error> {
+    ) -> component_future::Poll<Option<Event>, Error> {
         if self.exited {
-            return Ok(crate::component_future::Async::Ready(None));
+            return Ok(component_future::Async::Ready(None));
         }
         if !self.stdout_closed {
-            return Ok(crate::component_future::Async::NothingToDo);
+            return Ok(component_future::Async::NothingToDo);
         }
 
-        let status = try_ready!(self
+        let status = component_future::try_ready!(self
             .state
             .process()
             .poll()
             .context(crate::error::ProcessExitPoll));
         log::debug!("exit({})", status);
         self.exited = true;
-        Ok(crate::component_future::Async::Ready(Some(
-            Event::CommandExit(status),
-        )))
+        Ok(component_future::Async::Ready(Some(Event::CommandExit(
+            status,
+        ))))
     }
 }
 
@@ -254,7 +253,7 @@ impl<R: tokio::io::AsyncRead + 'static> futures::stream::Stream
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
-        crate::component_future::poll_stream(self, Self::POLL_FNS)
+        component_future::poll_stream(self, Self::POLL_FNS)
     }
 }
 

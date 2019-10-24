@@ -78,7 +78,7 @@ impl PlaySession {
         &'static [&'static dyn for<'a> Fn(
             &'a mut Self,
         )
-            -> crate::component_future::Poll<
+            -> component_future::Poll<
             (),
             Error,
         >] = &[
@@ -87,58 +87,62 @@ impl PlaySession {
         &Self::poll_write_terminal,
     ];
 
-    fn poll_open_file(&mut self) -> crate::component_future::Poll<(), Error> {
+    fn poll_open_file(&mut self) -> component_future::Poll<(), Error> {
         match &mut self.file {
             FileState::Closed { filename } => {
                 self.file = FileState::Opening {
                     filename: filename.to_string(),
                     fut: tokio::fs::File::open(filename.to_string()),
                 };
-                Ok(crate::component_future::Async::DidWork)
+                Ok(component_future::Async::DidWork)
             }
             FileState::Opening { filename, fut } => {
-                let file = try_ready!(fut.poll().with_context(|| {
-                    crate::error::OpenFile {
-                        filename: filename.to_string(),
-                    }
-                }));
+                let file = component_future::try_ready!(fut
+                    .poll()
+                    .with_context(|| {
+                        crate::error::OpenFile {
+                            filename: filename.to_string(),
+                        }
+                    }));
                 let file = crate::ttyrec::File::new(file);
                 self.file = FileState::Open { file };
-                Ok(crate::component_future::Async::DidWork)
+                Ok(component_future::Async::DidWork)
             }
-            _ => Ok(crate::component_future::Async::NothingToDo),
+            _ => Ok(component_future::Async::NothingToDo),
         }
     }
 
-    fn poll_read_file(&mut self) -> crate::component_future::Poll<(), Error> {
+    fn poll_read_file(&mut self) -> component_future::Poll<(), Error> {
         if let FileState::Open { file } = &mut self.file {
-            if let Some(frame) = try_ready!(file.poll_read()) {
+            if let Some(frame) =
+                component_future::try_ready!(file.poll_read())
+            {
                 self.to_write.insert_at(frame.data, frame.time);
             } else {
                 self.file = FileState::Eof;
             }
-            Ok(crate::component_future::Async::DidWork)
+            Ok(component_future::Async::DidWork)
         } else {
-            Ok(crate::component_future::Async::NothingToDo)
+            Ok(component_future::Async::NothingToDo)
         }
     }
 
-    fn poll_write_terminal(
-        &mut self,
-    ) -> crate::component_future::Poll<(), Error> {
-        if let Some(data) =
-            try_ready!(self.to_write.poll().context(crate::error::Sleep))
+    fn poll_write_terminal(&mut self) -> component_future::Poll<(), Error> {
+        if let Some(data) = component_future::try_ready!(self
+            .to_write
+            .poll()
+            .context(crate::error::Sleep))
         {
             // TODO async
             let stdout = std::io::stdout();
             let mut stdout = stdout.lock();
             stdout.write(&data).context(crate::error::WriteTerminal)?;
             stdout.flush().context(crate::error::FlushTerminal)?;
-            Ok(crate::component_future::Async::DidWork)
+            Ok(component_future::Async::DidWork)
         } else if let FileState::Eof = self.file {
-            Ok(crate::component_future::Async::Ready(()))
+            Ok(component_future::Async::Ready(()))
         } else {
-            Ok(crate::component_future::Async::NothingToDo)
+            Ok(component_future::Async::NothingToDo)
         }
     }
 }
@@ -149,7 +153,7 @@ impl futures::future::Future for PlaySession {
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-        crate::component_future::poll_future(self, Self::POLL_FNS)
+        component_future::poll_future(self, Self::POLL_FNS)
     }
 }
 

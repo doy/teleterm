@@ -14,6 +14,7 @@ license = "MIT"
 [dependencies]
 bytes = "0.4"
 clap = { version = "2", features = ["wrap_help"] }
+component-future = "0.1"
 config = { version = "0.9", features = ["toml"], default_features = false }
 crossterm = { version = "0.11", features = ["terminal", "input", "screen"], default_features = false }
 directories = "2"

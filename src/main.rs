@@ -15,9 +15,6 @@ const _DUMMY_DEPENDENCY: &str = include_str!("../Cargo.toml");
 
 mod prelude;
 
-#[macro_use]
-mod component_future;
-
 mod async_stdin;
 mod client;
 mod cmd;

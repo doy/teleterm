@@ -20,14 +20,6 @@ impl Size {
         Ok(Self { rows, cols })
     }
 
-    pub fn resize_pty<T: tokio_pty_process::PtyMaster>(
-        &self,
-        pty: &T,
-    ) -> futures::Poll<(), Error> {
-        pty.resize(self.rows, self.cols)
-            .context(crate::error::ResizePty)
-    }
-
     pub fn fits_in(&self, other: &Self) -> bool {
         self.rows <= other.rows && self.cols <= other.cols
     }

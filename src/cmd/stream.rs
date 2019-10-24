@@ -149,7 +149,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         let input = crate::async_stdin::Stdin::new();
 
         let process = crate::resize::ResizingProcess::new(
-            crate::process::Process::new(cmd, args, input),
+            tokio_pty_process_stream::Process::new(cmd, args, input),
         );
 
         Self {
@@ -238,7 +238,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         match component_future::try_ready!(self.process.poll()) {
             Some(crate::resize::Event::Process(e)) => {
                 match e {
-                    crate::process::Event::CommandStart(..) => {
+                    tokio_pty_process_stream::Event::CommandStart {
+                        ..
+                    } => {
                         if self.raw_screen.is_none() {
                             self.raw_screen = Some(
                                 crossterm::RawScreen::into_raw_mode()
@@ -246,11 +248,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                             );
                         }
                     }
-                    crate::process::Event::CommandExit(..) => {
+                    tokio_pty_process_stream::Event::CommandExit {
+                        ..
+                    } => {
                         self.done = true;
                     }
-                    crate::process::Event::Output(output) => {
-                        self.record_bytes(&output);
+                    tokio_pty_process_stream::Event::Output { data } => {
+                        self.record_bytes(&data);
                     }
                 }
                 Ok(component_future::Async::DidWork)

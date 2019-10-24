@@ -23,7 +23,6 @@ mod dirs;
 mod error;
 mod key_reader;
 mod oauth;
-mod process;
 mod protocol;
 mod resize;
 mod server;

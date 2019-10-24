@@ -359,6 +359,11 @@ pub enum Error {
     #[snafu(display("failed to spawn process for `{}`: {}", cmd, source))]
     SpawnProcess { cmd: String, source: std::io::Error },
 
+    #[snafu(display("poll subprocess failed: {}", source))]
+    Subprocess {
+        source: tokio_pty_process_stream::Error,
+    },
+
     #[snafu(display("failed to switch gid: {}", source))]
     SwitchGid { source: std::io::Error },
 

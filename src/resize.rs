@@ -39,17 +39,19 @@ impl futures::stream::Stream for Resizer {
 }
 
 pub enum Event<R: tokio::io::AsyncRead + 'static> {
-    Process(<crate::process::Process<R> as futures::stream::Stream>::Item),
+    Process(
+        <tokio_pty_process_stream::Process<R> as futures::stream::Stream>::Item
+    ),
     Resize(crate::term::Size),
 }
 
 pub struct ResizingProcess<R: tokio::io::AsyncRead + 'static> {
-    process: crate::process::Process<R>,
+    process: tokio_pty_process_stream::Process<R>,
     resizer: Resizer,
 }
 
 impl<R: tokio::io::AsyncRead + 'static> ResizingProcess<R> {
-    pub fn new(process: crate::process::Process<R>) -> Self {
+    pub fn new(process: tokio_pty_process_stream::Process<R>) -> Self {
         Self {
             process,
             resizer: Resizer::new(),
@@ -71,7 +73,7 @@ impl<R: tokio::io::AsyncRead + 'static> ResizingProcess<R> {
         &mut self,
     ) -> component_future::Poll<Option<Event<R>>, Error> {
         let size = component_future::try_ready!(self.resizer.poll()).unwrap();
-        self.process.resize(size.clone());
+        self.process.resize(size.rows, size.cols);
         Ok(component_future::Async::Ready(Some(Event::Resize(size))))
     }
 
@@ -79,8 +81,11 @@ impl<R: tokio::io::AsyncRead + 'static> ResizingProcess<R> {
         &mut self,
     ) -> component_future::Poll<Option<Event<R>>, Error> {
         Ok(component_future::Async::Ready(
-            component_future::try_ready!(self.process.poll())
-                .map(Event::Process),
+            component_future::try_ready!(self
+                .process
+                .poll()
+                .context(crate::error::Subprocess))
+            .map(Event::Process),
         ))
     }
 }
@@ -90,8 +95,7 @@ impl<R: tokio::io::AsyncRead + 'static> futures::stream::Stream
     for ResizingProcess<R>
 {
     type Item = Event<R>;
-    type Error =
-        <crate::process::Process<R> as futures::stream::Stream>::Error;
+    type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
         component_future::poll_stream(self, Self::POLL_FNS)

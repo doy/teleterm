@@ -3,15 +3,14 @@ use std::convert::TryFrom as _;
 use tokio::io::{AsyncRead as _, AsyncWrite as _};
 
 pub struct Frame {
-    pub time: std::time::Instant,
+    pub time: std::time::Duration,
     pub data: Vec<u8>,
 }
 
 impl Frame {
-    fn as_bytes(&self, base: std::time::Instant) -> Vec<u8> {
-        let dur = self.time - base;
-        let secs = u32::try_from(dur.as_secs()).unwrap();
-        let micros = dur.subsec_micros();
+    fn as_bytes(&self) -> Vec<u8> {
+        let secs = u32::try_from(self.time.as_secs()).unwrap();
+        let micros = self.time.subsec_micros();
         let len = u32::try_from(self.data.len()).unwrap();
         let mut bytes = vec![];
         bytes.extend(secs.to_le_bytes().iter());
@@ -54,14 +53,17 @@ impl File {
 
     pub fn write_frame(&mut self, data: &[u8]) -> Result<()> {
         let now = std::time::Instant::now();
-        if self.base_time.is_none() {
+        let base_time = if let Some(base_time) = &self.base_time {
+            *base_time
+        } else {
             self.base_time = Some(now);
-        }
+            now
+        };
 
         self.waiting += 1;
         self.wframe
             .send(Frame {
-                time: now,
+                time: now - base_time,
                 data: data.to_vec(),
             })
             .context(crate::error::WriteChannel)
@@ -74,9 +76,7 @@ impl File {
             if self.writing.is_empty() {
                 match self.rframe.poll().context(crate::error::ReadChannel)? {
                     futures::Async::Ready(Some(frame)) => {
-                        self.writing.extend(
-                            frame.as_bytes(self.base_time.unwrap()).iter(),
-                        );
+                        self.writing.extend(frame.as_bytes().iter());
                         self.waiting -= 1;
                     }
                     futures::Async::Ready(None) => unreachable!(),
@@ -153,10 +153,9 @@ impl File {
                     if self.base_time.is_none() {
                         self.base_time = Some(std::time::Instant::now());
                     }
-                    let dur = std::time::Duration::from_micros(u64::from(
+                    let time = std::time::Duration::from_micros(u64::from(
                         secs * 1_000_000 + usecs,
                     ));
-                    let time = self.base_time.unwrap() + dur;
 
                     self.read.push_back(Frame { time, data });
 

@@ -59,6 +59,7 @@ struct PlaySession {
     file: FileState,
     to_write: DumbDelayQueue<Vec<u8>>,
     // to_write: tokio::timer::delay_queue::DelayQueue<Vec<u8>>,
+    base_time: std::time::Instant,
 }
 
 impl PlaySession {
@@ -69,6 +70,7 @@ impl PlaySession {
             },
             to_write: DumbDelayQueue::new(),
             // to_write: tokio::timer::delay_queue::DelayQueue::new(),
+            base_time: std::time::Instant::now(),
         }
     }
 }
@@ -117,7 +119,8 @@ impl PlaySession {
             if let Some(frame) =
                 component_future::try_ready!(file.poll_read())
             {
-                self.to_write.insert_at(frame.data, frame.time);
+                self.to_write
+                    .insert_at(frame.data, self.base_time + frame.time);
             } else {
                 self.file = FileState::Eof;
             }

@@ -7,17 +7,27 @@ pub struct Frame {
     pub data: Vec<u8>,
 }
 
-impl Frame {
-    fn as_bytes(&self) -> Vec<u8> {
-        let secs = u32::try_from(self.time.as_secs()).unwrap();
-        let micros = self.time.subsec_micros();
-        let len = u32::try_from(self.data.len()).unwrap();
+impl std::convert::TryFrom<Frame> for Vec<u8> {
+    type Error = Error;
+
+    fn try_from(frame: Frame) -> Result<Self> {
+        let secs = u32::try_from(frame.time.as_secs()).map_err(|_| {
+            Error::FrameTooLong {
+                input: frame.time.as_secs(),
+            }
+        })?;
+        let micros = frame.time.subsec_micros();
+        let len = u32::try_from(frame.data.len()).map_err(|_| {
+            Error::FrameTooBig {
+                input: frame.data.len(),
+            }
+        })?;
         let mut bytes = vec![];
         bytes.extend(secs.to_le_bytes().iter());
         bytes.extend(micros.to_le_bytes().iter());
         bytes.extend(len.to_le_bytes().iter());
-        bytes.extend(self.data.iter());
-        bytes
+        bytes.extend(frame.data.iter());
+        Ok(bytes)
     }
 }
 
@@ -76,7 +86,8 @@ impl File {
             if self.writing.is_empty() {
                 match self.rframe.poll().context(crate::error::ReadChannel)? {
                     futures::Async::Ready(Some(frame)) => {
-                        self.writing.extend(frame.as_bytes().iter());
+                        self.writing
+                            .extend(Vec::<u8>::try_from(frame)?.iter());
                         self.waiting -= 1;
                     }
                     futures::Async::Ready(None) => unreachable!(),

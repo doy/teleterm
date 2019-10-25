@@ -98,6 +98,12 @@ pub enum Error {
     #[snafu(display("failed to write to stdout: {}", source))]
     FlushTerminalSync { source: std::io::Error },
 
+    #[snafu(display("failed to create ttyrec frame: got {} bytes of data, but ttyrec frames can be at most {} bytes", input, u32::max_value()))]
+    FrameTooBig { input: usize },
+
+    #[snafu(display("failed to create ttyrec frame: got {} seconds, but ttyrecs can be at most {} seconds", input, u32::max_value()))]
+    FrameTooLong { input: u64 },
+
     #[snafu(display(
         "failed to get recurse center profile data: {}",
         source

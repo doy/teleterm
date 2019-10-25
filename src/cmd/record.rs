@@ -62,7 +62,7 @@ enum FileState {
         fut: tokio::fs::file::CreateFuture<String>,
     },
     Open {
-        file: crate::ttyrec::File,
+        writer: crate::ttyrec::Writer<tokio::fs::File>,
     },
 }
 
@@ -141,9 +141,11 @@ impl RecordSession {
                             filename: filename.clone(),
                         }
                     }));
-                let mut file = crate::ttyrec::File::new(file);
-                file.write_frame(self.buffer.contents())?;
-                self.file = FileState::Open { file };
+                let mut writer = crate::ttyrec::Writer::new(file);
+                if !self.buffer.contents().is_empty() {
+                    writer.frame(self.buffer.contents())?;
+                }
+                self.file = FileState::Open { writer };
                 Ok(component_future::Async::DidWork)
             }
             FileState::Open { .. } => {
@@ -173,8 +175,8 @@ impl RecordSession {
                     }
                     tokio_pty_process_stream::Event::Output { data } => {
                         self.record_bytes(&data);
-                        if let FileState::Open { file } = &mut self.file {
-                            file.write_frame(&data)?;
+                        if let FileState::Open { writer } = &mut self.file {
+                            writer.frame(&data)?;
                         }
                     }
                 }
@@ -222,23 +224,23 @@ impl RecordSession {
     }
 
     fn poll_write_file(&mut self) -> component_future::Poll<(), Error> {
-        let file = match &mut self.file {
-            FileState::Open { file } => file,
+        let writer = match &mut self.file {
+            FileState::Open { writer } => writer,
             _ => {
                 return Ok(component_future::Async::NothingToDo);
             }
         };
 
-        match file.poll_write()? {
-            futures::Async::Ready(()) => Ok(component_future::Async::DidWork),
-            futures::Async::NotReady => {
-                // ship all data to the server before actually ending
-                if self.done && file.is_empty() {
-                    Ok(component_future::Async::Ready(()))
-                } else {
-                    Ok(component_future::Async::NotReady)
-                }
+        if writer.is_empty() {
+            // finish writing to the file before actually ending
+            if self.done {
+                Ok(component_future::Async::Ready(()))
+            } else {
+                Ok(component_future::Async::NothingToDo)
             }
+        } else {
+            component_future::try_ready!(writer.poll_write());
+            Ok(component_future::Async::DidWork)
         }
     }
 }

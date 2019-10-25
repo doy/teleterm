@@ -50,7 +50,7 @@ enum FileState {
         fut: tokio::fs::file::OpenFuture<String>,
     },
     Open {
-        file: crate::ttyrec::File,
+        reader: crate::ttyrec::Reader<tokio::fs::File>,
     },
     Eof,
 }
@@ -106,8 +106,8 @@ impl PlaySession {
                             filename: filename.to_string(),
                         }
                     }));
-                let file = crate::ttyrec::File::new(file);
-                self.file = FileState::Open { file };
+                let reader = crate::ttyrec::Reader::new(file);
+                self.file = FileState::Open { reader };
                 Ok(component_future::Async::DidWork)
             }
             _ => Ok(component_future::Async::NothingToDo),
@@ -115,9 +115,9 @@ impl PlaySession {
     }
 
     fn poll_read_file(&mut self) -> component_future::Poll<(), Error> {
-        if let FileState::Open { file } = &mut self.file {
+        if let FileState::Open { reader } = &mut self.file {
             if let Some(frame) =
-                component_future::try_ready!(file.poll_read())
+                component_future::try_ready!(reader.poll_read())
             {
                 self.to_write
                     .insert_at(frame.data, self.base_time + frame.time);

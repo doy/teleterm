@@ -303,6 +303,9 @@ pub enum Error {
     #[snafu(display("failed to read from terminal: {}", source))]
     ReadTerminal { source: std::io::Error },
 
+    #[snafu(display("failed to read ttyrec: {}", source))]
+    ReadTtyrec { source: ttyrec::Error },
+
     #[snafu(display("failed to resize pty: {}", source))]
     ResizePty { source: std::io::Error },
 
@@ -464,6 +467,9 @@ pub enum Error {
 
     #[snafu(display("failed to write to terminal: {}", source))]
     WriteTerminalSync { source: std::io::Error },
+
+    #[snafu(display("failed to write ttyrec: {}", source))]
+    WriteTtyrec { source: ttyrec::Error },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

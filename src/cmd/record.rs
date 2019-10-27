@@ -62,7 +62,7 @@ enum FileState {
         fut: tokio::fs::file::CreateFuture<String>,
     },
     Open {
-        writer: crate::ttyrec::Writer<tokio::fs::File>,
+        writer: ttyrec::Writer<tokio::fs::File>,
     },
 }
 
@@ -141,9 +141,11 @@ impl RecordSession {
                             filename: filename.clone(),
                         }
                     }));
-                let mut writer = crate::ttyrec::Writer::new(file);
+                let mut writer = ttyrec::Writer::new(file);
                 if !self.buffer.contents().is_empty() {
-                    writer.frame(self.buffer.contents())?;
+                    writer
+                        .frame(self.buffer.contents())
+                        .context(crate::error::WriteTtyrec)?;
                 }
                 self.file = FileState::Open { writer };
                 Ok(component_future::Async::DidWork)
@@ -176,7 +178,9 @@ impl RecordSession {
                     tokio_pty_process_stream::Event::Output { data } => {
                         self.record_bytes(&data);
                         if let FileState::Open { writer } = &mut self.file {
-                            writer.frame(&data)?;
+                            writer
+                                .frame(&data)
+                                .context(crate::error::WriteTtyrec)?;
                         }
                     }
                 }
@@ -231,16 +235,18 @@ impl RecordSession {
             }
         };
 
-        if writer.is_empty() {
+        if writer.needs_write() {
+            component_future::try_ready!(writer
+                .poll_write()
+                .context(crate::error::WriteTtyrec));
+            Ok(component_future::Async::DidWork)
+        } else {
             // finish writing to the file before actually ending
             if self.done {
                 Ok(component_future::Async::Ready(()))
             } else {
                 Ok(component_future::Async::NothingToDo)
             }
-        } else {
-            component_future::try_ready!(writer.poll_write());
-            Ok(component_future::Async::DidWork)
         }
     }
 }

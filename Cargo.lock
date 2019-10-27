@@ -1649,6 +1649,7 @@ dependencies = [
  "tokio-pty-process-stream",
  "tokio-signal",
  "tokio-tls",
+ "ttyrec",
  "twoway",
  "url 2.1.0",
  "users",
@@ -1991,6 +1992,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "283d3b89e1368717881a9d51dad843cc435380d8109c9e47d38780a324698d8b"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "ttyrec"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "034c0e4a24b738a650ea69bcb829388a2e72baa5e7aa1e9aa85fcd03e9f5cac6"
+dependencies = [
+ "futures",
+ "snafu",
+ "tokio",
 ]
 
 [[package]]

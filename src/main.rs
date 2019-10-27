@@ -28,7 +28,6 @@ mod resize;
 mod server;
 mod session_list;
 mod term;
-mod ttyrec;
 
 fn main() {
     dirs::Dirs::new().create_all().unwrap();

@@ -274,6 +274,11 @@ pub enum Error {
     #[snafu(display("failed to read ttyrec: {}", source))]
     ReadTtyrec { source: ttyrec::Error },
 
+    #[snafu(display("failed to poll for terminal resizing: {}", source))]
+    Resize {
+        source: tokio_terminal_resize::Error,
+    },
+
     #[snafu(display(
         "failed to resolve address {}:{}: {}",
         host,

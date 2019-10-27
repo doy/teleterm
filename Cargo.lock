@@ -1648,6 +1648,7 @@ dependencies = [
  "tokio",
  "tokio-pty-process-stream",
  "tokio-signal",
+ "tokio-terminal-resize",
  "tokio-tls",
  "ttyrec",
  "twoway",
@@ -1825,9 +1826,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-pty-process-stream"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d5702467cedd1b8180d3aef8d6e195ed3a6151ddca36b3b6d4c57e65b5e0c85"
+checksum = "87c73e73b3907c8a3142162c28ca75a4a941f1f737f3bd31e3faeb6608f2d9f8"
 dependencies = [
  "component-future",
  "futures",
@@ -1835,6 +1836,7 @@ dependencies = [
  "snafu",
  "tokio",
  "tokio-pty-process",
+ "tokio-terminal-resize",
 ]
 
 [[package]]
@@ -1895,6 +1897,19 @@ dependencies = [
  "mio",
  "tokio-io",
  "tokio-reactor",
+]
+
+[[package]]
+name = "tokio-terminal-resize"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "901915a5bf94a2ae7189de1af32da3161a80efc4609dd36ec8eba570e5c04ec4"
+dependencies = [
+ "futures",
+ "snafu",
+ "term_size",
+ "tokio",
+ "tokio-signal",
 ]
 
 [[package]]

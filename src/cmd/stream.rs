@@ -119,7 +119,8 @@ struct StreamSession<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
 > {
     client: crate::client::Client<S>,
-    process: crate::resize::ResizingProcess<crate::async_stdin::Stdin>,
+    process:
+        tokio_pty_process_stream::ResizingProcess<crate::async_stdin::Stdin>,
     stdout: tokio::io::Stdout,
     buffer: crate::term::Buffer,
     sent_local: usize,
@@ -148,7 +149,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         // let input = tokio::io::stdin();
         let input = crate::async_stdin::Stdin::new();
 
-        let process = crate::resize::ResizingProcess::new(
+        let process = tokio_pty_process_stream::ResizingProcess::new(
             tokio_pty_process_stream::Process::new(cmd, args, input),
         );
 
@@ -235,34 +236,33 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     }
 
     fn poll_read_process(&mut self) -> component_future::Poll<(), Error> {
-        match component_future::try_ready!(self.process.poll()) {
-            Some(crate::resize::Event::Process(e)) => {
-                match e {
-                    tokio_pty_process_stream::Event::CommandStart {
-                        ..
-                    } => {
-                        if self.raw_screen.is_none() {
-                            self.raw_screen = Some(
-                                crossterm::RawScreen::into_raw_mode()
-                                    .context(crate::error::ToRawMode)?,
-                            );
-                        }
-                    }
-                    tokio_pty_process_stream::Event::CommandExit {
-                        ..
-                    } => {
-                        self.done = true;
-                    }
-                    tokio_pty_process_stream::Event::Output { data } => {
-                        self.record_bytes(&data);
-                    }
+        match component_future::try_ready!(self
+            .process
+            .poll()
+            .context(crate::error::Subprocess))
+        {
+            Some(tokio_pty_process_stream::Event::CommandStart {
+                ..
+            }) => {
+                if self.raw_screen.is_none() {
+                    self.raw_screen = Some(
+                        crossterm::RawScreen::into_raw_mode()
+                            .context(crate::error::ToRawMode)?,
+                    );
                 }
-                Ok(component_future::Async::DidWork)
             }
-            Some(crate::resize::Event::Resize(size)) => {
-                self.client
-                    .send_message(crate::protocol::Message::resize(&size));
-                Ok(component_future::Async::DidWork)
+            Some(tokio_pty_process_stream::Event::CommandExit { .. }) => {
+                self.done = true;
+            }
+            Some(tokio_pty_process_stream::Event::Output { data }) => {
+                self.record_bytes(&data);
+            }
+            Some(tokio_pty_process_stream::Event::Resize {
+                size: (rows, cols),
+            }) => {
+                self.client.send_message(crate::protocol::Message::resize(
+                    &crate::term::Size { rows, cols },
+                ));
             }
             None => {
                 if !self.done {
@@ -270,9 +270,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 }
                 // don't return final event here - wait until we are done
                 // sending all data to the server (see poll_write_server)
-                Ok(component_future::Async::DidWork)
             }
         }
+        Ok(component_future::Async::DidWork)
     }
 
     fn poll_write_terminal(&mut self) -> component_future::Poll<(), Error> {

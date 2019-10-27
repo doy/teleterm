@@ -68,7 +68,8 @@ enum FileState {
 
 struct RecordSession {
     file: FileState,
-    process: crate::resize::ResizingProcess<crate::async_stdin::Stdin>,
+    process:
+        tokio_pty_process_stream::ResizingProcess<crate::async_stdin::Stdin>,
     stdout: tokio::io::Stdout,
     buffer: crate::term::Buffer,
     sent_local: usize,
@@ -85,7 +86,7 @@ impl RecordSession {
         args: &[String],
     ) -> Self {
         let input = crate::async_stdin::Stdin::new();
-        let process = crate::resize::ResizingProcess::new(
+        let process = tokio_pty_process_stream::ResizingProcess::new(
             tokio_pty_process_stream::Process::new(cmd, args, input),
         );
 
@@ -157,47 +158,40 @@ impl RecordSession {
     }
 
     fn poll_read_process(&mut self) -> component_future::Poll<(), Error> {
-        match component_future::try_ready!(self.process.poll()) {
-            Some(crate::resize::Event::Process(e)) => {
-                match e {
-                    tokio_pty_process_stream::Event::CommandStart {
-                        ..
-                    } => {
-                        if self.raw_screen.is_none() {
-                            self.raw_screen = Some(
-                                crossterm::RawScreen::into_raw_mode()
-                                    .context(crate::error::ToRawMode)?,
-                            );
-                        }
-                    }
-                    tokio_pty_process_stream::Event::CommandExit {
-                        ..
-                    } => {
-                        self.done = true;
-                    }
-                    tokio_pty_process_stream::Event::Output { data } => {
-                        self.record_bytes(&data);
-                        if let FileState::Open { writer } = &mut self.file {
-                            writer
-                                .frame(&data)
-                                .context(crate::error::WriteTtyrec)?;
-                        }
-                    }
+        match component_future::try_ready!(self
+            .process
+            .poll()
+            .context(crate::error::Subprocess))
+        {
+            Some(tokio_pty_process_stream::Event::CommandStart {
+                ..
+            }) => {
+                if self.raw_screen.is_none() {
+                    self.raw_screen = Some(
+                        crossterm::RawScreen::into_raw_mode()
+                            .context(crate::error::ToRawMode)?,
+                    );
                 }
-                Ok(component_future::Async::DidWork)
             }
-            Some(crate::resize::Event::Resize(_)) => {
-                Ok(component_future::Async::DidWork)
+            Some(tokio_pty_process_stream::Event::CommandExit { .. }) => {
+                self.done = true;
             }
+            Some(tokio_pty_process_stream::Event::Output { data }) => {
+                self.record_bytes(&data);
+                if let FileState::Open { writer } = &mut self.file {
+                    writer.frame(&data).context(crate::error::WriteTtyrec)?;
+                }
+            }
+            Some(tokio_pty_process_stream::Event::Resize { .. }) => {}
             None => {
                 if !self.done {
                     unreachable!()
                 }
                 // don't return final event here - wait until we are done
                 // writing all data to the file (see poll_write_file)
-                Ok(component_future::Async::DidWork)
             }
         }
+        Ok(component_future::Async::DidWork)
     }
 
     fn poll_write_terminal(&mut self) -> component_future::Poll<(), Error> {

@@ -33,8 +33,9 @@ reqwest = "0.9.22"
 serde = "1"
 snafu = { version = "0.5", features = ["rust_1_30", "futures-01"], default_features = false }
 tokio = { version = "0.1.22", features = ["codec", "fs", "io", "reactor", "rt-full", "sync", "tcp", "timer"], default_features = false }
-tokio-pty-process-stream = "0.1"
+tokio-pty-process-stream = "0.2"
 tokio-signal = "0.2"
+tokio-terminal-resize = "0.1"
 tokio-tls = "0.2"
 ttyrec = "0.1"
 twoway = "0.2"

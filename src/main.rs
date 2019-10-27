@@ -24,7 +24,6 @@ mod error;
 mod key_reader;
 mod oauth;
 mod protocol;
-mod resize;
 mod server;
 mod session_list;
 mod term;

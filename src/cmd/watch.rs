@@ -190,7 +190,12 @@ struct WatchSession<
 
     key_reader: crate::key_reader::KeyReader,
     list_client: crate::client::Client<S>,
-    resizer: crate::resize::Resizer,
+    resizer: Box<
+        dyn futures::stream::Stream<
+                Item = (u16, u16),
+                Error = crate::error::Error,
+            > + Send,
+    >,
     state: State<S>,
     raw_screen: Option<crossterm::RawScreen>,
     needs_redraw: bool,
@@ -212,7 +217,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
             key_reader: crate::key_reader::KeyReader::new(),
             list_client,
-            resizer: crate::resize::Resizer::new(),
+            resizer: Box::new(
+                tokio_terminal_resize::resizes()
+                    .flatten_stream()
+                    .context(crate::error::Resize),
+            ),
             state: State::new(),
             raw_screen: None,
             needs_redraw: true,
@@ -577,8 +586,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ];
 
     fn poll_resizer(&mut self) -> component_future::Poll<(), Error> {
-        let size = component_future::try_ready!(self.resizer.poll()).unwrap();
-        self.resize(size)?;
+        let (rows, cols) =
+            component_future::try_ready!(self.resizer.poll()).unwrap();
+        self.resize(crate::term::Size { rows, cols })?;
         Ok(component_future::Async::DidWork)
     }
 

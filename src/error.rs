@@ -95,15 +95,6 @@ pub enum Error {
     #[snafu(display("failed to write to stdout: {}", source))]
     FlushTerminal { source: tokio::io::Error },
 
-    #[snafu(display("failed to write to stdout: {}", source))]
-    FlushTerminalSync { source: std::io::Error },
-
-    #[snafu(display("failed to create ttyrec frame: got {} bytes of data, but ttyrec frames can be at most {} bytes", input, u32::max_value()))]
-    FrameTooBig { input: usize },
-
-    #[snafu(display("failed to create ttyrec frame: got {} seconds, but ttyrecs can be at most {} seconds", input, u32::max_value()))]
-    FrameTooLong { input: u64 },
-
     #[snafu(display(
         "failed to get recurse center profile data: {}",
         source
@@ -175,9 +166,6 @@ pub enum Error {
 
     #[snafu(display("failed to open link in browser: {}", source))]
     OpenLink { source: std::io::Error },
-
-    #[snafu(display("failed to open a pty: {}", source))]
-    OpenPty { source: std::io::Error },
 
     #[snafu(display("failed to parse address"))]
     ParseAddress,
@@ -254,26 +242,12 @@ pub enum Error {
         source: std::string::FromUtf8Error,
     },
 
-    #[snafu(display("failed to parse url {}: {}", url, source))]
-    ParseUrl {
-        url: String,
-        source: url::ParseError,
-    },
-
-    #[snafu(display("failed to poll for process exit: {}", source))]
-    ProcessExitPoll { source: std::io::Error },
-
     #[snafu(display("rate limit exceeded"))]
     RateLimited,
 
     #[snafu(display("failed to read from event channel: {}", source))]
     ReadChannel {
         source: tokio::sync::mpsc::error::UnboundedRecvError,
-    },
-
-    #[snafu(display("failed to read from channel: {}", source))]
-    ReadChannelBounded {
-        source: tokio::sync::mpsc::error::RecvError,
     },
 
     #[snafu(display("failed to read from file: {}", source))]
@@ -289,13 +263,7 @@ pub enum Error {
     },
 
     #[snafu(display("failed to read packet: {}", source))]
-    ReadPacketSync { source: std::io::Error },
-
-    #[snafu(display("failed to read packet: {}", source))]
     ReadPacket { source: tokio::io::Error },
-
-    #[snafu(display("failed to read from pty: {}", source))]
-    ReadPty { source: std::io::Error },
 
     #[snafu(display("failed to read from socket: {}", source))]
     ReadSocket { source: tokio::io::Error },
@@ -305,9 +273,6 @@ pub enum Error {
 
     #[snafu(display("failed to read ttyrec: {}", source))]
     ReadTtyrec { source: ttyrec::Error },
-
-    #[snafu(display("failed to resize pty: {}", source))]
-    ResizePty { source: std::io::Error },
 
     #[snafu(display(
         "failed to resolve address {}:{}: {}",
@@ -319,28 +284,6 @@ pub enum Error {
         host: String,
         port: u16,
         source: std::io::Error,
-    },
-
-    #[snafu(display(
-        "failed to send oauth result back to main thread: {}",
-        source
-    ))]
-    SendResultChannel {
-        source: tokio::sync::mpsc::error::SendError,
-    },
-
-    #[snafu(display(
-        "failed to send accepted socket to server thread: {}",
-        source
-    ))]
-    SendSocketChannel {
-        source: tokio::sync::mpsc::error::TrySendError<tokio::net::TcpStream>,
-    },
-
-    #[snafu(display("failed to send accepted socket to server thread"))]
-    SendSocketChannelTls {
-        // XXX tokio_tls::Accept doesn't implement Debug or Display
-    // source: tokio::sync::mpsc::error::TrySendError<tokio_tls::Accept<tokio::net::TcpStream>>,
     },
 
     #[snafu(display("received error from server: {}", message))]
@@ -364,9 +307,6 @@ pub enum Error {
     SocketChannelReceive {
         source: tokio::sync::mpsc::error::RecvError,
     },
-
-    #[snafu(display("failed to spawn process for `{}`: {}", cmd, source))]
-    SpawnProcess { cmd: String, source: std::io::Error },
 
     #[snafu(display("poll subprocess failed: {}", source))]
     Subprocess {
@@ -430,11 +370,6 @@ pub enum Error {
     #[snafu(display("failed to find user with username {}", name))]
     UnknownUser { name: String },
 
-    #[snafu(display("failed to write to event channel: {}", source))]
-    WriteChannel {
-        source: tokio::sync::mpsc::error::UnboundedSendError,
-    },
-
     #[snafu(display("failed to write to file: {}", source))]
     WriteFile { source: tokio::io::Error },
 
@@ -448,13 +383,7 @@ pub enum Error {
     },
 
     #[snafu(display("failed to write packet: {}", source))]
-    WritePacketSync { source: std::io::Error },
-
-    #[snafu(display("failed to write packet: {}", source))]
     WritePacket { source: tokio::io::Error },
-
-    #[snafu(display("failed to write to pty: {}", source))]
-    WritePty { source: std::io::Error },
 
     #[snafu(display("failed to write to socket: {}", source))]
     WriteSocket { source: tokio::io::Error },
@@ -464,9 +393,6 @@ pub enum Error {
 
     #[snafu(display("failed to write to terminal: {}", source))]
     WriteTerminalCrossterm { source: crossterm::ErrorKind },
-
-    #[snafu(display("failed to write to terminal: {}", source))]
-    WriteTerminalSync { source: std::io::Error },
 
     #[snafu(display("failed to write ttyrec: {}", source))]
     WriteTtyrec { source: ttyrec::Error },

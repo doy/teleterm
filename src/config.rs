@@ -16,6 +16,7 @@ const FILENAME_OPTION: &str = "filename";
 const LISTEN_ADDRESS_OPTION: &str = "listen-address";
 const LOGIN_PLAIN_OPTION: &str = "login-plain";
 const LOGIN_RECURSE_CENTER_OPTION: &str = "login-recurse-center";
+const PLAYBACK_RATIO_OPTION: &str = "playback-ratio";
 const READ_TIMEOUT_OPTION: &str = "read-timeout-secs";
 const TLS_IDENTITY_FILE_OPTION: &str = "tls-identity-file";
 const TLS_OPTION: &str = "tls";
@@ -693,6 +694,55 @@ impl Default for Ttyrec {
 
 fn default_ttyrec_filename() -> String {
     DEFAULT_TTYREC_FILENAME.to_string()
+}
+
+#[derive(serde::Deserialize, Debug)]
+pub struct Play {
+    #[serde(default = "default_playback_ratio")]
+    pub playback_ratio: f32,
+}
+
+impl Play {
+    pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
+        let playback_ratio_help =
+            "Speed to play back the ttyrec at (defaults to 1.0)";
+        app.arg(
+            clap::Arg::with_name(PLAYBACK_RATIO_OPTION)
+                .long(PLAYBACK_RATIO_OPTION)
+                .takes_value(true)
+                .value_name("RATIO")
+                .help(playback_ratio_help),
+        )
+    }
+
+    pub fn merge_args<'a>(
+        &mut self,
+        matches: &clap::ArgMatches<'a>,
+    ) -> Result<()> {
+        if matches.is_present(PLAYBACK_RATIO_OPTION) {
+            self.playback_ratio = matches
+                .value_of(PLAYBACK_RATIO_OPTION)
+                .unwrap()
+                .to_string()
+                .parse()
+                .context(crate::error::ParseFloat {
+                    name: PLAYBACK_RATIO_OPTION,
+                })?;
+        }
+        Ok(())
+    }
+}
+
+impl Default for Play {
+    fn default() -> Self {
+        Self {
+            playback_ratio: default_playback_ratio(),
+        }
+    }
+}
+
+fn default_playback_ratio() -> f32 {
+    1.0
 }
 
 pub fn oauth_configs<'a, D>(

@@ -5,6 +5,9 @@ use std::io::Write as _;
 pub struct Config {
     #[serde(default)]
     ttyrec: crate::config::Ttyrec,
+
+    #[serde(default)]
+    play: crate::config::Play,
 }
 
 impl crate::config::Config for Config {
@@ -12,19 +15,26 @@ impl crate::config::Config for Config {
         &mut self,
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
-        self.ttyrec.merge_args(matches)
+        self.ttyrec.merge_args(matches)?;
+        self.play.merge_args(matches)?;
+        Ok(())
     }
 
     fn run(
         &self,
     ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send>
     {
-        Box::new(PlaySession::new(&self.ttyrec.filename))
+        Box::new(PlaySession::new(
+            &self.ttyrec.filename,
+            self.play.playback_ratio,
+        ))
     }
 }
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
-    crate::config::Ttyrec::cmd(app.about("Play recorded terminal sessions"))
+    crate::config::Ttyrec::cmd(crate::config::Play::cmd(
+        app.about("Play recorded terminal sessions"),
+    ))
 }
 
 pub fn config(
@@ -60,10 +70,11 @@ struct PlaySession {
     to_write: DumbDelayQueue<Vec<u8>>,
     // to_write: tokio::timer::delay_queue::DelayQueue<Vec<u8>>,
     base_time: std::time::Instant,
+    playback_ratio: f32,
 }
 
 impl PlaySession {
-    fn new(filename: &str) -> Self {
+    fn new(filename: &str, playback_ratio: f32) -> Self {
         Self {
             file: FileState::Closed {
                 filename: filename.to_string(),
@@ -71,6 +82,7 @@ impl PlaySession {
             to_write: DumbDelayQueue::new(),
             // to_write: tokio::timer::delay_queue::DelayQueue::new(),
             base_time: std::time::Instant::now(),
+            playback_ratio,
         }
     }
 }
@@ -122,7 +134,9 @@ impl PlaySession {
             {
                 self.to_write.insert_at(
                     frame.data,
-                    self.base_time + frame.time - reader.offset().unwrap(),
+                    self.base_time
+                        + (frame.time - reader.offset().unwrap())
+                            .div_f32(self.playback_ratio),
                 );
             } else {
                 self.file = FileState::Eof;

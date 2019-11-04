@@ -217,6 +217,12 @@ pub enum Error {
         source: std::array::TryFromSliceError,
     },
 
+    #[snafu(display("failed to parse float option {}: {}", name, source))]
+    ParseFloat {
+        name: String,
+        source: std::num::ParseFloatError,
+    },
+
     #[snafu(display("failed to parse response json: {}", source))]
     ParseJson { source: reqwest::Error },
 

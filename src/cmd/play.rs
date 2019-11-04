@@ -78,6 +78,7 @@ struct PlaySession {
     base_time: std::time::Instant,
     last_frame_time: std::time::Duration,
     total_time_clamped: std::time::Duration,
+    paused: Option<std::time::Instant>,
 }
 
 impl PlaySession {
@@ -100,6 +101,7 @@ impl PlaySession {
             base_time: std::time::Instant::now(),
             last_frame_time: std::time::Duration::default(),
             total_time_clamped: std::time::Duration::default(),
+            paused: None,
         }
     }
 
@@ -107,9 +109,21 @@ impl PlaySession {
         match e {
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
                 'q',
-            )) => Ok(true),
-            _ => Ok(false),
+            )) => return Ok(true),
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                ' ',
+            )) => {
+                if let Some(time) = self.paused.take() {
+                    let diff = std::time::Instant::now() - time;
+                    self.to_write.time_incr(diff);
+                    self.base_time += diff;
+                } else {
+                    self.paused = Some(std::time::Instant::now());
+                }
+            }
+            _ => {}
         }
+        Ok(false)
     }
 }
 
@@ -210,6 +224,10 @@ impl PlaySession {
     }
 
     fn poll_write_terminal(&mut self) -> component_future::Poll<(), Error> {
+        if self.paused.is_some() {
+            return Ok(component_future::Async::NothingToDo);
+        }
+
         if let Some(data) = component_future::try_ready!(self
             .to_write
             .poll()
@@ -269,6 +287,12 @@ impl<T> DumbDelayQueue<T> {
             data,
             timer: tokio::timer::Delay::new(time),
         })
+    }
+
+    fn time_incr(&mut self, dur: std::time::Duration) {
+        for entry in &mut self.queue {
+            entry.timer.reset(entry.timer.deadline() + dur);
+        }
     }
 }
 

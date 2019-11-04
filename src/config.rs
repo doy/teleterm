@@ -16,6 +16,7 @@ const FILENAME_OPTION: &str = "filename";
 const LISTEN_ADDRESS_OPTION: &str = "listen-address";
 const LOGIN_PLAIN_OPTION: &str = "login-plain";
 const LOGIN_RECURSE_CENTER_OPTION: &str = "login-recurse-center";
+const MAX_FRAME_LENGTH_OPTION: &str = "max-frame-length";
 const PLAYBACK_RATIO_OPTION: &str = "playback-ratio";
 const READ_TIMEOUT_OPTION: &str = "read-timeout-secs";
 const TLS_IDENTITY_FILE_OPTION: &str = "tls-identity-file";
@@ -700,18 +701,30 @@ fn default_ttyrec_filename() -> String {
 pub struct Play {
     #[serde(default = "default_playback_ratio")]
     pub playback_ratio: f32,
+
+    #[serde(default, deserialize_with = "max_frame_length")]
+    pub max_frame_length: Option<std::time::Duration>,
 }
 
 impl Play {
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         let playback_ratio_help =
             "Speed to play back the ttyrec at (defaults to 1.0)";
+        let max_frame_length_help =
+            "Clamp frame duration at this number of seconds";
         app.arg(
             clap::Arg::with_name(PLAYBACK_RATIO_OPTION)
                 .long(PLAYBACK_RATIO_OPTION)
                 .takes_value(true)
                 .value_name("RATIO")
                 .help(playback_ratio_help),
+        )
+        .arg(
+            clap::Arg::with_name(MAX_FRAME_LENGTH_OPTION)
+                .long(MAX_FRAME_LENGTH_OPTION)
+                .takes_value(true)
+                .value_name("SECS")
+                .help(max_frame_length_help),
         )
     }
 
@@ -729,6 +742,11 @@ impl Play {
                     name: PLAYBACK_RATIO_OPTION,
                 })?;
         }
+        self.max_frame_length = matches
+            .value_of(MAX_FRAME_LENGTH_OPTION)
+            .map(|len| len.parse().map(std::time::Duration::from_secs))
+            .transpose()
+            .context(crate::error::ParseMaxFrameLength)?;
         Ok(())
     }
 }
@@ -737,12 +755,24 @@ impl Default for Play {
     fn default() -> Self {
         Self {
             playback_ratio: default_playback_ratio(),
+            max_frame_length: None,
         }
     }
 }
 
 fn default_playback_ratio() -> f32 {
     1.0
+}
+
+fn max_frame_length<'a, D>(
+    deserializer: D,
+) -> std::result::Result<Option<std::time::Duration>, D::Error>
+where
+    D: serde::de::Deserializer<'a>,
+{
+    Ok(Some(std::time::Duration::from_secs(u64::deserialize(
+        deserializer,
+    )?)))
 }
 
 pub fn oauth_configs<'a, D>(

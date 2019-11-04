@@ -226,6 +226,9 @@ pub enum Error {
     #[snafu(display("failed to parse response json: {}", source))]
     ParseJson { source: reqwest::Error },
 
+    #[snafu(display("failed to parse max frame length: {}", source))]
+    ParseMaxFrameLength { source: std::num::ParseIntError },
+
     #[snafu(display(
         "failed to parse port {} from address: {}",
         string,

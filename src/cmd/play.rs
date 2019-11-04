@@ -27,6 +27,7 @@ impl crate::config::Config for Config {
         Box::new(PlaySession::new(
             &self.ttyrec.filename,
             self.play.playback_ratio,
+            self.play.max_frame_length,
         ))
     }
 }
@@ -67,22 +68,34 @@ enum FileState {
 
 struct PlaySession {
     file: FileState,
+    playback_ratio: f32,
+    max_frame_length: Option<std::time::Duration>,
+
     to_write: DumbDelayQueue<Vec<u8>>,
     // to_write: tokio::timer::delay_queue::DelayQueue<Vec<u8>>,
     base_time: std::time::Instant,
-    playback_ratio: f32,
+    last_frame_time: std::time::Duration,
+    total_time_clamped: std::time::Duration,
 }
 
 impl PlaySession {
-    fn new(filename: &str, playback_ratio: f32) -> Self {
+    fn new(
+        filename: &str,
+        playback_ratio: f32,
+        max_frame_length: Option<std::time::Duration>,
+    ) -> Self {
         Self {
             file: FileState::Closed {
                 filename: filename.to_string(),
             },
+            playback_ratio,
+            max_frame_length,
+
             to_write: DumbDelayQueue::new(),
             // to_write: tokio::timer::delay_queue::DelayQueue::new(),
             base_time: std::time::Instant::now(),
-            playback_ratio,
+            last_frame_time: std::time::Duration::default(),
+            total_time_clamped: std::time::Duration::default(),
         }
     }
 }
@@ -132,12 +145,21 @@ impl PlaySession {
                 .poll_read()
                 .context(crate::error::ReadTtyrec))
             {
+                let frame_time = frame.time - reader.offset().unwrap();
+                let frame_dur = (frame_time - self.last_frame_time)
+                    .div_f32(self.playback_ratio);
+                self.total_time_clamped += self
+                    .max_frame_length
+                    .map_or(frame_dur, |max_frame_length| {
+                        frame_dur.min(max_frame_length)
+                    });
+
                 self.to_write.insert_at(
                     frame.data,
-                    self.base_time
-                        + (frame.time - reader.offset().unwrap())
-                            .div_f32(self.playback_ratio),
+                    self.base_time + self.total_time_clamped,
                 );
+
+                self.last_frame_time = frame_time;
             } else {
                 self.file = FileState::Eof;
             }

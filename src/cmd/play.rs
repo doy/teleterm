@@ -1,6 +1,8 @@
 use crate::prelude::*;
 use std::io::Write as _;
 
+const PLAYBACK_RATIO_INCR: f32 = 1.5;
+
 #[derive(serde::Deserialize, Debug, Default)]
 pub struct Config {
     #[serde(default)]
@@ -124,6 +126,21 @@ impl Player {
         }
     }
 
+    fn playback_ratio_incr(&mut self) {
+        self.playback_ratio *= PLAYBACK_RATIO_INCR;
+        self.set_timer();
+    }
+
+    fn playback_ratio_decr(&mut self) {
+        self.playback_ratio /= PLAYBACK_RATIO_INCR;
+        self.set_timer();
+    }
+
+    fn playback_ratio_reset(&mut self) {
+        self.playback_ratio = 1.0;
+        self.set_timer();
+    }
+
     fn set_timer(&mut self) {
         if let Some(frame) = self.ttyrec.frame(self.idx) {
             self.timer = Some(tokio::timer::Delay::new(
@@ -219,6 +236,21 @@ impl PlaySession {
                 } else {
                     self.paused = Some(std::time::Instant::now());
                 }
+            }
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                '+',
+            )) => {
+                self.player.playback_ratio_incr();
+            }
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                '-',
+            )) => {
+                self.player.playback_ratio_decr();
+            }
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                '=',
+            )) => {
+                self.player.playback_ratio_reset();
             }
             _ => {}
         }

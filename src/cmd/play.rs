@@ -120,8 +120,10 @@ impl PlaySession {
                 .poll_read()
                 .context(crate::error::ReadTtyrec))
             {
-                self.to_write
-                    .insert_at(frame.data, self.base_time + frame.time);
+                self.to_write.insert_at(
+                    frame.data,
+                    self.base_time + frame.time - reader.offset().unwrap(),
+                );
             } else {
                 self.file = FileState::Eof;
             }

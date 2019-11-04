@@ -2011,9 +2011,9 @@ dependencies = [
 
 [[package]]
 name = "ttyrec"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "034c0e4a24b738a650ea69bcb829388a2e72baa5e7aa1e9aa85fcd03e9f5cac6"
+checksum = "24e28759b4efb0e2b5238e1faa979633f80b534659b8559ad8e2e43b8f982c05"
 dependencies = [
  "futures",
  "snafu",

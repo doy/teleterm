@@ -71,6 +71,8 @@ struct PlaySession {
     playback_ratio: f32,
     max_frame_length: Option<std::time::Duration>,
 
+    raw_screen: Option<crossterm::RawScreen>,
+    key_reader: crate::key_reader::KeyReader,
     to_write: DumbDelayQueue<Vec<u8>>,
     // to_write: tokio::timer::delay_queue::DelayQueue<Vec<u8>>,
     base_time: std::time::Instant,
@@ -91,11 +93,22 @@ impl PlaySession {
             playback_ratio,
             max_frame_length,
 
+            raw_screen: None,
+            key_reader: crate::key_reader::KeyReader::new(),
             to_write: DumbDelayQueue::new(),
             // to_write: tokio::timer::delay_queue::DelayQueue::new(),
             base_time: std::time::Instant::now(),
             last_frame_time: std::time::Duration::default(),
             total_time_clamped: std::time::Duration::default(),
+        }
+    }
+
+    fn keypress(&mut self, e: &crossterm::InputEvent) -> Result<bool> {
+        match e {
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                'q',
+            )) => Ok(true),
+            _ => Ok(false),
         }
     }
 }
@@ -111,6 +124,7 @@ impl PlaySession {
         >] = &[
         &Self::poll_open_file,
         &Self::poll_read_file,
+        &Self::poll_input,
         &Self::poll_write_terminal,
     ];
 
@@ -166,6 +180,32 @@ impl PlaySession {
             Ok(component_future::Async::DidWork)
         } else {
             Ok(component_future::Async::NothingToDo)
+        }
+    }
+
+    fn poll_input(&mut self) -> component_future::Poll<(), Error> {
+        if self.raw_screen.is_none() {
+            self.raw_screen = Some(
+                crossterm::RawScreen::into_raw_mode()
+                    .context(crate::error::ToRawMode)?,
+            );
+        }
+
+        let e = component_future::try_ready!(self.key_reader.poll()).unwrap();
+        let quit = self.keypress(&e)?;
+        if quit {
+            self.raw_screen = None;
+
+            // TODO async
+            let stdout = std::io::stdout();
+            let mut stdout = stdout.lock();
+            stdout
+                .write(b"\x1bc")
+                .context(crate::error::WriteTerminal)?;
+            stdout.flush().context(crate::error::FlushTerminal)?;
+            Ok(component_future::Async::Ready(()))
+        } else {
+            Ok(component_future::Async::DidWork)
         }
     }
 

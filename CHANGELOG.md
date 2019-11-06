@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.5] - 2019-11-06
+
+### Fixed
+
+* Fix clearing the screen in `tt watch`.
+
 ## [0.1.4] - 2019-11-06
 
 ### Added

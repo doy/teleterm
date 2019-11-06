@@ -55,7 +55,8 @@ pub fn config(
 
 struct Frame {
     dur: std::time::Duration,
-    data: Vec<u8>,
+    full: Vec<u8>,
+    diff: Vec<u8>,
 }
 
 impl Frame {
@@ -96,6 +97,7 @@ struct Player {
     timer: Option<tokio::timer::Delay>,
     base_time: std::time::Instant,
     played_amount: std::time::Duration,
+    paused: Option<std::time::Instant>,
 }
 
 impl Player {
@@ -111,7 +113,12 @@ impl Player {
             timer: None,
             base_time: std::time::Instant::now(),
             played_amount: std::time::Duration::default(),
+            paused: None,
         }
+    }
+
+    fn current_frame(&self) -> Option<&Frame> {
+        self.ttyrec.frame(self.idx)
     }
 
     fn base_time_incr(&mut self, incr: std::time::Duration) {
@@ -139,6 +146,46 @@ impl Player {
     fn playback_ratio_reset(&mut self) {
         self.playback_ratio = 1.0;
         self.set_timer();
+    }
+
+    fn back(&mut self) {
+        self.idx = self.idx.saturating_sub(1);
+        self.recalculate_times();
+        self.set_timer();
+    }
+
+    fn forward(&mut self) {
+        self.idx = self.idx.saturating_add(1);
+        self.recalculate_times();
+        self.set_timer();
+    }
+
+    fn toggle_pause(&mut self) {
+        let now = std::time::Instant::now();
+        if let Some(time) = self.paused.take() {
+            self.base_time_incr(now - time);
+        } else {
+            self.paused = Some(now);
+        }
+    }
+
+    fn paused(&self) -> bool {
+        self.paused.is_some()
+    }
+
+    fn recalculate_times(&mut self) {
+        let now = std::time::Instant::now();
+        self.played_amount = self
+            .ttyrec
+            .frames
+            .iter()
+            .map(|f| f.dur)
+            .take(self.idx)
+            .sum();
+        self.base_time = now - self.played_amount;
+        if let Some(paused) = &mut self.paused {
+            *paused = now;
+        }
     }
 
     fn set_timer(&mut self) {
@@ -169,7 +216,7 @@ impl Player {
         };
 
         futures::try_ready!(timer.poll().context(crate::error::Sleep));
-        let ret = frame.data.clone();
+        let ret = frame.diff.clone();
 
         self.idx += 1;
         self.played_amount +=
@@ -191,6 +238,7 @@ enum FileState {
     },
     Open {
         reader: ttyrec::Reader<tokio::fs::File>,
+        parser: vt100::Parser,
     },
     Eof,
 }
@@ -199,9 +247,10 @@ struct PlaySession {
     file: FileState,
     player: Player,
     raw_screen: Option<crossterm::RawScreen>,
+    alternate_screen: Option<crossterm::AlternateScreen>,
     key_reader: crate::key_reader::KeyReader,
     last_frame_time: std::time::Duration,
-    paused: Option<std::time::Instant>,
+    last_frame_screen: Option<vt100::Screen>,
 }
 
 impl PlaySession {
@@ -216,9 +265,10 @@ impl PlaySession {
             },
             player: Player::new(playback_ratio, max_frame_length),
             raw_screen: None,
+            alternate_screen: None,
             key_reader: crate::key_reader::KeyReader::new(),
             last_frame_time: std::time::Duration::default(),
-            paused: None,
+            last_frame_screen: None,
         }
     }
 
@@ -230,12 +280,7 @@ impl PlaySession {
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
                 ' ',
             )) => {
-                if let Some(time) = self.paused.take() {
-                    self.player
-                        .base_time_incr(std::time::Instant::now() - time);
-                } else {
-                    self.paused = Some(std::time::Instant::now());
-                }
+                self.player.toggle_pause();
             }
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
                 '+',
@@ -252,9 +297,40 @@ impl PlaySession {
             )) => {
                 self.player.playback_ratio_reset();
             }
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                '<',
+            )) => {
+                self.player.back();
+                self.redraw()?;
+            }
+            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
+                '>',
+            )) => {
+                self.player.forward();
+                self.redraw()?;
+            }
             _ => {}
         }
         Ok(false)
+    }
+
+    fn redraw(&self) -> Result<()> {
+        let frame = if let Some(frame) = self.player.current_frame() {
+            frame
+        } else {
+            return Ok(());
+        };
+        self.write(&frame.full)?;
+        Ok(())
+    }
+
+    fn write(&self, data: &[u8]) -> Result<()> {
+        // TODO async
+        let stdout = std::io::stdout();
+        let mut stdout = stdout.lock();
+        stdout.write(data).context(crate::error::WriteTerminal)?;
+        stdout.flush().context(crate::error::FlushTerminal)?;
+        Ok(())
     }
 }
 
@@ -290,8 +366,10 @@ impl PlaySession {
                             filename: filename.to_string(),
                         }
                     }));
+                let size = crate::term::Size::get()?;
                 let reader = ttyrec::Reader::new(file);
-                self.file = FileState::Open { reader };
+                let parser = vt100::Parser::new(size.rows, size.cols);
+                self.file = FileState::Open { reader, parser };
                 Ok(component_future::Async::DidWork)
             }
             _ => Ok(component_future::Async::NothingToDo),
@@ -299,17 +377,31 @@ impl PlaySession {
     }
 
     fn poll_read_file(&mut self) -> component_future::Poll<(), Error> {
-        if let FileState::Open { reader } = &mut self.file {
+        if let FileState::Open { reader, parser } = &mut self.file {
             if let Some(frame) = component_future::try_ready!(reader
                 .poll_read()
                 .context(crate::error::ReadTtyrec))
             {
+                parser.process(&frame.data);
+
                 let frame_time = frame.time - reader.offset().unwrap();
                 let frame_dur = frame_time - self.last_frame_time;
                 self.last_frame_time = frame_time;
+
+                let full = parser.screen().contents_formatted();
+                let diff = if let Some(last_frame_screen) =
+                    &self.last_frame_screen
+                {
+                    parser.screen().contents_diff(last_frame_screen)
+                } else {
+                    full.clone()
+                };
+
+                self.last_frame_screen = Some(parser.screen().clone());
                 self.player.add_frame(Frame {
                     dur: frame_dur,
-                    data: frame.data,
+                    full,
+                    diff,
                 });
             } else {
                 self.file = FileState::Eof;
@@ -327,19 +419,17 @@ impl PlaySession {
                     .context(crate::error::ToRawMode)?,
             );
         }
+        if self.alternate_screen.is_none() {
+            self.alternate_screen = Some(
+                crossterm::AlternateScreen::to_alternate(false)
+                    .context(crate::error::ToAlternateScreen)?,
+            );
+        }
 
         let e = component_future::try_ready!(self.key_reader.poll()).unwrap();
         let quit = self.keypress(&e)?;
         if quit {
-            self.raw_screen = None;
-
-            // TODO async
-            let stdout = std::io::stdout();
-            let mut stdout = stdout.lock();
-            stdout
-                .write(b"\x1bc")
-                .context(crate::error::WriteTerminal)?;
-            stdout.flush().context(crate::error::FlushTerminal)?;
+            self.write(b"\x1b[?25h")?;
             Ok(component_future::Async::Ready(()))
         } else {
             Ok(component_future::Async::DidWork)
@@ -347,16 +437,12 @@ impl PlaySession {
     }
 
     fn poll_write_terminal(&mut self) -> component_future::Poll<(), Error> {
-        if self.paused.is_some() {
+        if self.player.paused() {
             return Ok(component_future::Async::NothingToDo);
         }
 
         if let Some(data) = component_future::try_ready!(self.player.poll()) {
-            // TODO async
-            let stdout = std::io::stdout();
-            let mut stdout = stdout.lock();
-            stdout.write(&data).context(crate::error::WriteTerminal)?;
-            stdout.flush().context(crate::error::FlushTerminal)?;
+            self.write(&data)?;
             Ok(component_future::Async::DidWork)
         } else if let FileState::Eof = self.file {
             Ok(component_future::Async::Ready(()))

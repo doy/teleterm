@@ -51,13 +51,13 @@ package: pkg/$(DEB_PACKAGE) pkg/$(ARCH_PACKAGE)
 pkg:
 	@mkdir pkg
 
-pkg/$(DEB_PACKAGE): pkg
+pkg/$(DEB_PACKAGE): | pkg
 	@cargo deb && mv target/debian/$(DEB_PACKAGE) pkg
 
 pkg/$(DEB_PACKAGE).minisig: pkg/$(DEB_PACKAGE)
 	@minisign -Sm pkg/$(DEB_PACKAGE)
 
-pkg/$(ARCH_PACKAGE): pkg package/arch/PKGBUILD
+pkg/$(ARCH_PACKAGE): package/arch/PKGBUILD | pkg
 	@cd package/arch && makepkg -c && mv $(ARCH_PACKAGE) ../../pkg
 
 pkg/$(ARCH_PACKAGE).minisig: pkg/$(ARCH_PACKAGE)

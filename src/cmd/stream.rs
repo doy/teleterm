@@ -128,7 +128,7 @@ struct StreamSession<
     needs_flush: bool,
     connected: bool,
     done: bool,
-    raw_screen: Option<crossterm::RawScreen>,
+    raw_screen: Option<crossterm::screen::RawScreen>,
 }
 
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
@@ -246,7 +246,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             }) => {
                 if self.raw_screen.is_none() {
                     self.raw_screen = Some(
-                        crossterm::RawScreen::into_raw_mode()
+                        crossterm::screen::RawScreen::into_raw_mode()
                             .context(crate::error::ToRawMode)?,
                     );
                 }

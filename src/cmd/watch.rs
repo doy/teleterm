@@ -112,11 +112,11 @@ pub fn config(
 enum State<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static> {
     Temporary,
     LoggingIn {
-        alternate_screen: crossterm::AlternateScreen,
+        alternate_screen: crossterm::screen::AlternateScreen,
     },
     Choosing {
         sessions: crate::session_list::SessionList,
-        alternate_screen: crossterm::AlternateScreen,
+        alternate_screen: crossterm::screen::AlternateScreen,
     },
     Watching {
         client: Box<crate::client::Client<S>>,
@@ -197,7 +197,7 @@ struct WatchSession<
             > + Send,
     >,
     state: State<S>,
-    raw_screen: Option<crossterm::RawScreen>,
+    raw_screen: Option<crossterm::screen::RawScreen>,
     needs_redraw: bool,
 }
 
@@ -242,12 +242,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
     fn loading_keypress(
         &mut self,
-        e: &crossterm::InputEvent,
+        e: &crossterm::input::InputEvent,
     ) -> Result<bool> {
         match e {
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                'q',
-            )) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('q'),
+            ) => {
                 return Ok(true);
             }
             _ => {}
@@ -284,7 +284,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         Ok(())
     }
 
-    fn list_keypress(&mut self, e: &crossterm::InputEvent) -> Result<bool> {
+    fn list_keypress(
+        &mut self,
+        e: &crossterm::input::InputEvent,
+    ) -> Result<bool> {
         let sessions =
             if let State::Choosing { sessions, .. } = &mut self.state {
                 sessions
@@ -293,30 +296,32 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             };
 
         match e {
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                ' ',
-            )) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char(' '),
+            ) => {
                 self.list_client
                     .send_message(crate::protocol::Message::list_sessions());
             }
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                'q',
-            )) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('q'),
+            ) => {
                 return Ok(true);
             }
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                '<',
-            )) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('<'),
+            ) => {
                 sessions.prev_page();
                 self.needs_redraw = true;
             }
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                '>',
-            )) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('>'),
+            ) => {
                 sessions.next_page();
                 self.needs_redraw = true;
             }
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(c)) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char(c),
+            ) => {
                 if let Some(id) = sessions.id_for(*c) {
                     let client = crate::client::Client::watch(
                         (self.make_connector)(),
@@ -325,9 +330,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         id,
                     );
                     self.state.watching(client);
-                    crossterm::terminal()
-                        .clear(crossterm::ClearType::All)
-                        .context(crate::error::WriteTerminalCrossterm)?;
+                    crossterm::execute!(
+                        std::io::stdout(),
+                        crossterm::terminal::Clear(
+                            crossterm::terminal::ClearType::All
+                        )
+                    )
+                    .context(crate::error::WriteTerminalCrossterm)?;
                 }
             }
             _ => {}
@@ -375,11 +384,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         Ok(())
     }
 
-    fn watch_keypress(&mut self, e: &crossterm::InputEvent) -> Result<bool> {
+    fn watch_keypress(
+        &mut self,
+        e: &crossterm::input::InputEvent,
+    ) -> Result<bool> {
         match e {
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                'q',
-            )) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('q'),
+            ) => {
                 self.reconnect(false)?;
             }
             _ => {}
@@ -410,9 +422,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     }
 
     fn display_loading_screen(&self) -> Result<()> {
-        crossterm::terminal()
-            .clear(crossterm::ClearType::All)
-            .context(crate::error::WriteTerminalCrossterm)?;
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+        )
+        .context(crate::error::WriteTerminalCrossterm)?;
 
         println!("loading...\r");
         if let Some(err) = self.list_client.last_error() {
@@ -478,9 +492,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             - watch_width
             - 3;
 
-        crossterm::terminal()
-            .clear(crossterm::ClearType::All)
-            .context(crate::error::WriteTerminalCrossterm)?;
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+        )
+        .context(crate::error::WriteTerminalCrossterm)?;
         println!("welcome to teleterm\r");
         println!("available sessions:\r");
         println!("\r");
@@ -595,7 +611,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn poll_input(&mut self) -> component_future::Poll<(), Error> {
         if self.raw_screen.is_none() {
             self.raw_screen = Some(
-                crossterm::RawScreen::into_raw_mode()
+                crossterm::screen::RawScreen::into_raw_mode()
                     .context(crate::error::ToRawMode)?,
             );
         }
@@ -675,8 +691,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     }
 }
 
-fn new_alternate_screen() -> Result<crossterm::AlternateScreen> {
-    crossterm::AlternateScreen::to_alternate(false)
+fn new_alternate_screen() -> Result<crossterm::screen::AlternateScreen> {
+    crossterm::screen::AlternateScreen::to_alternate(false)
         .context(crate::error::ToAlternateScreen)
 }
 

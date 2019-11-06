@@ -1,8 +1,9 @@
 use crate::prelude::*;
 
 pub struct KeyReader {
-    events:
-        Option<tokio::sync::mpsc::UnboundedReceiver<crossterm::InputEvent>>,
+    events: Option<
+        tokio::sync::mpsc::UnboundedReceiver<crossterm::input::InputEvent>,
+    >,
     quit: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
@@ -16,13 +17,13 @@ impl KeyReader {
 }
 
 impl futures::stream::Stream for KeyReader {
-    type Item = crossterm::InputEvent;
+    type Item = crossterm::input::InputEvent;
     type Error = Error;
 
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
         if self.events.is_none() {
             let task = futures::task::current();
-            let reader = crossterm::input().read_sync();
+            let reader = crossterm::input::input().read_sync();
             let (events_tx, events_rx) =
                 tokio::sync::mpsc::unbounded_channel();
             let mut events_tx = events_tx.wait();

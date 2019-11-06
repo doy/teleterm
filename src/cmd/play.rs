@@ -261,8 +261,8 @@ enum FileState {
 struct PlaySession {
     file: FileState,
     player: Player,
-    raw_screen: Option<crossterm::RawScreen>,
-    alternate_screen: Option<crossterm::AlternateScreen>,
+    raw_screen: Option<crossterm::screen::RawScreen>,
+    alternate_screen: Option<crossterm::screen::AlternateScreen>,
     key_reader: crate::key_reader::KeyReader,
     last_frame_time: std::time::Duration,
     last_frame_screen: Option<vt100::Screen>,
@@ -292,41 +292,41 @@ impl PlaySession {
         }
     }
 
-    fn keypress(&mut self, e: &crossterm::InputEvent) -> Result<bool> {
+    fn keypress(&mut self, e: &crossterm::input::InputEvent) -> Result<bool> {
         match e {
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                'q',
-            )) => return Ok(true),
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                ' ',
-            )) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('q'),
+            ) => return Ok(true),
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char(' '),
+            ) => {
                 self.player.toggle_pause();
                 self.redraw()?;
             }
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                '+',
-            )) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('+'),
+            ) => {
                 self.player.playback_ratio_incr();
             }
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                '-',
-            )) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('-'),
+            ) => {
                 self.player.playback_ratio_decr();
             }
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                '=',
-            )) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('='),
+            ) => {
                 self.player.playback_ratio_reset();
             }
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                '<',
-            )) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('<'),
+            ) => {
                 self.player.back();
                 self.redraw()?;
             }
-            crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
-                '>',
-            )) => {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('>'),
+            ) => {
                 self.player.forward();
                 self.redraw()?;
             }
@@ -519,13 +519,13 @@ impl PlaySession {
     fn poll_input(&mut self) -> component_future::Poll<(), Error> {
         if self.raw_screen.is_none() {
             self.raw_screen = Some(
-                crossterm::RawScreen::into_raw_mode()
+                crossterm::screen::RawScreen::into_raw_mode()
                     .context(crate::error::ToRawMode)?,
             );
         }
         if self.alternate_screen.is_none() {
             self.alternate_screen = Some(
-                crossterm::AlternateScreen::to_alternate(false)
+                crossterm::screen::AlternateScreen::to_alternate(false)
                     .context(crate::error::ToAlternateScreen)?,
             );
         }

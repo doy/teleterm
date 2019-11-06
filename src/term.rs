@@ -14,8 +14,7 @@ pub struct Size {
 
 impl Size {
     pub fn get() -> Result<Self> {
-        let (cols, rows) = crossterm::terminal()
-            .size()
+        let (cols, rows) = crossterm::terminal::size()
             .context(crate::error::GetTerminalSize)?;
         Ok(Self { rows, cols })
     }

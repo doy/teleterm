@@ -75,7 +75,7 @@ struct RecordSession {
     sent_local: usize,
     needs_flush: bool,
     done: bool,
-    raw_screen: Option<crossterm::RawScreen>,
+    raw_screen: Option<crossterm::screen::RawScreen>,
 }
 
 impl RecordSession {
@@ -168,7 +168,7 @@ impl RecordSession {
             }) => {
                 if self.raw_screen.is_none() {
                     self.raw_screen = Some(
-                        crossterm::RawScreen::into_raw_mode()
+                        crossterm::screen::RawScreen::into_raw_mode()
                             .context(crate::error::ToRawMode)?,
                     );
                 }

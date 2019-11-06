@@ -90,3 +90,7 @@ release-dir-arch:
 publish-arch: test pkg/$(ARCH_PACKAGE) pkg/$(ARCH_PACKAGE).minisig release-dir-arch
 	@scp pkg/$(ARCH_PACKAGE) pkg/$(ARCH_PACKAGE).minisig tozt.net:releases/teleterm/arch
 .PHONY: publish-arch
+
+install-arch: pkg/$(ARCH_PACKAGE)
+	@sudo pacman -U pkg/$(ARCH_PACKAGE)
+.PHONY: install-arch

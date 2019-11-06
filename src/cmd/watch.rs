@@ -330,13 +330,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         id,
                     );
                     self.state.watching(client);
-                    crossterm::execute!(
-                        std::io::stdout(),
-                        crossterm::terminal::Clear(
-                            crossterm::terminal::ClearType::All
-                        )
-                    )
-                    .context(crate::error::WriteTerminalCrossterm)?;
+                    clear()?;
                 }
             }
             _ => {}
@@ -422,11 +416,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     }
 
     fn display_loading_screen(&self) -> Result<()> {
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-        )
-        .context(crate::error::WriteTerminalCrossterm)?;
+        clear()?;
 
         println!("loading...\r");
         if let Some(err) = self.list_client.last_error() {
@@ -492,11 +482,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             - watch_width
             - 3;
 
-        crossterm::execute!(
-            std::io::stdout(),
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-        )
-        .context(crate::error::WriteTerminalCrossterm)?;
+        clear()?;
         println!("welcome to teleterm\r");
         println!("available sessions:\r");
         println!("\r");
@@ -725,6 +711,15 @@ fn truncate(s: &str, len: usize) -> String {
     } else {
         format!("{}...", &s[..(len - 3)])
     }
+}
+
+fn clear() -> Result<()> {
+    crossterm::execute!(
+        std::io::stdout(),
+        crossterm::cursor::MoveTo(0, 0),
+        crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+    )
+    .context(crate::error::WriteTerminalCrossterm)
 }
 
 #[cfg(test)]

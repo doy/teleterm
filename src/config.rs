@@ -17,6 +17,7 @@ const LISTEN_ADDRESS_OPTION: &str = "listen-address";
 const LOGIN_PLAIN_OPTION: &str = "login-plain";
 const LOGIN_RECURSE_CENTER_OPTION: &str = "login-recurse-center";
 const MAX_FRAME_LENGTH_OPTION: &str = "max-frame-length";
+const PLAY_AT_START_OPTION: &str = "play-at-start";
 const PLAYBACK_RATIO_OPTION: &str = "playback-ratio";
 const READ_TIMEOUT_OPTION: &str = "read-timeout-secs";
 const TLS_IDENTITY_FILE_OPTION: &str = "tls-identity-file";
@@ -699,6 +700,9 @@ fn default_ttyrec_filename() -> String {
 
 #[derive(serde::Deserialize, Debug)]
 pub struct Play {
+    #[serde(default)]
+    pub play_at_start: bool,
+
     #[serde(default = "default_playback_ratio")]
     pub playback_ratio: f32,
 
@@ -708,11 +712,17 @@ pub struct Play {
 
 impl Play {
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
+        let play_at_start_help = "Start the player unpaused";
         let playback_ratio_help =
             "Speed to play back the ttyrec at (defaults to 1.0)";
         let max_frame_length_help =
             "Clamp frame duration at this number of seconds";
         app.arg(
+            clap::Arg::with_name(PLAY_AT_START_OPTION)
+                .long(PLAY_AT_START_OPTION)
+                .help(play_at_start_help),
+        )
+        .arg(
             clap::Arg::with_name(PLAYBACK_RATIO_OPTION)
                 .long(PLAYBACK_RATIO_OPTION)
                 .takes_value(true)
@@ -732,6 +742,7 @@ impl Play {
         &mut self,
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
+        self.play_at_start = matches.is_present(PLAY_AT_START_OPTION);
         if matches.is_present(PLAYBACK_RATIO_OPTION) {
             self.playback_ratio = matches
                 .value_of(PLAYBACK_RATIO_OPTION)
@@ -754,6 +765,7 @@ impl Play {
 impl Default for Play {
     fn default() -> Self {
         Self {
+            play_at_start: false,
             playback_ratio: default_playback_ratio(),
             max_frame_length: None,
         }

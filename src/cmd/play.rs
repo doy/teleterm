@@ -28,6 +28,7 @@ impl crate::config::Config for Config {
     {
         Box::new(PlaySession::new(
             &self.ttyrec.filename,
+            self.play.play_at_start,
             self.play.playback_ratio,
             self.play.max_frame_length,
         ))
@@ -106,18 +107,20 @@ struct Player {
 
 impl Player {
     fn new(
+        play_at_start: bool,
         playback_ratio: f32,
         max_frame_length: Option<std::time::Duration>,
     ) -> Self {
+        let now = std::time::Instant::now();
         Self {
             playback_ratio,
             max_frame_length,
             ttyrec: Ttyrec::new(),
             idx: 0,
             timer: None,
-            base_time: std::time::Instant::now(),
+            base_time: now,
             played_amount: std::time::Duration::default(),
-            paused: None,
+            paused: if play_at_start { None } else { Some(now) },
         }
     }
 
@@ -268,6 +271,7 @@ struct PlaySession {
 impl PlaySession {
     fn new(
         filename: &str,
+        play_at_start: bool,
         playback_ratio: f32,
         max_frame_length: Option<std::time::Duration>,
     ) -> Self {
@@ -275,7 +279,11 @@ impl PlaySession {
             file: FileState::Closed {
                 filename: filename.to_string(),
             },
-            player: Player::new(playback_ratio, max_frame_length),
+            player: Player::new(
+                play_at_start,
+                playback_ratio,
+                max_frame_length,
+            ),
             raw_screen: None,
             alternate_screen: None,
             key_reader: crate::key_reader::KeyReader::new(),

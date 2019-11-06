@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.4] - 2019-11-06
+
+### Added
+
+* `tt play` now supports seeking back and forth as well as pausing, adjusting
+  the playback speed, and limiting the max amount of time each frame can take.
+
+### Changed
+
+* Moved quite a lot of functionality out to separate crates - see
+  `component-future`, `tokio-pty-process-stream`, `tokio-terminal-resize`,
+  `ttyrec`
+
+### Fixed
+
+* Ttyrecs with frame timestamps not starting at 0 can now be played properly.
+
 ## [0.1.3] - 2019-10-23
 
 ### Fixed

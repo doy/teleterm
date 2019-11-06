@@ -5,6 +5,7 @@
 #![allow(clippy::match_same_arms)]
 #![allow(clippy::missing_const_for_fn)]
 #![allow(clippy::multiple_crate_versions)]
+#![allow(clippy::non_ascii_literal)]
 #![allow(clippy::similar_names)]
 #![allow(clippy::single_match)]
 #![allow(clippy::single_match_else)]

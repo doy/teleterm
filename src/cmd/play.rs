@@ -87,6 +87,10 @@ impl Ttyrec {
     fn frame(&self, idx: usize) -> Option<&Frame> {
         self.frames.get(idx)
     }
+
+    fn len(&self) -> usize {
+        self.frames.len()
+    }
 }
 
 struct Player {
@@ -117,8 +121,16 @@ impl Player {
         }
     }
 
+    fn current_frame_idx(&self) -> usize {
+        self.idx
+    }
+
     fn current_frame(&self) -> Option<&Frame> {
         self.ttyrec.frame(self.idx)
+    }
+
+    fn num_frames(&self) -> usize {
+        self.ttyrec.len()
     }
 
     fn base_time_incr(&mut self, incr: std::time::Duration) {
@@ -281,6 +293,7 @@ impl PlaySession {
                 ' ',
             )) => {
                 self.player.toggle_pause();
+                self.redraw()?;
             }
             crossterm::InputEvent::Keyboard(crossterm::KeyEvent::Char(
                 '+',
@@ -321,6 +334,7 @@ impl PlaySession {
             return Ok(());
         };
         self.write(&frame.full)?;
+        self.draw_ui()?;
         Ok(())
     }
 
@@ -330,6 +344,85 @@ impl PlaySession {
         let mut stdout = stdout.lock();
         stdout.write(data).context(crate::error::WriteTerminal)?;
         stdout.flush().context(crate::error::FlushTerminal)?;
+        Ok(())
+    }
+
+    fn draw_ui(&self) -> Result<()> {
+        if self.player.paused() {
+            let msg = format!(
+                "paused (frame {}/{})",
+                self.player.current_frame_idx() + 1,
+                self.player.num_frames()
+            );
+            let size = crate::term::Size::get()?;
+
+            self.write(b"\x1b7")?;
+            self.write(b"\x1b[37;44m\x1b[2;2H")?;
+            self.write("╭".as_bytes())?;
+            self.write("─".repeat(2 + msg.len()).as_bytes())?;
+            self.write("╮".as_bytes())?;
+            self.write(b"\x1b[3;2H")?;
+            self.write(format!("│ {} │", msg).as_bytes())?;
+            self.write(b"\x1b[4;2H")?;
+            self.write("╰".as_bytes())?;
+            self.write("─".repeat(2 + msg.len()).as_bytes())?;
+            self.write("╯".as_bytes())?;
+            self.write(
+                format!("\x1b[{};{}H", size.rows - 10, size.cols - 24)
+                    .as_bytes(),
+            )?;
+            self.write("╭".as_bytes())?;
+            self.write("─".repeat(22).as_bytes())?;
+            self.write("╮".as_bytes())?;
+            self.write(
+                format!("\x1b[{};{}H", size.rows - 9, size.cols - 24)
+                    .as_bytes(),
+            )?;
+            self.write("│         Keys         │".as_bytes())?;
+            self.write(
+                format!("\x1b[{};{}H", size.rows - 8, size.cols - 24)
+                    .as_bytes(),
+            )?;
+            self.write("│ q: quit              │".as_bytes())?;
+            self.write(
+                format!("\x1b[{};{}H", size.rows - 7, size.cols - 24)
+                    .as_bytes(),
+            )?;
+            self.write("│ Space: pause/unpause │".as_bytes())?;
+            self.write(
+                format!("\x1b[{};{}H", size.rows - 6, size.cols - 24)
+                    .as_bytes(),
+            )?;
+            self.write("│ <: previous frame    │".as_bytes())?;
+            self.write(
+                format!("\x1b[{};{}H", size.rows - 5, size.cols - 24)
+                    .as_bytes(),
+            )?;
+            self.write("│ >: next frame        │".as_bytes())?;
+            self.write(
+                format!("\x1b[{};{}H", size.rows - 4, size.cols - 24)
+                    .as_bytes(),
+            )?;
+            self.write("│ +: increase speed    │".as_bytes())?;
+            self.write(
+                format!("\x1b[{};{}H", size.rows - 3, size.cols - 24)
+                    .as_bytes(),
+            )?;
+            self.write("│ -: decrease speed    │".as_bytes())?;
+            self.write(
+                format!("\x1b[{};{}H", size.rows - 2, size.cols - 24)
+                    .as_bytes(),
+            )?;
+            self.write("│ =: normal speed      │".as_bytes())?;
+            self.write(
+                format!("\x1b[{};{}H", size.rows - 1, size.cols - 24)
+                    .as_bytes(),
+            )?;
+            self.write("╰".as_bytes())?;
+            self.write("─".repeat(22).as_bytes())?;
+            self.write("╯".as_bytes())?;
+            self.write(b"\x1b8")?;
+        }
         Ok(())
     }
 }
@@ -403,6 +496,9 @@ impl PlaySession {
                     full,
                     diff,
                 });
+                if self.player.paused() {
+                    self.draw_ui()?;
+                }
             } else {
                 self.file = FileState::Eof;
             }
@@ -443,6 +539,7 @@ impl PlaySession {
 
         if let Some(data) = component_future::try_ready!(self.player.poll()) {
             self.write(&data)?;
+            self.draw_ui()?;
             Ok(component_future::Async::DidWork)
         } else if let FileState::Eof = self.file {
             Ok(component_future::Async::Ready(()))

@@ -718,9 +718,18 @@ impl PlaySession {
                     self.write(
                         format!("\x1b[{};{}H", 4, size.cols - 32).as_bytes(),
                     )?;
-                    self.write(
-                        format!("│ {:28} │", state.query.as_str()).as_bytes(),
-                    )?;
+                    let query_str = state.query.as_str();
+                    if query_str.len() > 26 {
+                        self.write(
+                            format!("│ /{:24}... │", &query_str[0..24])
+                                .as_bytes(),
+                        )?;
+                    } else {
+                        let regex_str = format!("/{}/", query_str);
+                        self.write(
+                            format!("│ {:28} │", regex_str).as_bytes(),
+                        )?;
+                    }
 
                     self.write(
                         format!("\x1b[{};{}H", 5, size.cols - 32).as_bytes(),
@@ -749,7 +758,17 @@ impl PlaySession {
                 self.write(
                     format!("\x1b[{};{}H", 4, size.cols - 32).as_bytes(),
                 )?;
-                self.write(format!("│ {:28} │", query).as_bytes())?;
+                self.write(
+                    format!(
+                        "│ {:28} │",
+                        if query.len() > 28 {
+                            &query[query.len() - 28..]
+                        } else {
+                            query
+                        }
+                    )
+                    .as_bytes(),
+                )?;
 
                 self.write(
                     format!("\x1b[{};{}H", 5, size.cols - 32).as_bytes(),
@@ -762,7 +781,7 @@ impl PlaySession {
                     format!(
                         "\x1b8\x1b[{};{}H\x1b[?25h",
                         4,
-                        size.cols as usize - 32 + 2 + query.len()
+                        size.cols as usize - 32 + 2 + query.len().min(28)
                     )
                     .as_bytes(),
                 )?;

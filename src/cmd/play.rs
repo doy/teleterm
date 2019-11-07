@@ -175,6 +175,18 @@ impl Player {
         self.set_timer();
     }
 
+    fn first(&mut self) {
+        self.idx = 0;
+        self.recalculate_times();
+        self.set_timer();
+    }
+
+    fn last(&mut self) {
+        self.idx = self.ttyrec.len() - 1;
+        self.recalculate_times();
+        self.set_timer();
+    }
+
     fn toggle_pause(&mut self) {
         let now = std::time::Instant::now();
         if let Some(time) = self.paused.take() {
@@ -330,6 +342,18 @@ impl PlaySession {
                 self.player.forward();
                 self.redraw()?;
             }
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('0'),
+            ) => {
+                self.player.first();
+                self.redraw()?;
+            }
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('$'),
+            ) => {
+                self.player.last();
+                self.redraw()?;
+            }
             _ => {}
         }
         Ok(false)
@@ -376,58 +400,53 @@ impl PlaySession {
             self.write("─".repeat(2 + msg.len()).as_bytes())?;
             self.write("╯".as_bytes())?;
             self.write(
-                format!("\x1b[{};{}H", size.rows - 10, size.cols - 24)
+                format!("\x1b[{};{}H", size.rows - 9, size.cols - 32)
                     .as_bytes(),
             )?;
             self.write("╭".as_bytes())?;
-            self.write("─".repeat(22).as_bytes())?;
+            self.write("─".repeat(30).as_bytes())?;
             self.write("╮".as_bytes())?;
             self.write(
-                format!("\x1b[{};{}H", size.rows - 9, size.cols - 24)
+                format!("\x1b[{};{}H", size.rows - 8, size.cols - 32)
                     .as_bytes(),
             )?;
-            self.write("│         Keys         │".as_bytes())?;
+            self.write("│             Keys             │".as_bytes())?;
             self.write(
-                format!("\x1b[{};{}H", size.rows - 8, size.cols - 24)
+                format!("\x1b[{};{}H", size.rows - 7, size.cols - 32)
                     .as_bytes(),
             )?;
-            self.write("│ q: quit              │".as_bytes())?;
+            self.write("│ q: quit                      │".as_bytes())?;
             self.write(
-                format!("\x1b[{};{}H", size.rows - 7, size.cols - 24)
+                format!("\x1b[{};{}H", size.rows - 6, size.cols - 32)
                     .as_bytes(),
             )?;
-            self.write("│ Space: pause/unpause │".as_bytes())?;
+            self.write("│ Space: pause/unpause         │".as_bytes())?;
             self.write(
-                format!("\x1b[{};{}H", size.rows - 6, size.cols - 24)
+                format!("\x1b[{};{}H", size.rows - 5, size.cols - 32)
                     .as_bytes(),
             )?;
-            self.write("│ <: previous frame    │".as_bytes())?;
+            self.write("│ </>: previous/next frame     │".as_bytes())?;
             self.write(
-                format!("\x1b[{};{}H", size.rows - 5, size.cols - 24)
+                format!("\x1b[{};{}H", size.rows - 4, size.cols - 32)
                     .as_bytes(),
             )?;
-            self.write("│ >: next frame        │".as_bytes())?;
+            self.write("│ 0/$: first/last frame        │".as_bytes())?;
             self.write(
-                format!("\x1b[{};{}H", size.rows - 4, size.cols - 24)
+                format!("\x1b[{};{}H", size.rows - 3, size.cols - 32)
                     .as_bytes(),
             )?;
-            self.write("│ +: increase speed    │".as_bytes())?;
+            self.write("│ +/-: increase/decrease speed │".as_bytes())?;
             self.write(
-                format!("\x1b[{};{}H", size.rows - 3, size.cols - 24)
+                format!("\x1b[{};{}H", size.rows - 2, size.cols - 32)
                     .as_bytes(),
             )?;
-            self.write("│ -: decrease speed    │".as_bytes())?;
+            self.write("│ =: normal speed              │".as_bytes())?;
             self.write(
-                format!("\x1b[{};{}H", size.rows - 2, size.cols - 24)
-                    .as_bytes(),
-            )?;
-            self.write("│ =: normal speed      │".as_bytes())?;
-            self.write(
-                format!("\x1b[{};{}H", size.rows - 1, size.cols - 24)
+                format!("\x1b[{};{}H", size.rows - 1, size.cols - 32)
                     .as_bytes(),
             )?;
             self.write("╰".as_bytes())?;
-            self.write("─".repeat(22).as_bytes())?;
+            self.write("─".repeat(30).as_bytes())?;
             self.write("╯".as_bytes())?;
             self.write(b"\x1b8")?;
         }

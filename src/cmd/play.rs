@@ -89,9 +89,53 @@ impl Ttyrec {
         self.frames.get(idx)
     }
 
+    fn frames(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = &Frame> + ExactSizeIterator<Item = &Frame>
+    {
+        self.frames.iter()
+    }
+
+    fn matches_from<'a>(
+        &'a self,
+        idx: usize,
+        re: &'a regex::bytes::Regex,
+    ) -> impl Iterator<Item = (usize, &Frame)> + 'a {
+        self.frames()
+            .enumerate()
+            .skip(idx)
+            .filter(move |(_, frame)| re.is_match(&frame.full))
+    }
+
+    fn rmatches_from<'a>(
+        &'a self,
+        idx: usize,
+        re: &'a regex::bytes::Regex,
+    ) -> impl Iterator<Item = (usize, &Frame)> + 'a {
+        self.frames()
+            .enumerate()
+            .rev()
+            .skip(self.frames.len() - idx)
+            .filter(move |(_, frame)| re.is_match(&frame.full))
+    }
+
+    fn count_matches_from(
+        &self,
+        idx: usize,
+        re: &regex::bytes::Regex,
+    ) -> usize {
+        self.matches_from(idx, re).count()
+    }
+
     fn len(&self) -> usize {
         self.frames.len()
     }
+}
+
+struct SearchState {
+    query: regex::bytes::Regex,
+    count: usize,
+    idx: Option<usize>,
 }
 
 struct Player {
@@ -103,6 +147,7 @@ struct Player {
     base_time: std::time::Instant,
     played_amount: std::time::Duration,
     paused: Option<std::time::Instant>,
+    search_state: Option<SearchState>,
 }
 
 impl Player {
@@ -121,6 +166,7 @@ impl Player {
             base_time: now,
             played_amount: std::time::Duration::default(),
             paused: if play_at_start { None } else { Some(now) },
+            search_state: None,
         }
     }
 
@@ -167,24 +213,99 @@ impl Player {
         self.idx = self.idx.saturating_sub(1);
         self.recalculate_times();
         self.set_timer();
+        self.clear_match_idx();
     }
 
     fn forward(&mut self) {
         self.idx = self.idx.saturating_add(1);
+        if self.idx > self.ttyrec.len() - 1 {
+            self.idx = self.ttyrec.len() - 1;
+        }
         self.recalculate_times();
         self.set_timer();
+        self.clear_match_idx();
     }
 
     fn first(&mut self) {
         self.idx = 0;
         self.recalculate_times();
         self.set_timer();
+        self.clear_match_idx();
     }
 
     fn last(&mut self) {
         self.idx = self.ttyrec.len() - 1;
         self.recalculate_times();
         self.set_timer();
+        self.clear_match_idx();
+    }
+
+    fn next_match(&mut self) {
+        let idx = if let Some(state) = &self.search_state {
+            self.ttyrec
+                .matches_from(self.idx + 1, &state.query)
+                .next()
+                .map(|(idx, _)| idx)
+        } else {
+            return;
+        };
+        let idx = if let Some(idx) = idx {
+            idx
+        } else {
+            return;
+        };
+
+        self.idx = idx;
+        self.recalculate_times();
+        self.set_timer();
+
+        if let Some(state) = &mut self.search_state {
+            if let Some(idx) = &mut state.idx {
+                state.idx = Some(*idx + 1);
+            } else {
+                state.count = self.ttyrec.count_matches_from(0, &state.query);
+                state.idx = Some(
+                    state.count
+                        - self
+                            .ttyrec
+                            .count_matches_from(self.idx, &state.query),
+                );
+            }
+        }
+    }
+
+    fn prev_match(&mut self) {
+        let idx = if let Some(state) = &self.search_state {
+            self.ttyrec
+                .rmatches_from(self.idx, &state.query)
+                .next()
+                .map(|(idx, _)| idx)
+        } else {
+            return;
+        };
+        let idx = if let Some(idx) = idx {
+            idx
+        } else {
+            return;
+        };
+
+        self.idx = idx;
+        self.recalculate_times();
+        self.set_timer();
+
+        if let Some(state) = &mut self.search_state {
+            if let Some(idx) = &mut state.idx {
+                state.idx = Some(*idx - 1);
+            } else {
+                state.count = self.ttyrec.count_matches_from(0, &state.query);
+                state.idx = Some(
+                    state.count
+                        - self
+                            .ttyrec
+                            .count_matches_from(self.idx, &state.query),
+                );
+            }
+        }
     }
 
     fn toggle_pause(&mut self) {
@@ -230,6 +351,22 @@ impl Player {
         }
     }
 
+    fn set_search_query(&mut self, re: regex::bytes::Regex) {
+        let count = self.ttyrec.count_matches_from(0, &re);
+        self.search_state = Some(SearchState {
+            query: re,
+            count,
+            idx: None,
+        });
+        self.next_match();
+    }
+
+    fn clear_match_idx(&mut self) {
+        if let Some(SearchState { idx, .. }) = &mut self.search_state {
+            *idx = None;
+        }
+    }
+
     fn poll(&mut self) -> futures::Poll<Option<Vec<u8>>, Error> {
         let frame = if let Some(frame) = self.ttyrec.frame(self.idx) {
             frame
@@ -249,6 +386,7 @@ impl Player {
         self.played_amount +=
             frame.adjusted_dur(self.playback_ratio, self.max_frame_length);
         self.set_timer();
+        self.clear_match_idx();
 
         Ok(futures::Async::Ready(Some(ret)))
     }
@@ -270,6 +408,11 @@ enum FileState {
     Eof,
 }
 
+enum InputState {
+    Normal,
+    Search { query: String },
+}
+
 struct PlaySession {
     file: FileState,
     player: Player,
@@ -278,6 +421,7 @@ struct PlaySession {
     key_reader: crate::key_reader::KeyReader,
     last_frame_time: std::time::Duration,
     last_frame_screen: Option<vt100::Screen>,
+    input_state: InputState,
 }
 
 impl PlaySession {
@@ -301,10 +445,14 @@ impl PlaySession {
             key_reader: crate::key_reader::KeyReader::new(),
             last_frame_time: std::time::Duration::default(),
             last_frame_screen: None,
+            input_state: InputState::Normal,
         }
     }
 
-    fn keypress(&mut self, e: &crossterm::input::InputEvent) -> Result<bool> {
+    fn normal_keypress(
+        &mut self,
+        e: &crossterm::input::InputEvent,
+    ) -> Result<bool> {
         match e {
             crossterm::input::InputEvent::Keyboard(
                 crossterm::input::KeyEvent::Char('q'),
@@ -313,7 +461,6 @@ impl PlaySession {
                 crossterm::input::KeyEvent::Char(' '),
             ) => {
                 self.player.toggle_pause();
-                self.redraw()?;
             }
             crossterm::input::InputEvent::Keyboard(
                 crossterm::input::KeyEvent::Char('+'),
@@ -334,29 +481,94 @@ impl PlaySession {
                 crossterm::input::KeyEvent::Char('<'),
             ) => {
                 self.player.back();
-                self.redraw()?;
             }
             crossterm::input::InputEvent::Keyboard(
                 crossterm::input::KeyEvent::Char('>'),
             ) => {
                 self.player.forward();
-                self.redraw()?;
             }
             crossterm::input::InputEvent::Keyboard(
                 crossterm::input::KeyEvent::Char('0'),
             ) => {
                 self.player.first();
-                self.redraw()?;
             }
             crossterm::input::InputEvent::Keyboard(
                 crossterm::input::KeyEvent::Char('$'),
             ) => {
                 self.player.last();
-                self.redraw()?;
+            }
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('/'),
+            ) => {
+                self.input_state = InputState::Search {
+                    query: String::new(),
+                };
+            }
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('n'),
+            ) => {
+                self.player.next_match();
+            }
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char('p'),
+            ) => {
+                self.player.prev_match();
             }
             _ => {}
         }
         Ok(false)
+    }
+
+    fn search_keypress(
+        &mut self,
+        e: &crossterm::input::InputEvent,
+    ) -> Result<bool> {
+        match e {
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Esc,
+            ) => {
+                self.input_state = InputState::Normal;
+            }
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Char(c),
+            ) => match &mut self.input_state {
+                InputState::Search { query } => {
+                    query.push(*c);
+                }
+                _ => unreachable!(),
+            },
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Backspace,
+            ) => match &mut self.input_state {
+                InputState::Search { query } => {
+                    query.pop();
+                }
+                _ => unreachable!(),
+            },
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Enter,
+            ) => {
+                let query =
+                    if let InputState::Search { query } = &self.input_state {
+                        query.to_string()
+                    } else {
+                        unreachable!()
+                    };
+                if let Ok(re) = regex::bytes::Regex::new(&query) {
+                    self.input_state = InputState::Normal;
+                    self.player.set_search_query(re);
+                }
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    fn keypress(&mut self, e: &crossterm::input::InputEvent) -> Result<bool> {
+        match &mut self.input_state {
+            InputState::Normal => self.normal_keypress(e),
+            InputState::Search { .. } => self.search_keypress(e),
+        }
     }
 
     fn redraw(&self) -> Result<()> {
@@ -380,75 +592,181 @@ impl PlaySession {
     }
 
     fn draw_ui(&self) -> Result<()> {
-        if self.player.paused() {
-            let msg = format!(
-                "paused (frame {}/{})",
-                self.player.current_frame_idx() + 1,
-                self.player.num_frames()
-            );
-            let size = crate::term::Size::get()?;
+        let size = crate::term::Size::get()?;
 
-            self.write(b"\x1b7")?;
-            self.write(b"\x1b[37;44m\x1b[2;2H")?;
-            self.write("╭".as_bytes())?;
-            self.write("─".repeat(2 + msg.len()).as_bytes())?;
-            self.write("╮".as_bytes())?;
-            self.write(b"\x1b[3;2H")?;
-            self.write(format!("│ {} │", msg).as_bytes())?;
-            self.write(b"\x1b[4;2H")?;
-            self.write("╰".as_bytes())?;
-            self.write("─".repeat(2 + msg.len()).as_bytes())?;
-            self.write("╯".as_bytes())?;
-            self.write(
-                format!("\x1b[{};{}H", size.rows - 9, size.cols - 32)
-                    .as_bytes(),
-            )?;
-            self.write("╭".as_bytes())?;
-            self.write("─".repeat(30).as_bytes())?;
-            self.write("╮".as_bytes())?;
-            self.write(
-                format!("\x1b[{};{}H", size.rows - 8, size.cols - 32)
-                    .as_bytes(),
-            )?;
-            self.write("│             Keys             │".as_bytes())?;
-            self.write(
-                format!("\x1b[{};{}H", size.rows - 7, size.cols - 32)
-                    .as_bytes(),
-            )?;
-            self.write("│ q: quit                      │".as_bytes())?;
-            self.write(
-                format!("\x1b[{};{}H", size.rows - 6, size.cols - 32)
-                    .as_bytes(),
-            )?;
-            self.write("│ Space: pause/unpause         │".as_bytes())?;
-            self.write(
-                format!("\x1b[{};{}H", size.rows - 5, size.cols - 32)
-                    .as_bytes(),
-            )?;
-            self.write("│ </>: previous/next frame     │".as_bytes())?;
-            self.write(
-                format!("\x1b[{};{}H", size.rows - 4, size.cols - 32)
-                    .as_bytes(),
-            )?;
-            self.write("│ 0/$: first/last frame        │".as_bytes())?;
-            self.write(
-                format!("\x1b[{};{}H", size.rows - 3, size.cols - 32)
-                    .as_bytes(),
-            )?;
-            self.write("│ +/-: increase/decrease speed │".as_bytes())?;
-            self.write(
-                format!("\x1b[{};{}H", size.rows - 2, size.cols - 32)
-                    .as_bytes(),
-            )?;
-            self.write("│ =: normal speed              │".as_bytes())?;
-            self.write(
-                format!("\x1b[{};{}H", size.rows - 1, size.cols - 32)
-                    .as_bytes(),
-            )?;
-            self.write("╰".as_bytes())?;
-            self.write("─".repeat(30).as_bytes())?;
-            self.write("╯".as_bytes())?;
+        if self.player.paused() {
+            self.write(b"\x1b7\x1b[37;44m\x1b[?25l")?;
+
+            self.draw_status()?;
+            self.draw_help(size)?;
+
             self.write(b"\x1b8")?;
+        }
+
+        self.draw_search(size)?;
+
+        Ok(())
+    }
+
+    fn draw_status(&self) -> Result<()> {
+        let msg = format!(
+            "paused (frame {}/{})",
+            self.player.current_frame_idx() + 1,
+            self.player.num_frames()
+        );
+
+        self.write(b"\x1b[2;2H")?;
+        self.write("╭".as_bytes())?;
+        self.write("─".repeat(2 + msg.len()).as_bytes())?;
+        self.write("╮".as_bytes())?;
+
+        self.write(b"\x1b[3;2H")?;
+        self.write(format!("│ {} │", msg).as_bytes())?;
+
+        self.write(b"\x1b[4;2H")?;
+        self.write("╰".as_bytes())?;
+        self.write("─".repeat(2 + msg.len()).as_bytes())?;
+        self.write("╯".as_bytes())?;
+
+        Ok(())
+    }
+
+    fn draw_help(&self, size: crate::term::Size) -> Result<()> {
+        self.write(
+            format!("\x1b[{};{}H", size.rows - 11, size.cols - 32).as_bytes(),
+        )?;
+        self.write("╭".as_bytes())?;
+        self.write("─".repeat(30).as_bytes())?;
+        self.write("╮".as_bytes())?;
+
+        self.write(
+            format!("\x1b[{};{}H", size.rows - 10, size.cols - 32).as_bytes(),
+        )?;
+        self.write("│             Keys             │".as_bytes())?;
+        self.write(
+            format!("\x1b[{};{}H", size.rows - 9, size.cols - 32).as_bytes(),
+        )?;
+        self.write("│ q: quit                      │".as_bytes())?;
+        self.write(
+            format!("\x1b[{};{}H", size.rows - 8, size.cols - 32).as_bytes(),
+        )?;
+        self.write("│ Space: pause/unpause         │".as_bytes())?;
+        self.write(
+            format!("\x1b[{};{}H", size.rows - 7, size.cols - 32).as_bytes(),
+        )?;
+        self.write("│ </>: previous/next frame     │".as_bytes())?;
+        self.write(
+            format!("\x1b[{};{}H", size.rows - 6, size.cols - 32).as_bytes(),
+        )?;
+        self.write("│ 0/$: first/last frame        │".as_bytes())?;
+        self.write(
+            format!("\x1b[{};{}H", size.rows - 5, size.cols - 32).as_bytes(),
+        )?;
+        self.write("│ +/-: increase/decrease speed │".as_bytes())?;
+        self.write(
+            format!("\x1b[{};{}H", size.rows - 4, size.cols - 32).as_bytes(),
+        )?;
+        self.write("│ =: normal speed              │".as_bytes())?;
+        self.write(
+            format!("\x1b[{};{}H", size.rows - 3, size.cols - 32).as_bytes(),
+        )?;
+        self.write("│ /: search                    │".as_bytes())?;
+        self.write(
+            format!("\x1b[{};{}H", size.rows - 2, size.cols - 32).as_bytes(),
+        )?;
+        self.write("│ n/p: next/previous match     │".as_bytes())?;
+
+        self.write(
+            format!("\x1b[{};{}H", size.rows - 1, size.cols - 32).as_bytes(),
+        )?;
+        self.write("╰".as_bytes())?;
+        self.write("─".repeat(30).as_bytes())?;
+        self.write("╯".as_bytes())?;
+
+        Ok(())
+    }
+
+    fn draw_search(&self, size: crate::term::Size) -> Result<()> {
+        match &self.input_state {
+            InputState::Normal => {
+                if !self.player.paused() {
+                    return Ok(());
+                }
+
+                if let Some(state) = &self.player.search_state {
+                    self.write(b"\x1b7\x1b[37;44m")?;
+                    self.write(
+                        format!("\x1b[{};{}H", 2, size.cols - 32).as_bytes(),
+                    )?;
+                    self.write("╭".as_bytes())?;
+                    self.write("─".repeat(30).as_bytes())?;
+                    self.write("╮".as_bytes())?;
+
+                    let msg = if let Some(idx) = state.idx {
+                        format!("match ({}/{})", idx + 1, state.count)
+                    } else {
+                        format!("match (-/{})", state.count)
+                    };
+                    self.write(
+                        format!("\x1b[{};{}H", 3, size.cols - 32).as_bytes(),
+                    )?;
+                    self.write(
+                        format!("│ {}:{} │", msg, " ".repeat(27 - msg.len()))
+                            .as_bytes(),
+                    )?;
+
+                    self.write(
+                        format!("\x1b[{};{}H", 4, size.cols - 32).as_bytes(),
+                    )?;
+                    self.write(
+                        format!("│ {:28} │", state.query.as_str()).as_bytes(),
+                    )?;
+
+                    self.write(
+                        format!("\x1b[{};{}H", 5, size.cols - 32).as_bytes(),
+                    )?;
+                    self.write("╰".as_bytes())?;
+                    self.write("─".repeat(30).as_bytes())?;
+                    self.write("╯".as_bytes())?;
+
+                    self.write(b"\x1b8")?;
+                }
+            }
+            InputState::Search { query } => {
+                self.write(b"\x1b7\x1b[37;44m")?;
+                self.write(
+                    format!("\x1b[{};{}H", 2, size.cols - 32).as_bytes(),
+                )?;
+                self.write("╭".as_bytes())?;
+                self.write("─".repeat(30).as_bytes())?;
+                self.write("╮".as_bytes())?;
+
+                self.write(
+                    format!("\x1b[{};{}H", 3, size.cols - 32).as_bytes(),
+                )?;
+                self.write("│ search:                      │".as_bytes())?;
+
+                self.write(
+                    format!("\x1b[{};{}H", 4, size.cols - 32).as_bytes(),
+                )?;
+                self.write(format!("│ {:28} │", query).as_bytes())?;
+
+                self.write(
+                    format!("\x1b[{};{}H", 5, size.cols - 32).as_bytes(),
+                )?;
+                self.write("╰".as_bytes())?;
+                self.write("─".repeat(30).as_bytes())?;
+                self.write("╯".as_bytes())?;
+
+                self.write(
+                    format!(
+                        "\x1b8\x1b[{};{}H\x1b[?25h",
+                        4,
+                        size.cols as usize - 32 + 2 + query.len()
+                    )
+                    .as_bytes(),
+                )?;
+            }
         }
         Ok(())
     }
@@ -555,6 +873,7 @@ impl PlaySession {
             self.write(b"\x1b[?25h")?;
             Ok(component_future::Async::Ready(()))
         } else {
+            self.redraw()?;
             Ok(component_future::Async::DidWork)
         }
     }

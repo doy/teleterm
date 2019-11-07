@@ -6,7 +6,7 @@ const CLEAR: &[&[u8]] =
 const WINDOW_TITLE: &[(&[u8], &[u8])] =
     &[(b"\x1b]0;", b"\x07"), (b"\x1b]2;", b"\x07")];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Size {
     pub rows: u16,
     pub cols: u16,

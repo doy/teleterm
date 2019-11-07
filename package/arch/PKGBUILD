@@ -1,6 +1,6 @@
 # Maintainer: Jesse Luehrs <doy@tozt.net>
 pkgname=teleterm
-pkgver=0.1.5
+pkgver=0.1.6
 pkgrel=1
 makedepends=('rust' 'cargo')
 depends=('openssl')

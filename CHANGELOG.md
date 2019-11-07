@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6] - 2019-11-07
+
+### Added
+
+* `tt play` now has key commands for seeking to the start or end of the file.
+* `tt play` now allows searching for frames whose contents match a regex.
+
 ## [0.1.5] - 2019-11-06
 
 ### Fixed

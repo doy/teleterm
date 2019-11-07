@@ -135,6 +135,7 @@ impl Ttyrec {
 struct SearchState {
     query: regex::bytes::Regex,
     count: usize,
+    total_frame_count: usize,
     idx: Option<usize>,
 }
 
@@ -263,7 +264,10 @@ impl Player {
             if let Some(idx) = &mut state.idx {
                 state.idx = Some(*idx + 1);
             } else {
-                state.count = self.ttyrec.count_matches_from(0, &state.query);
+                if state.total_frame_count != self.ttyrec.len() {
+                    state.count =
+                        self.ttyrec.count_matches_from(0, &state.query);
+                }
                 state.idx = Some(
                     state.count
                         - self
@@ -297,7 +301,10 @@ impl Player {
             if let Some(idx) = &mut state.idx {
                 state.idx = Some(*idx - 1);
             } else {
-                state.count = self.ttyrec.count_matches_from(0, &state.query);
+                if state.total_frame_count != self.ttyrec.len() {
+                    state.count =
+                        self.ttyrec.count_matches_from(0, &state.query);
+                }
                 state.idx = Some(
                     state.count
                         - self
@@ -356,6 +363,7 @@ impl Player {
         self.search_state = Some(SearchState {
             query: re,
             count,
+            total_frame_count: self.ttyrec.len(),
             idx: None,
         });
         self.next_match();

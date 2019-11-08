@@ -42,7 +42,7 @@ twoway = "0.2"
 url = "2"
 users = "0.9"
 uuid = { version = "0.8", features = ["v4"] }
-vt100 = "0.4"
+vt100 = "0.5"
 
 [[bin]]
 name = "tt"

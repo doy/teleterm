@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+* `tt play` now supports hiding the pause ui.
+
 ### Fixed
 
 * Bump `vt100` dep to fix a bunch of parsing bugs.

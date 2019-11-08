@@ -430,6 +430,7 @@ struct PlaySession {
     last_frame_time: std::time::Duration,
     last_frame_screen: Option<vt100::Screen>,
     input_state: InputState,
+    hide_ui: bool,
 }
 
 impl PlaySession {
@@ -454,6 +455,7 @@ impl PlaySession {
             last_frame_time: std::time::Duration::default(),
             last_frame_screen: None,
             input_state: InputState::Normal,
+            hide_ui: false,
         }
     }
 
@@ -469,6 +471,13 @@ impl PlaySession {
                 crossterm::input::KeyEvent::Char(' '),
             ) => {
                 self.player.toggle_pause();
+            }
+            crossterm::input::InputEvent::Keyboard(
+                crossterm::input::KeyEvent::Backspace,
+            ) => {
+                if self.player.paused() {
+                    self.hide_ui = !self.hide_ui;
+                }
             }
             crossterm::input::InputEvent::Keyboard(
                 crossterm::input::KeyEvent::Char('+'),
@@ -602,7 +611,7 @@ impl PlaySession {
     fn draw_ui(&self) -> Result<()> {
         let size = crate::term::Size::get()?;
 
-        if self.player.paused() {
+        if self.player.paused() && !self.hide_ui {
             self.write(b"\x1b7\x1b[37;44m\x1b[?25l")?;
 
             self.draw_status()?;
@@ -641,24 +650,28 @@ impl PlaySession {
 
     fn draw_help(&self, size: crate::term::Size) -> Result<()> {
         self.write(
-            format!("\x1b[{};{}H", size.rows - 11, size.cols - 32).as_bytes(),
+            format!("\x1b[{};{}H", size.rows - 12, size.cols - 32).as_bytes(),
         )?;
         self.write("╭".as_bytes())?;
         self.write("─".repeat(30).as_bytes())?;
         self.write("╮".as_bytes())?;
 
         self.write(
-            format!("\x1b[{};{}H", size.rows - 10, size.cols - 32).as_bytes(),
+            format!("\x1b[{};{}H", size.rows - 11, size.cols - 32).as_bytes(),
         )?;
         self.write("│             Keys             │".as_bytes())?;
         self.write(
-            format!("\x1b[{};{}H", size.rows - 9, size.cols - 32).as_bytes(),
+            format!("\x1b[{};{}H", size.rows - 10, size.cols - 32).as_bytes(),
         )?;
         self.write("│ q: quit                      │".as_bytes())?;
         self.write(
-            format!("\x1b[{};{}H", size.rows - 8, size.cols - 32).as_bytes(),
+            format!("\x1b[{};{}H", size.rows - 9, size.cols - 32).as_bytes(),
         )?;
         self.write("│ Space: pause/unpause         │".as_bytes())?;
+        self.write(
+            format!("\x1b[{};{}H", size.rows - 8, size.cols - 32).as_bytes(),
+        )?;
+        self.write("│ Backspace: hide/show ui      │".as_bytes())?;
         self.write(
             format!("\x1b[{};{}H", size.rows - 7, size.cols - 32).as_bytes(),
         )?;

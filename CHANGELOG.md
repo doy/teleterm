@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+* Bump `vt100` dep to fix a bunch of parsing bugs.
+
 ## [0.1.6] - 2019-11-07
 
 ### Added

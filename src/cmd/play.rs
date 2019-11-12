@@ -846,7 +846,7 @@ impl PlaySession {
                     }));
                 let size = crate::term::Size::get()?;
                 let reader = ttyrec::Reader::new(file);
-                let parser = vt100::Parser::new(size.rows, size.cols);
+                let parser = vt100::Parser::new(size.rows, size.cols, 0);
                 self.file = FileState::Open { reader, parser };
                 Ok(component_future::Async::DidWork)
             }

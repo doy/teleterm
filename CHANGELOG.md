@@ -9,6 +9,9 @@
 ### Fixed
 
 * Bump `vt100` dep to fix a bunch of parsing bugs.
+* Now uses `vt100` to buffer data, removing the need for the `buffer_size`
+  option, using less data overall, and hopefully fixing the inconsistencies
+  when watching someone stream from a different terminal type.
 
 ## [0.1.6] - 2019-11-07
 

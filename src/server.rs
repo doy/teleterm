@@ -49,7 +49,7 @@ struct TerminalInfo {
     size: crate::term::Size,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 // XXX https://github.com/rust-lang/rust/issues/64362
 #[allow(dead_code)]
 enum ConnectionState {
@@ -85,6 +85,16 @@ impl ConnectionState {
             Self::LoggedIn { username, .. } => Some(username),
             Self::Streaming { username, .. } => Some(username),
             Self::Watching { username, .. } => Some(username),
+        }
+    }
+
+    fn term_info(&mut self) -> Option<&TerminalInfo> {
+        match self {
+            Self::Accepted => None,
+            Self::LoggingIn { term_info, .. } => Some(term_info),
+            Self::LoggedIn { term_info, .. } => Some(term_info),
+            Self::Streaming { term_info, .. } => Some(term_info),
+            Self::Watching { term_info, .. } => Some(term_info),
         }
     }
 
@@ -147,25 +157,6 @@ impl ConnectionState {
         }
     }
 
-    fn login_oauth(
-        &mut self,
-        term_type: &str,
-        size: crate::term::Size,
-        username: &str,
-    ) {
-        if let Self::Accepted = self {
-            *self = Self::LoggedIn {
-                username: username.to_string(),
-                term_info: TerminalInfo {
-                    term: term_type.to_string(),
-                    size,
-                },
-            };
-        } else {
-            unreachable!()
-        }
-    }
-
     fn login_oauth_start(
         &mut self,
         term_type: &str,
@@ -177,17 +168,6 @@ impl ConnectionState {
                     term: term_type.to_string(),
                     size,
                 },
-            };
-        } else {
-            unreachable!()
-        }
-    }
-
-    fn login_oauth_finish(&mut self, username: &str) {
-        if let Self::LoggingIn { term_info } = self {
-            *self = Self::LoggedIn {
-                username: username.to_string(),
-                term_info: term_info.clone(),
             };
         } else {
             unreachable!()
@@ -436,7 +416,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 {
                     let term_type = term_type.to_string();
                     let client = conn.oauth_client.take().unwrap();
-                    let mut new_state = conn.state.clone();
                     let fut = tokio::fs::File::open(token_filename.clone())
                         .with_context(move || crate::error::OpenFile {
                             filename: token_filename
@@ -463,10 +442,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                                 })
                         })
                         .map(move |username| {
-                            new_state
-                                .login_oauth(&term_type, size, &username);
                             (
-                                new_state,
+                                ConnectionState::LoggedIn {
+                                    username: username.clone(),
+                                    term_info: TerminalInfo {
+                                        term: term_type,
+                                        size,
+                                    },
+                                },
                                 crate::protocol::Message::logged_in(
                                     &username,
                                 ),
@@ -625,13 +608,18 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             }
         })?;
 
-        let mut new_state = conn.state.clone();
+        let term_info = conn.state.term_info().unwrap().clone();
         let fut = client
             .get_access_token_from_auth_code(code)
             .and_then(|token| client.get_username_from_access_token(&token))
             .map(|username| {
-                new_state.login_oauth_finish(&username);
-                (new_state, crate::protocol::Message::logged_in(&username))
+                (
+                    ConnectionState::LoggedIn {
+                        term_info,
+                        username: username.clone(),
+                    },
+                    crate::protocol::Message::logged_in(&username),
+                )
             });
 
         Ok(Some(Box::new(fut)))

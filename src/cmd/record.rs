@@ -26,7 +26,6 @@ impl crate::config::Config for Config {
     {
         Box::new(RecordSession::new(
             &self.ttyrec.filename,
-            self.command.buffer_size,
             &self.command.command,
             &self.command.args,
         ))
@@ -68,23 +67,20 @@ enum FileState {
 
 struct RecordSession {
     file: FileState,
+    frame_data: Vec<u8>,
+
     process:
         tokio_pty_process_stream::ResizingProcess<crate::async_stdin::Stdin>,
-    stdout: tokio::io::Stdout,
-    buffer: crate::term::Buffer,
-    sent_local: usize,
-    needs_flush: bool,
-    done: bool,
     raw_screen: Option<crossterm::screen::RawScreen>,
+    done: bool,
+
+    stdout: tokio::io::Stdout,
+    to_write_stdout: std::collections::VecDeque<u8>,
+    needs_flush: bool,
 }
 
 impl RecordSession {
-    fn new(
-        filename: &str,
-        buffer_size: usize,
-        cmd: &str,
-        args: &[String],
-    ) -> Self {
+    fn new(filename: &str, cmd: &str, args: &[String]) -> Self {
         let input = crate::async_stdin::Stdin::new();
         let process = tokio_pty_process_stream::ResizingProcess::new(
             tokio_pty_process_stream::Process::new(cmd, args, input),
@@ -94,18 +90,21 @@ impl RecordSession {
             file: FileState::Closed {
                 filename: filename.to_string(),
             },
+            frame_data: vec![],
+
             process,
-            stdout: tokio::io::stdout(),
-            buffer: crate::term::Buffer::new(buffer_size),
-            sent_local: 0,
-            needs_flush: false,
-            done: false,
             raw_screen: None,
+            done: false,
+
+            stdout: tokio::io::stdout(),
+            to_write_stdout: std::collections::VecDeque::new(),
+            needs_flush: false,
         }
     }
 
     fn record_bytes(&mut self, buf: &[u8]) {
-        self.sent_local -= self.buffer.append_client(buf, self.sent_local);
+        self.frame_data.extend(buf);
+        self.to_write_stdout.extend(buf);
     }
 }
 
@@ -142,13 +141,9 @@ impl RecordSession {
                             filename: filename.clone(),
                         }
                     }));
-                let mut writer = ttyrec::Writer::new(file);
-                if !self.buffer.contents().is_empty() {
-                    writer
-                        .frame(self.buffer.contents())
-                        .context(crate::error::WriteTtyrec)?;
-                }
-                self.file = FileState::Open { writer };
+                self.file = FileState::Open {
+                    writer: ttyrec::Writer::new(file),
+                };
                 Ok(component_future::Async::DidWork)
             }
             FileState::Open { .. } => {
@@ -178,9 +173,6 @@ impl RecordSession {
             }
             Some(tokio_pty_process_stream::Event::Output { data }) => {
                 self.record_bytes(&data);
-                if let FileState::Open { writer } = &mut self.file {
-                    writer.frame(&data).context(crate::error::WriteTtyrec)?;
-                }
             }
             Some(tokio_pty_process_stream::Event::Resize { .. }) => {}
             None => {
@@ -195,15 +187,19 @@ impl RecordSession {
     }
 
     fn poll_write_terminal(&mut self) -> component_future::Poll<(), Error> {
-        if self.sent_local == self.buffer.len() {
+        if self.to_write_stdout.is_empty() {
             return Ok(component_future::Async::NothingToDo);
         }
 
+        let (a, b) = self.to_write_stdout.as_slices();
+        let buf = if a.is_empty() { b } else { a };
         let n = component_future::try_ready!(self
             .stdout
-            .poll_write(&self.buffer.contents()[self.sent_local..])
+            .poll_write(buf)
             .context(crate::error::WriteTerminal));
-        self.sent_local += n;
+        for _ in 0..n {
+            self.to_write_stdout.pop_front();
+        }
         self.needs_flush = true;
         Ok(component_future::Async::DidWork)
     }
@@ -228,6 +224,13 @@ impl RecordSession {
                 return Ok(component_future::Async::NothingToDo);
             }
         };
+
+        if !self.frame_data.is_empty() {
+            writer
+                .frame(&self.frame_data)
+                .context(crate::error::WriteTtyrec)?;
+            self.frame_data.clear();
+        }
 
         if writer.needs_write() {
             component_future::try_ready!(writer

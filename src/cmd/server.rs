@@ -32,7 +32,6 @@ impl crate::config::Config for Config {
         if let Some(tls_identity_file) = &self.server.tls_identity_file {
             create_server_tls(
                 self.server.listen_address,
-                self.server.buffer_size,
                 self.server.read_timeout,
                 tls_identity_file,
                 self.server.allowed_login_methods.clone(),
@@ -43,7 +42,6 @@ impl crate::config::Config for Config {
         } else {
             create_server(
                 self.server.listen_address,
-                self.server.buffer_size,
                 self.server.read_timeout,
                 self.server.allowed_login_methods.clone(),
                 self.oauth_configs.clone(),
@@ -73,7 +71,6 @@ pub fn config(
 
 fn create_server(
     address: std::net::SocketAddr,
-    buffer_size: usize,
     read_timeout: std::time::Duration,
     allowed_login_methods: std::collections::HashSet<
         crate::protocol::AuthType,
@@ -93,7 +90,6 @@ fn create_server(
     let acceptor = listener.incoming().context(crate::error::Acceptor);
     let server = crate::server::Server::new(
         Box::new(acceptor),
-        buffer_size,
         read_timeout,
         allowed_login_methods,
         oauth_configs,
@@ -104,7 +100,6 @@ fn create_server(
 
 fn create_server_tls(
     address: std::net::SocketAddr,
-    buffer_size: usize,
     read_timeout: std::time::Duration,
     tls_identity_file: &str,
     allowed_login_methods: std::collections::HashSet<
@@ -133,7 +128,6 @@ fn create_server_tls(
         .map(move |sock| tls_acceptor.accept(sock));
     let server = crate::server::tls::Server::new(
         Box::new(acceptor),
-        buffer_size,
         read_timeout,
         allowed_login_methods,
         oauth_configs,

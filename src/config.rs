@@ -9,7 +9,6 @@ const CONFIG_FILENAME: &str = "config.toml";
 
 const ALLOWED_LOGIN_METHODS_OPTION: &str = "allowed-login-methods";
 const ARGS_OPTION: &str = "args";
-const BUFFER_SIZE_OPTION: &str = "buffer-size";
 const COMMAND_OPTION: &str = "command";
 const CONNECT_ADDRESS_OPTION: &str = "connect-address";
 const FILENAME_OPTION: &str = "filename";
@@ -25,7 +24,6 @@ const TLS_OPTION: &str = "tls";
 
 const DEFAULT_LISTEN_ADDRESS: &str = "127.0.0.1:4144";
 const DEFAULT_CONNECT_ADDRESS: &str = "127.0.0.1:4144";
-const DEFAULT_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 const DEFAULT_READ_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(120);
 const DEFAULT_AUTH_TYPE: crate::protocol::AuthType =
@@ -234,9 +232,6 @@ pub struct Server {
     )]
     pub listen_address: std::net::SocketAddr,
 
-    #[serde(default = "default_buffer_size")]
-    pub buffer_size: usize,
-
     #[serde(
         rename = "read_timeout_secs",
         deserialize_with = "read_timeout",
@@ -264,7 +259,6 @@ impl Server {
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         let listen_address_help =
             "Host and port to listen on (defaults to localhost:4144)";
-        let buffer_size_help = "Number of bytes to store for each connection in order to send them to newly connected watchers (defaults to 4194304)";
         let read_timeout_help = "Number of idle seconds to wait before disconnecting a client (defaults to 30)";
         let tls_identity_file_help = "File containing the TLS certificate and private key to use for accepting TLS connections. Must be in pfx format. The server will only allow connections over TLS if this option is set.";
         let allowed_login_methods_help = "Comma separated list containing the auth methods this server should allow. Allows everything by default, valid values are plain, recurse_center";
@@ -274,13 +268,6 @@ impl Server {
                 .takes_value(true)
                 .value_name("HOST:PORT")
                 .help(listen_address_help),
-        )
-        .arg(
-            clap::Arg::with_name(BUFFER_SIZE_OPTION)
-                .long(BUFFER_SIZE_OPTION)
-                .takes_value(true)
-                .value_name("BYTES")
-                .help(buffer_size_help),
         )
         .arg(
             clap::Arg::with_name(READ_TIMEOUT_OPTION)
@@ -317,12 +304,6 @@ impl Server {
                 .parse()
                 .context(crate::error::ParseAddr)?;
         }
-        if matches.is_present(BUFFER_SIZE_OPTION) {
-            let s = matches.value_of(BUFFER_SIZE_OPTION).unwrap();
-            self.buffer_size = s
-                .parse()
-                .context(crate::error::ParseBufferSize { input: s })?;
-        }
         if matches.is_present(READ_TIMEOUT_OPTION) {
             let s = matches.value_of(READ_TIMEOUT_OPTION).unwrap();
             self.read_timeout = s
@@ -355,7 +336,6 @@ impl Default for Server {
     fn default() -> Self {
         Self {
             listen_address: default_listen_address(),
-            buffer_size: default_buffer_size(),
             read_timeout: default_read_timeout(),
             tls_identity_file: None,
             allowed_login_methods: default_allowed_login_methods(),
@@ -381,10 +361,6 @@ fn default_listen_address() -> std::net::SocketAddr {
 
 fn to_listen_address(address: &str) -> Result<std::net::SocketAddr> {
     address.parse().context(crate::error::ParseAddr)
-}
-
-fn default_buffer_size() -> usize {
-    DEFAULT_BUFFER_SIZE
 }
 
 fn read_timeout<'a, D>(

@@ -49,7 +49,7 @@ struct TerminalInfo {
     size: crate::term::Size,
 }
 
-#[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 // XXX https://github.com/rust-lang/rust/issues/64362
 #[allow(dead_code)]
 enum ConnectionState {
@@ -64,7 +64,7 @@ enum ConnectionState {
     Streaming {
         username: String,
         term_info: TerminalInfo,
-        saved_data: crate::term::Buffer,
+        term: vt100::Parser,
     },
     Watching {
         username: String,
@@ -108,22 +108,22 @@ impl ConnectionState {
         }
     }
 
-    fn saved_data(&self) -> Option<&crate::term::Buffer> {
+    fn term(&self) -> Option<&vt100::Parser> {
         match self {
             Self::Accepted => None,
             Self::LoggingIn { .. } => None,
             Self::LoggedIn { .. } => None,
-            Self::Streaming { saved_data, .. } => Some(saved_data),
+            Self::Streaming { term, .. } => Some(term),
             Self::Watching { .. } => None,
         }
     }
 
-    fn saved_data_mut(&mut self) -> Option<&mut crate::term::Buffer> {
+    fn term_mut(&mut self) -> Option<&mut vt100::Parser> {
         match self {
             Self::Accepted => None,
             Self::LoggingIn { .. } => None,
             Self::LoggedIn { .. } => None,
-            Self::Streaming { saved_data, .. } => Some(saved_data),
+            Self::Streaming { term, .. } => Some(term),
             Self::Watching { .. } => None,
         }
     }
@@ -174,7 +174,7 @@ impl ConnectionState {
         }
     }
 
-    fn stream(&mut self, buffer_size: usize) {
+    fn stream(&mut self) {
         if let Self::LoggedIn {
             username,
             term_info,
@@ -183,7 +183,7 @@ impl ConnectionState {
             *self = Self::Streaming {
                 username,
                 term_info,
-                saved_data: crate::term::Buffer::new(buffer_size),
+                term: vt100::Parser::default(),
             };
         } else {
             unreachable!()
@@ -265,8 +265,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         };
         let title = self
             .state
-            .saved_data()
-            .map_or("", crate::term::Buffer::title);
+            .term()
+            .map_or("", |parser| parser.screen().title());
 
         // i don't really care if things break for a connection that has been
         // idle for 136 years
@@ -301,7 +301,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 pub struct Server<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
 > {
-    buffer_size: usize,
     read_timeout: std::time::Duration,
     acceptor:
         Box<dyn futures::stream::Stream<Item = S, Error = Error> + Send>,
@@ -321,7 +320,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         acceptor: Box<
             dyn futures::stream::Stream<Item = S, Error = Error> + Send,
         >,
-        buffer_size: usize,
         read_timeout: std::time::Duration,
         allowed_auth_types: std::collections::HashSet<
             crate::protocol::AuthType,
@@ -332,7 +330,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         >,
     ) -> Self {
         Self {
-            buffer_size,
             read_timeout,
             acceptor,
             connections: std::collections::HashMap::new(),
@@ -481,7 +478,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         let username = conn.state.username().unwrap();
 
         log::info!("{}: stream({})", conn.id, username);
-        conn.state.stream(self.buffer_size);
+        conn.state.stream();
 
         Ok(())
     }
@@ -496,8 +493,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         if let Some(stream_conn) = self.connections.get(&id) {
             let data = stream_conn
                 .state
-                .saved_data()
-                .map(crate::term::Buffer::contents)
+                .term()
+                .map(|parser| parser.screen().contents_formatted())
                 .ok_or_else(|| Error::InvalidWatchId {
                     id: id.to_string(),
                 })?;
@@ -505,7 +502,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             log::info!("{}: watch({}, {})", conn.id, username, id);
             conn.state.watch(&id);
             conn.send_message(crate::protocol::Message::terminal_output(
-                data,
+                &data,
             ));
 
             Ok(())
@@ -528,14 +525,16 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         conn: &mut Connection<S>,
         data: &[u8],
     ) -> Result<()> {
-        let saved_data = conn.state.saved_data_mut().unwrap();
+        let parser = conn.state.term_mut().unwrap();
 
-        saved_data.append_server(data);
+        let screen = parser.screen().clone();
+        parser.process(data);
+        let diff = parser.screen().contents_diff(&screen);
         for watch_conn in self.watchers_mut() {
             let watch_id = watch_conn.state.watch_id().unwrap();
             if conn.id == watch_id {
                 watch_conn.send_message(
-                    crate::protocol::Message::terminal_output(data),
+                    crate::protocol::Message::terminal_output(&diff),
                 );
             }
         }
@@ -582,8 +581,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         size: crate::term::Size,
     ) -> Result<()> {
         let term_info = conn.state.term_info_mut().unwrap();
-
         term_info.size = size;
+
+        if let Some(parser) = conn.state.term_mut() {
+            parser.set_size(size.rows, size.cols);
+        }
 
         Ok(())
     }

@@ -22,7 +22,6 @@ impl Server {
                     Error = Error,
                 > + Send,
         >,
-        buffer_size: usize,
         read_timeout: std::time::Duration,
         allowed_login_methods: std::collections::HashSet<
             crate::protocol::AuthType,
@@ -38,7 +37,6 @@ impl Server {
                 Box::new(
                     tls_sock_r.context(crate::error::SocketChannelReceive),
                 ),
-                buffer_size,
                 read_timeout,
                 allowed_login_methods,
                 oauth_configs,

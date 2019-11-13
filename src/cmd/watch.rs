@@ -522,7 +522,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 "".to_string()
             };
             let display_size_plain = format!("{}", &session.size);
-            let display_size_full = if &session.size == sessions.size() {
+            let display_size_full = if session.size == sessions.size() {
                 // XXX i should be able to use crossterm::style here, but
                 // it has bugs
                 format!("\x1b[32m{}\x1b[m", display_size_plain)

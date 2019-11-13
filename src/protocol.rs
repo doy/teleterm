@@ -226,13 +226,13 @@ impl Message {
     pub fn login(
         auth: &Auth,
         term_type: &str,
-        size: &crate::term::Size,
+        size: crate::term::Size,
     ) -> Self {
         Self::Login {
             proto_version: PROTO_VERSION,
             auth: auth.clone(),
             term_type: term_type.to_string(),
-            size: size.clone(),
+            size,
         }
     }
 
@@ -274,8 +274,8 @@ impl Message {
         }
     }
 
-    pub fn resize(size: &crate::term::Size) -> Self {
-        Self::Resize { size: size.clone() }
+    pub fn resize(size: crate::term::Size) -> Self {
+        Self::Resize { size }
     }
 
     pub fn logged_in(username: &str) -> Self {
@@ -466,7 +466,7 @@ impl From<&Message> for Packet {
         fn write_str(val: &str, data: &mut Vec<u8>) {
             write_bytes(val.as_bytes(), data);
         }
-        fn write_size(val: &crate::term::Size, data: &mut Vec<u8>) {
+        fn write_size(val: crate::term::Size, data: &mut Vec<u8>) {
             write_u16(val.rows, data);
             write_u16(val.cols, data);
         }
@@ -474,7 +474,7 @@ impl From<&Message> for Packet {
             write_str(&val.id, data);
             write_str(&val.username, data);
             write_str(&val.term_type, data);
-            write_size(&val.size, data);
+            write_size(val.size, data);
             write_u32(val.idle_time, data);
             write_str(&val.title, data);
             write_u32(val.watchers, data);
@@ -511,7 +511,7 @@ impl From<&Message> for Packet {
                 write_u8(*proto_version, &mut data);
                 write_auth(auth, &mut data);
                 write_str(term_type, &mut data);
-                write_size(size, &mut data);
+                write_size(*size, &mut data);
             }
             Message::StartStreaming => {}
             Message::StartWatching { id } => {
@@ -530,7 +530,7 @@ impl From<&Message> for Packet {
                 write_str(msg, &mut data);
             }
             Message::Resize { size } => {
-                write_size(size, &mut data);
+                write_size(*size, &mut data);
             }
             Message::LoggedIn { username } => {
                 write_str(username, &mut data);
@@ -874,19 +874,19 @@ mod test {
                     username: "doy".to_string(),
                 },
                 "screen",
-                &crate::term::Size { rows: 24, cols: 80 },
+                crate::term::Size { rows: 24, cols: 80 },
             ),
             Message::login(
                 &Auth::RecurseCenter {
                     id: Some("some-random-id".to_string()),
                 },
                 "screen",
-                &crate::term::Size { rows: 24, cols: 80 },
+                crate::term::Size { rows: 24, cols: 80 },
             ),
             Message::login(
                 &Auth::RecurseCenter { id: None },
                 "screen",
-                &crate::term::Size { rows: 24, cols: 80 },
+                crate::term::Size { rows: 24, cols: 80 },
             ),
             Message::start_streaming(),
             Message::start_watching("some-session-id"),
@@ -926,7 +926,7 @@ mod test {
             ]),
             Message::disconnected(),
             Message::error("error message"),
-            Message::resize(&crate::term::Size { rows: 25, cols: 81 }),
+            Message::resize(crate::term::Size { rows: 25, cols: 81 }),
             Message::logged_in("doy"),
         ]
     }

@@ -63,8 +63,8 @@ impl SessionList {
             .map(move |(i, s)| (self.idx_to_char(i).unwrap(), s))
     }
 
-    pub fn size(&self) -> &crate::term::Size {
-        &self.size
+    pub fn size(&self) -> crate::term::Size {
+        self.size
     }
 
     pub fn resize(&mut self, size: crate::term::Size) {

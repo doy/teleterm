@@ -19,7 +19,7 @@ impl Size {
         Ok(Self { rows, cols })
     }
 
-    pub fn fits_in(&self, other: &Self) -> bool {
+    pub fn fits_in(self, other: Self) -> bool {
         self.rows <= other.rows && self.cols <= other.cols
     }
 }

@@ -10,6 +10,7 @@
 #![allow(clippy::single_match)]
 #![allow(clippy::single_match_else)]
 #![allow(clippy::too_many_arguments)]
+#![allow(clippy::too_many_lines)]
 #![allow(clippy::type_complexity)]
 
 const _DUMMY_DEPENDENCY: &str = include_str!("../Cargo.toml");

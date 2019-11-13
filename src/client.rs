@@ -214,7 +214,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         self.send_message(crate::protocol::Message::login(
             &self.auth,
             &self.term_type,
-            &crate::term::Size::get()?,
+            crate::term::Size::get()?,
         ));
 
         Ok(())

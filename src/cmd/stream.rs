@@ -265,7 +265,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 size: (rows, cols),
             }) => {
                 self.client.send_message(crate::protocol::Message::resize(
-                    &crate::term::Size { rows, cols },
+                    crate::term::Size { rows, cols },
                 ));
             }
             None => {

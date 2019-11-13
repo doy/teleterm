@@ -132,14 +132,14 @@ impl ConnectionState {
         &mut self,
         username: &str,
         term_type: &str,
-        size: &crate::term::Size,
+        size: crate::term::Size,
     ) {
         if let Self::Accepted = self {
             *self = Self::LoggedIn {
                 username: username.to_string(),
                 term_info: TerminalInfo {
                     term: term_type.to_string(),
-                    size: size.clone(),
+                    size,
                 },
             };
         } else {
@@ -150,7 +150,7 @@ impl ConnectionState {
     fn login_oauth(
         &mut self,
         term_type: &str,
-        size: &crate::term::Size,
+        size: crate::term::Size,
         username: &str,
     ) {
         if let Self::Accepted = self {
@@ -158,7 +158,7 @@ impl ConnectionState {
                 username: username.to_string(),
                 term_info: TerminalInfo {
                     term: term_type.to_string(),
-                    size: size.clone(),
+                    size,
                 },
             };
         } else {
@@ -169,13 +169,13 @@ impl ConnectionState {
     fn login_oauth_start(
         &mut self,
         term_type: &str,
-        size: &crate::term::Size,
+        size: crate::term::Size,
     ) {
         if let Self::Accepted = self {
             *self = Self::LoggingIn {
                 term_info: TerminalInfo {
                     term: term_type.to_string(),
-                    size: size.clone(),
+                    size,
                 },
             };
         } else {
@@ -295,7 +295,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             id: self.id.clone(),
             username: username.clone(),
             term_type: term_info.term.clone(),
-            size: term_info.size.clone(),
+            size: term_info.size,
             idle_time: std::time::Instant::now()
                 .duration_since(self.last_activity)
                 .as_secs() as u32,
@@ -398,7 +398,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     conn.id,
                     username
                 );
-                conn.state.login_plain(username, term_type, &size);
+                conn.state.login_plain(username, term_type, size);
                 conn.send_message(crate::protocol::Message::logged_in(
                     username,
                 ));
@@ -464,7 +464,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         })
                         .map(move |username| {
                             new_state
-                                .login_oauth(&term_type, &size, &username);
+                                .login_oauth(&term_type, size, &username);
                             (
                                 new_state,
                                 crate::protocol::Message::logged_in(
@@ -474,7 +474,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         });
                     return Ok(Some(Box::new(fut)));
                 } else {
-                    conn.state.login_oauth_start(term_type, &size);
+                    conn.state.login_oauth_start(term_type, size);
                     let authorize_url = client.generate_authorize_url();
                     let user_id = client.user_id().to_string();
                     conn.send_message(

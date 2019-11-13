@@ -119,16 +119,20 @@ struct StreamSession<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
 > {
     client: crate::client::Client<S>,
+    connected: bool,
+
     process:
         tokio_pty_process_stream::ResizingProcess<crate::async_stdin::Stdin>,
-    stdout: tokio::io::Stdout,
-    buffer: crate::term::Buffer,
-    sent_local: usize,
-    sent_remote: usize,
-    needs_flush: bool,
-    connected: bool,
-    done: bool,
     raw_screen: Option<crossterm::screen::RawScreen>,
+    done: bool,
+
+    term: vt100::Parser,
+    last_screen: vt100::Screen,
+    needs_screen_update: bool,
+
+    stdout: tokio::io::Stdout,
+    to_print: std::collections::VecDeque<u8>,
+    needs_flush: bool,
 }
 
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
@@ -153,31 +157,31 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             tokio_pty_process_stream::Process::new(cmd, args, input),
         );
 
+        let term = vt100::Parser::default();
+        let screen = term.screen().clone();
+
         Self {
             client,
-            process,
-            stdout: tokio::io::stdout(),
-            buffer: crate::term::Buffer::new(buffer_size),
-            sent_local: 0,
-            sent_remote: 0,
-            needs_flush: false,
             connected: false,
-            done: false,
+
+            process,
             raw_screen: None,
+            done: false,
+
+            term,
+            last_screen: screen,
+            needs_screen_update: false,
+
+            stdout: tokio::io::stdout(),
+            to_print: std::collections::VecDeque::new(),
+            needs_flush: false,
         }
     }
 
     fn record_bytes(&mut self, buf: &[u8]) {
-        let written = if self.connected {
-            self.sent_local.min(self.sent_remote)
-        } else {
-            self.sent_local
-        };
-        let truncated = self.buffer.append_client(buf, written);
-        self.sent_local -= truncated;
-        if self.connected {
-            self.sent_remote -= truncated;
-        }
+        self.to_print.extend(buf);
+        self.term.process(buf);
+        self.needs_screen_update = true;
     }
 }
 
@@ -210,7 +214,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 }
                 crate::client::Event::Connect => {
                     self.connected = true;
-                    self.sent_remote = 0;
+                    self.client.send_message(
+                        crate::protocol::Message::terminal_output(
+                            &self.last_screen.contents_formatted(),
+                        ),
+                    );
                     Ok(component_future::Async::DidWork)
                 }
                 crate::client::Event::ServerMessage(..) => {
@@ -276,15 +284,19 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     }
 
     fn poll_write_terminal(&mut self) -> component_future::Poll<(), Error> {
-        if self.sent_local == self.buffer.len() {
+        if self.to_print.is_empty() {
             return Ok(component_future::Async::NothingToDo);
         }
 
+        let (a, b) = self.to_print.as_slices();
+        let buf = if a.is_empty() { b } else { a };
         let n = component_future::try_ready!(self
             .stdout
-            .poll_write(&self.buffer.contents()[self.sent_local..])
+            .poll_write(buf)
             .context(crate::error::WriteTerminal));
-        self.sent_local += n;
+        for _ in 0..n {
+            self.to_print.pop_front();
+        }
         self.needs_flush = true;
         Ok(component_future::Async::DidWork)
     }
@@ -303,7 +315,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     }
 
     fn poll_write_server(&mut self) -> component_future::Poll<(), Error> {
-        if self.sent_remote == self.buffer.len() || !self.connected {
+        if !self.connected || !self.needs_screen_update {
             // ship all data to the server before actually ending
             if self.done {
                 return Ok(component_future::Async::Ready(()));
@@ -312,10 +324,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             }
         }
 
-        let buf = &self.buffer.contents()[self.sent_remote..];
+        let screen = self.term.screen().clone();
         self.client
-            .send_message(crate::protocol::Message::terminal_output(buf));
-        self.sent_remote = self.buffer.len();
+            .send_message(crate::protocol::Message::terminal_output(
+                &screen.contents_diff(&self.last_screen),
+            ));
+        self.last_screen = screen;
+        self.needs_screen_update = false;
 
         Ok(component_future::Async::DidWork)
     }

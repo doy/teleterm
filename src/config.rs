@@ -577,9 +577,6 @@ where
 
 #[derive(serde::Deserialize, Debug)]
 pub struct Command {
-    #[serde(default = "default_buffer_size")]
-    pub buffer_size: usize,
-
     #[serde(default = "default_command")]
     pub command: String,
 
@@ -589,18 +586,10 @@ pub struct Command {
 
 impl Command {
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
-        let buffer_size_help = "Max number of bytes to buffer in order to be able to resend them when reconnecting to the server (defaults to 4194304)";
         let command_help = "Command to run";
         let args_help = "Arguments for the command";
 
         app.arg(
-            clap::Arg::with_name(BUFFER_SIZE_OPTION)
-                .long(BUFFER_SIZE_OPTION)
-                .takes_value(true)
-                .value_name("BYTES")
-                .help(buffer_size_help),
-        )
-        .arg(
             clap::Arg::with_name(COMMAND_OPTION)
                 .index(1)
                 .help(command_help),
@@ -616,12 +605,6 @@ impl Command {
         &mut self,
         matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
-        if matches.is_present(BUFFER_SIZE_OPTION) {
-            let buffer_size = matches.value_of(BUFFER_SIZE_OPTION).unwrap();
-            self.buffer_size = buffer_size.parse().context(
-                crate::error::ParseBufferSize { input: buffer_size },
-            )?;
-        }
         if matches.is_present(COMMAND_OPTION) {
             self.command =
                 matches.value_of(COMMAND_OPTION).unwrap().to_string();
@@ -640,7 +623,6 @@ impl Command {
 impl Default for Command {
     fn default() -> Self {
         Self {
-            buffer_size: default_buffer_size(),
             command: default_command(),
             args: default_args(),
         }

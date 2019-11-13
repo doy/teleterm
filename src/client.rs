@@ -45,10 +45,8 @@ enum WriteSocket<
     NotConnected,
     Connecting(
         Box<
-            dyn futures::future::Future<
-                    Item = S,
-                    Error = crate::error::Error,
-                > + Send,
+            dyn futures::future::Future<Item = S, Error = crate::error::Error>
+                + Send,
         >,
     ),
     Connected(crate::protocol::FramedWriteHalf<S>),
@@ -70,10 +68,8 @@ pub enum Event {
 
 pub type Connector<S> = Box<
     dyn Fn() -> Box<
-            dyn futures::future::Future<
-                    Item = S,
-                    Error = crate::error::Error,
-                > + Send,
+            dyn futures::future::Future<Item = S, Error = crate::error::Error>
+                + Send,
         > + Send,
 >;
 
@@ -82,7 +78,6 @@ pub struct Client<
 > {
     connect: Connector<S>,
     auth: crate::protocol::Auth,
-    buffer_size: usize,
 
     term_type: String,
 
@@ -106,12 +101,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     pub fn stream(
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
-        buffer_size: usize,
     ) -> Self {
         Self::new(
             connect,
             auth,
-            buffer_size,
             &[crate::protocol::Message::start_streaming()],
         )
     }
@@ -119,29 +112,22 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     pub fn watch(
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
-        buffer_size: usize,
         id: &str,
     ) -> Self {
         Self::new(
             connect,
             auth,
-            buffer_size,
             &[crate::protocol::Message::start_watching(id)],
         )
     }
 
-    pub fn list(
-        connect: Connector<S>,
-        auth: &crate::protocol::Auth,
-        buffer_size: usize,
-    ) -> Self {
-        Self::new(connect, auth, buffer_size, &[])
+    pub fn list(connect: Connector<S>, auth: &crate::protocol::Auth) -> Self {
+        Self::new(connect, auth, &[])
     }
 
     fn new(
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
-        buffer_size: usize,
         on_login: &[crate::protocol::Message],
     ) -> Self {
         let term_type =
@@ -152,7 +138,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         Self {
             connect,
             auth: auth.clone(),
-            buffer_size,
 
             term_type,
 
@@ -220,12 +205,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         log::info!("connected to server");
 
         let (rs, ws) = s.split();
-        self.rsock = ReadSocket::Connected(
-            crate::protocol::FramedReader::new(rs, self.buffer_size),
-        );
-        self.wsock = WriteSocket::Connected(
-            crate::protocol::FramedWriter::new(ws, self.buffer_size),
-        );
+        self.rsock =
+            ReadSocket::Connected(crate::protocol::FramedReader::new(rs));
+        self.wsock =
+            WriteSocket::Connected(crate::protocol::FramedWriter::new(ws));
 
         self.to_send.clear();
         self.send_message(crate::protocol::Message::login(

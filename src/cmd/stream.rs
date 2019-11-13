@@ -72,7 +72,6 @@ impl crate::config::Config for Config {
                 &self.command.command,
                 &self.command.args,
                 connect,
-                self.command.buffer_size,
                 &auth,
             ))
         } else {
@@ -86,7 +85,6 @@ impl crate::config::Config for Config {
                 &self.command.command,
                 &self.command.args,
                 connect,
-                self.command.buffer_size,
                 &auth,
             ))
         }
@@ -142,11 +140,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         cmd: &str,
         args: &[String],
         connect: crate::client::Connector<S>,
-        buffer_size: usize,
         auth: &crate::protocol::Auth,
     ) -> Self {
-        let client =
-            crate::client::Client::stream(connect, auth, buffer_size);
+        let client = crate::client::Client::stream(connect, auth);
 
         // TODO: tokio::io::stdin is broken (it's blocking)
         // see https://github.com/tokio-rs/tokio/issues/589

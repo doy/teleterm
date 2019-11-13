@@ -23,11 +23,10 @@ pub struct FramedReader<T: tokio::io::AsyncRead>(
 );
 
 impl<T: tokio::io::AsyncRead> FramedReader<T> {
-    pub fn new(rs: T, buffer_size: usize) -> Self {
+    pub fn new(rs: T) -> Self {
         Self(
             tokio::codec::length_delimited::Builder::new()
                 .length_field_length(4)
-                .max_frame_length(buffer_size + 1024 * 1024)
                 .new_read(rs),
         )
     }
@@ -41,11 +40,10 @@ pub struct FramedWriter<T: tokio::io::AsyncWrite>(
 );
 
 impl<T: tokio::io::AsyncWrite> FramedWriter<T> {
-    pub fn new(ws: T, buffer_size: usize) -> Self {
+    pub fn new(ws: T) -> Self {
         Self(
             tokio::codec::length_delimited::Builder::new()
                 .length_field_length(4)
-                .max_frame_length(buffer_size + 1024 * 1024)
                 .new_write(ws),
         )
     }
@@ -775,11 +773,11 @@ mod test {
             let wres2 = wres.clone();
             let buf = std::io::Cursor::new(vec![]);
             let fut = msg
-                .write_async(FramedWriter::new(buf, 4_194_304))
+                .write_async(FramedWriter::new(buf))
                 .and_then(|w| {
                     let mut buf = w.0.into_inner();
                     buf.set_position(0);
-                    Message::read_async(FramedReader::new(buf, 4_194_304))
+                    Message::read_async(FramedReader::new(buf))
                 })
                 .and_then(move |(msg2, _)| {
                     wres.wait().send(Ok(msg2)).unwrap();
@@ -811,7 +809,7 @@ mod test {
             let (wres, rres) = tokio::sync::mpsc::channel(1);
             let wres2 = wres.clone();
             let buf = std::io::Cursor::new(buf);
-            let fut = Message::read_async(FramedReader::new(buf, 4_194_304))
+            let fut = Message::read_async(FramedReader::new(buf))
                 .and_then(move |(msg2, _)| {
                     wres.wait().send(Ok(msg2)).unwrap();
                     futures::future::ok(())

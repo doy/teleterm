@@ -208,8 +208,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         make_connector: Box<dyn Fn() -> crate::client::Connector<S> + Send>,
         auth: &crate::protocol::Auth,
     ) -> Self {
-        let list_client =
-            crate::client::Client::list(make_connector(), auth, 4_194_304);
+        let list_client = crate::client::Client::list(make_connector(), auth);
 
         Self {
             make_connector,
@@ -326,7 +325,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     let client = crate::client::Client::watch(
                         (self.make_connector)(),
                         &self.auth,
-                        4_194_304,
                         id,
                     );
                     self.state.watching(client);

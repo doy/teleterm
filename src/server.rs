@@ -243,7 +243,7 @@ struct Connection<
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     Connection<S>
 {
-    fn new(s: S, buffer_size: usize) -> Self {
+    fn new(s: S) -> Self {
         let (rs, ws) = s.split();
         let id = format!("{}", uuid::Uuid::new_v4());
         log::info!("{}: new connection", id);
@@ -251,10 +251,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         Self {
             id,
             rsock: Some(ReadSocket::Connected(
-                crate::protocol::FramedReader::new(rs, buffer_size),
+                crate::protocol::FramedReader::new(rs),
             )),
             wsock: Some(WriteSocket::Connected(
-                crate::protocol::FramedWriter::new(ws, buffer_size),
+                crate::protocol::FramedWriter::new(ws),
             )),
             to_send: std::collections::VecDeque::new(),
             closed: false,
@@ -946,7 +946,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn poll_accept(&mut self) -> component_future::Poll<(), Error> {
         if let Some(sock) = component_future::try_ready!(self.acceptor.poll())
         {
-            let conn = Connection::new(sock, self.buffer_size);
+            let conn = Connection::new(sock);
             self.connections.insert(conn.id.to_string(), conn);
             Ok(component_future::Async::DidWork)
         } else {

@@ -1,30 +1,35 @@
 use crate::prelude::*;
 
 #[derive(serde::Deserialize, Debug, Default)]
-pub struct Config {}
+pub struct Config {
+    #[serde(default)]
+    web: crate::config::Web,
+}
 
 impl crate::config::Config for Config {
     fn merge_args<'a>(
         &mut self,
-        _matches: &clap::ArgMatches<'a>,
+        matches: &clap::ArgMatches<'a>,
     ) -> Result<()> {
-        Ok(())
+        self.web.merge_args(matches)
     }
 
     fn run(
         &self,
     ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send>
     {
-        let addr = "127.0.0.1:4145";
         Box::new(
-            gotham::init_server(addr, crate::web::router())
-                .map_err(|_| unreachable!()),
+            gotham::init_server(
+                self.web.listen_address,
+                crate::web::router(),
+            )
+            .map_err(|_| unreachable!()),
         )
     }
 }
 
 pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
-    app.about("Run a teleterm web server")
+    crate::config::Web::cmd(app.about("Run a teleterm web server"))
 }
 
 pub fn config(

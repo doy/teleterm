@@ -24,6 +24,7 @@ const TLS_OPTION: &str = "tls";
 
 const DEFAULT_LISTEN_ADDRESS: &str = "127.0.0.1:4144";
 const DEFAULT_CONNECT_ADDRESS: &str = "127.0.0.1:4144";
+const DEFAULT_WEB_LISTEN_ADDRESS: &str = "127.0.0.1:4145";
 const DEFAULT_READ_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(120);
 const DEFAULT_AUTH_TYPE: crate::protocol::AuthType =
@@ -549,6 +550,54 @@ where
     }
 
     deserializer.deserialize_any(StringOrInt)
+}
+
+#[derive(serde::Deserialize, Debug)]
+pub struct Web {
+    #[serde(
+        deserialize_with = "listen_address",
+        default = "default_web_listen_address"
+    )]
+    pub listen_address: std::net::SocketAddr,
+}
+
+impl Web {
+    pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
+        let listen_address_help =
+            "Host and port to listen on (defaults to localhost:4144)";
+        app.arg(
+            clap::Arg::with_name(LISTEN_ADDRESS_OPTION)
+                .long(LISTEN_ADDRESS_OPTION)
+                .takes_value(true)
+                .value_name("HOST:PORT")
+                .help(listen_address_help),
+        )
+    }
+    pub fn merge_args<'a>(
+        &mut self,
+        matches: &clap::ArgMatches<'a>,
+    ) -> Result<()> {
+        if matches.is_present(LISTEN_ADDRESS_OPTION) {
+            self.listen_address = matches
+                .value_of(LISTEN_ADDRESS_OPTION)
+                .unwrap()
+                .parse()
+                .context(crate::error::ParseAddr)?;
+        }
+        Ok(())
+    }
+}
+
+impl Default for Web {
+    fn default() -> Self {
+        Self {
+            listen_address: default_web_listen_address(),
+        }
+    }
+}
+
+fn default_web_listen_address() -> std::net::SocketAddr {
+    to_listen_address(DEFAULT_WEB_LISTEN_ADDRESS).unwrap()
 }
 
 #[derive(serde::Deserialize, Debug)]

@@ -5,6 +5,7 @@ mod record;
 mod server;
 mod stream;
 mod watch;
+mod web;
 
 struct Command {
     name: &'static str,
@@ -26,6 +27,12 @@ const COMMANDS: &[Command] = &[
         name: "server",
         cmd: &server::cmd,
         config: &server::config,
+        log_level: "info",
+    },
+    Command {
+        name: "web",
+        cmd: &web::cmd,
+        config: &web::config,
         log_level: "info",
     },
     Command {

@@ -20,6 +20,7 @@ crossterm = { version = "0.13", features = ["terminal", "input", "screen"], defa
 directories = "2"
 env_logger = "0.7"
 futures = "0.1.29"
+gotham = "0.4"
 lazy_static = "1"
 log = { version = "0.4", features = ["release_max_level_info"] }
 mio = "0.6.19"

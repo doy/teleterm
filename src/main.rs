@@ -29,6 +29,7 @@ mod protocol;
 mod server;
 mod session_list;
 mod term;
+mod web;
 
 fn main() {
     dirs::Dirs::new().create_all().unwrap();

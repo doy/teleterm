@@ -1,0 +1,58 @@
+[package]
+name = "teleterm"
+version = "0.2.0"
+authors = ["Jesse Luehrs <doy@tozt.net>"]
+edition = "2018"
+
+description = "share your terminals!"
+repository = "https://git.tozt.net/teleterm"
+readme = "README.md"
+keywords = ["terminal", "streaming"]
+categories = ["command-line-utilities"]
+license = "MIT"
+
+[dependencies]
+base64 = "0.11"
+bytes = "0.4"
+clap = { version = "2", features = ["wrap_help"] }
+component-future = "0.1"
+config = { version = "0.9", features = ["toml"], default_features = false }
+crossterm = { version = "0.13", features = ["terminal", "input", "screen"], default_features = false }
+directories = "2"
+env_logger = "0.7"
+futures = "0.1.29"
+# for websocket support - should be able to go back to released version in 0.5
+gotham = { git = "https://github.com/gotham-rs/gotham", rev = "d2395926b93710832f8d72b49c9bd3e77516e386" }
+hyper = "0.12"
+lazy_static = "1"
+log = { version = "0.4", features = ["release_max_level_info"] }
+mio = "0.6.19"
+native-tls = "0.2"
+oauth2 = "3.0.0-alpha.4" # need the alpha for async support
+open = "1.1"
+rand = "0.7"
+ratelimit_meter = "5"
+regex = { version = "1", features = ["std", "perf"], default_features = false }
+reqwest = "0.9.22"
+serde = "1"
+sha1 = "0.6"
+snafu = { version = "0.5", features = ["rust_1_30", "futures-01"], default_features = false }
+tokio = { version = "0.1.22", features = ["codec", "fs", "io", "reactor", "rt-full", "sync", "tcp", "timer"], default_features = false }
+tokio-pty-process-stream = "0.2"
+tokio-signal = "0.2"
+tokio-terminal-resize = "0.1"
+tokio-tls = "0.2"
+tokio-tungstenite = "0.9"
+ttyrec = "0.2"
+twoway = "0.2"
+url = "2"
+users = "0.9"
+uuid = { version = "0.8", features = ["v4"] }
+vt100 = "0.6"
+
+[[bin]]
+name = "tt"
+path = "src/main.rs"
+
+[package.metadata.deb]
+depends = "openssl"

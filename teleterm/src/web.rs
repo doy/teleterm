@@ -8,15 +8,15 @@ use lazy_static_include::*;
 
 lazy_static_include::lazy_static_include_bytes!(
     INDEX_HTML,
-    "../static/index.html"
+    "static/index.html"
 );
 lazy_static_include::lazy_static_include_bytes!(
     TELETERM_WEB_JS,
-    "../target/wasm/teleterm_web.js"
+    "static/teleterm_web.js"
 );
 lazy_static_include::lazy_static_include_bytes!(
     TELETERM_WEB_WASM,
-    "../target/wasm/teleterm_web_bg.wasm"
+    "static/teleterm_web_bg.wasm"
 );
 
 pub fn router() -> impl gotham::handler::NewHandler {

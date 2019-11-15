@@ -95,8 +95,11 @@ install-arch: pkg/$(ARCH_PACKAGE)
 	@sudo pacman -U pkg/$(ARCH_PACKAGE)
 .PHONY: install-arch
 
-wasm: target/wasm/teleterm_web_bg.wasm
+wasm: teleterm/static/teleterm_web.js teleterm/static/teleterm_web_bg.wasm
 .PHONY: wasm
 
-target/wasm/teleterm_web_bg.wasm: teleterm-web/Cargo.toml teleterm-web/src/lib.rs
+teleterm/static/%: target/wasm/%
+	@cp -f $< $@
+
+target/wasm/teleterm_web.js target/wasm/teleterm_web_bg.wasm: teleterm-web/Cargo.toml teleterm-web/src/lib.rs
 	@wasm-pack build --no-typescript --target web --out-dir ../target/wasm teleterm-web

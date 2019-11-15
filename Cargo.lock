@@ -103,6 +103,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base64"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b41b7ea54a0c9d92199de89e20e58d49f02f8e699814ef3fdf266f6f748d15c7"
+
+[[package]]
 name = "bincode"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -137,7 +143,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a076c298b9ecdb530ed9d967e74a6027d6a7478924520acddcddc24c1c8ab3ab"
 dependencies = [
  "arrayref",
- "byte-tools",
+ "byte-tools 0.2.0",
+]
+
+[[package]]
+name = "block-buffer"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0940dc441f31689269e10ac70eb1002a3a1d3ad1390e030043662eb7fe4688b"
+dependencies = [
+ "block-padding",
+ "byte-tools 0.3.1",
+ "byteorder",
+ "generic-array 0.12.3",
+]
+
+[[package]]
+name = "block-padding"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa79dedbb091f449f1f39e53edf88d5dbe95f895dae6135a8d7b881fb5af73f5"
+dependencies = [
+ "byte-tools 0.3.1",
 ]
 
 [[package]]
@@ -154,6 +181,12 @@ name = "byte-tools"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "560c32574a12a89ecd91f5e742165893f86e3ab98d21f8ea548658eb9eef5f40"
+
+[[package]]
+name = "byte-tools"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3b5ca7a04898ad4bcd41c90c5285445ff5b791899bb1b0abdd2a2aa791211d7"
 
 [[package]]
 name = "bytecount"
@@ -435,7 +468,16 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03b072242a8cbaf9c145665af9d250c59af3b958f83ed6824e13533cf76d5b90"
 dependencies = [
- "generic-array",
+ "generic-array 0.9.0",
+]
+
+[[package]]
+name = "digest"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3d0c8c8752312f9713efd397ff63acb9f85585afbf179282e720e7704954dd5"
+dependencies = [
+ "generic-array 0.12.3",
 ]
 
 [[package]]
@@ -660,6 +702,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "generic-array"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c68f0274ae0e023facc3c97b2e00f076be70e254bc851d972503b328db79b2ec"
+dependencies = [
+ "typenum",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -678,9 +729,8 @@ checksum = "8be18de09a56b60ed0edf84bc9df007e30040691af7acd1c41874faac5895bfb"
 
 [[package]]
 name = "gotham"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb734995f768833f633d6acaee1fe768e1395dafc75362a2dac404ba32d7883a"
+version = "0.5.0-dev"
+source = "git+https://github.com/gotham-rs/gotham?rev=d2395926b93710832f8d72b49c9bd3e77516e386#d2395926b93710832f8d72b49c9bd3e77516e386"
 dependencies = [
  "base64 0.10.1",
  "bincode",
@@ -789,9 +839,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "0.12.35"
+version = "0.12.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9dbe6ed1438e1f8ad955a4701e9a944938e9519f6888d12d8558b645e247d5f6"
+checksum = "7cb44cbce9d8ee4fb36e4c0ad7b794ac44ebaad924b9c8291a63215bb44c2c8f"
 dependencies = [
  "bytes",
  "futures",
@@ -865,6 +915,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712d7b3ea5827fcb9d4fda14bf4da5f136f0db2ae9c8f4bd4e2d1c6fde4e6db2"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "input_buffer"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e1b822cc844905551931d6f81608ed5f50a79c1078a4e2b4d42dbc7c1eedfbf"
+dependencies = [
+ "bytes",
 ]
 
 [[package]]
@@ -1121,6 +1180,12 @@ dependencies = [
  "tokio-io",
  "url 2.1.0",
 ]
+
+[[package]]
+name = "opaque-debug"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2839e79665f131bdb5782e51f2c6c9599c133c6098982a54c794358bf432529c"
 
 [[package]]
 name = "open"
@@ -1719,14 +1784,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha-1"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23962131a91661d643c98940b20fcaffe62d776a823247be80a48fcb8b6fce68"
+dependencies = [
+ "block-buffer 0.7.3",
+ "digest 0.8.1",
+ "fake-simd",
+ "opaque-debug",
+]
+
+[[package]]
+name = "sha1"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2579985fda508104f7587689507983eadd6a6e84dd35d6d115361f530916fa0d"
+
+[[package]]
 name = "sha2"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9eb6be24e4c23a84d7184280d2722f7f2731fcdd4a9d886efbfe4413e4847ea0"
 dependencies = [
- "block-buffer",
- "byte-tools",
- "digest",
+ "block-buffer 0.3.3",
+ "byte-tools 0.2.0",
+ "digest 0.7.6",
  "fake-simd",
 ]
 
@@ -1869,6 +1952,7 @@ dependencies = [
 name = "teleterm"
 version = "0.2.0"
 dependencies = [
+ "base64 0.11.0",
  "bytes",
  "clap",
  "component-future",
@@ -1878,6 +1962,7 @@ dependencies = [
  "env_logger",
  "futures",
  "gotham",
+ "hyper",
  "lazy_static",
  "log",
  "mio",
@@ -1889,12 +1974,14 @@ dependencies = [
  "regex",
  "reqwest",
  "serde",
+ "sha1",
  "snafu",
  "tokio",
  "tokio-pty-process-stream",
  "tokio-signal",
  "tokio-terminal-resize",
  "tokio-tls",
+ "tokio-tungstenite",
  "ttyrec",
  "twoway",
  "url 2.1.0",
@@ -2031,6 +2118,18 @@ checksum = "d16217cad7f1b840c5a97dfb3c43b0c871fef423a6e8d2118c604e843662a443"
 dependencies = [
  "futures",
  "tokio-executor",
+]
+
+[[package]]
+name = "tokio-dns-unofficial"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb9bf62ca2c53bf2f2faec3e48a98b6d8c9577c27011cb0203a4beacdc8ab328"
+dependencies = [
+ "futures",
+ "futures-cpupool",
+ "lazy_static",
+ "tokio",
 ]
 
 [[package]]
@@ -2221,6 +2320,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-tungstenite"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38f95da5281a1a52e72fa3657e571279bcc2b163ba2897ed8eaa34ef97f24fda"
+dependencies = [
+ "bytes",
+ "futures",
+ "native-tls",
+ "tokio-dns-unofficial",
+ "tokio-io",
+ "tokio-tcp",
+ "tokio-tls",
+ "tungstenite",
+]
+
+[[package]]
 name = "tokio-udp"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2286,6 +2401,26 @@ dependencies = [
  "futures",
  "snafu",
  "tokio",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "577caf571708961603baf59d2e148d12931e0da2e4bb6c5b471dd4a524fef3aa"
+dependencies = [
+ "base64 0.10.1",
+ "byteorder",
+ "bytes",
+ "http",
+ "httparse",
+ "input_buffer",
+ "log",
+ "native-tls",
+ "rand 0.6.5",
+ "sha-1",
+ "url 2.1.0",
+ "utf-8",
 ]
 
 [[package]]
@@ -2391,6 +2526,12 @@ checksum = "c72f4267aea0c3ec6d07eaabea6ead7c5ddacfafc5e22bcf8d186706851fb4cf"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "utf-8"
+version = "0.7.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05e42f7c18b8f902290b009cde6d651262f956c98bc51bca4cd1d511c9cd85c7"
 
 [[package]]
 name = "utf8parse"

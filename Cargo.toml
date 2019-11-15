@@ -12,6 +12,7 @@ categories = ["command-line-utilities"]
 license = "MIT"
 
 [dependencies]
+base64 = "0.11"
 bytes = "0.4"
 clap = { version = "2", features = ["wrap_help"] }
 component-future = "0.1"
@@ -20,7 +21,9 @@ crossterm = { version = "0.13", features = ["terminal", "input", "screen"], defa
 directories = "2"
 env_logger = "0.7"
 futures = "0.1.29"
-gotham = "0.4"
+# for websocket support - should be able to go back to released version in 0.5
+gotham = { git = "https://github.com/gotham-rs/gotham", rev = "d2395926b93710832f8d72b49c9bd3e77516e386" }
+hyper = "0.12"
 lazy_static = "1"
 log = { version = "0.4", features = ["release_max_level_info"] }
 mio = "0.6.19"
@@ -32,12 +35,14 @@ ratelimit_meter = "5"
 regex = { version = "1", features = ["std", "perf"], default_features = false }
 reqwest = "0.9.22"
 serde = "1"
+sha1 = "0.6"
 snafu = { version = "0.5", features = ["rust_1_30", "futures-01"], default_features = false }
 tokio = { version = "0.1.22", features = ["codec", "fs", "io", "reactor", "rt-full", "sync", "tcp", "timer"], default_features = false }
 tokio-pty-process-stream = "0.2"
 tokio-signal = "0.2"
 tokio-terminal-resize = "0.1"
 tokio-tls = "0.2"
+tokio-tungstenite = "0.9"
 ttyrec = "0.2"
 twoway = "0.2"
 url = "2"

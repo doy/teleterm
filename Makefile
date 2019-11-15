@@ -2,7 +2,7 @@ NAME = $(shell cargo metadata --no-deps --format-version 1 --manifest-path telet
 VERSION = $(shell cargo metadata --no-deps --format-version 1 --manifest-path teleterm/Cargo.toml | jq -r '.version')
 
 INTERACTIVE_SUBCOMMANDS = stream watch record play
-NONINTERACTIVE_SUBCOMMANDS = server
+NONINTERACTIVE_SUBCOMMANDS = server web
 SUBCOMMANDS = $(INTERACTIVE_SUBCOMMANDS) $(NONINTERACTIVE_SUBCOMMANDS)
 
 DEB_PACKAGE = $(NAME)_$(VERSION)_amd64.deb

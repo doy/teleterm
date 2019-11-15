@@ -1,5 +1,5 @@
-NAME = $(shell cargo read-manifest | jq -r '.name')
-VERSION = $(shell cargo read-manifest | jq -r '.version')
+NAME = $(shell cargo metadata --no-deps --format-version 1 --manifest-path teleterm/Cargo.toml | jq -r '.name')
+VERSION = $(shell cargo metadata --no-deps --format-version 1 --manifest-path teleterm/Cargo.toml | jq -r '.version')
 
 INTERACTIVE_SUBCOMMANDS = stream watch record play
 NONINTERACTIVE_SUBCOMMANDS = server
@@ -94,3 +94,9 @@ publish-arch: test pkg/$(ARCH_PACKAGE) pkg/$(ARCH_PACKAGE).minisig release-dir-a
 install-arch: pkg/$(ARCH_PACKAGE)
 	@sudo pacman -U pkg/$(ARCH_PACKAGE)
 .PHONY: install-arch
+
+wasm: target/wasm/teleterm_web_bg.wasm
+.PHONY: wasm
+
+target/wasm/teleterm_web_bg.wasm: teleterm-web/Cargo.toml teleterm-web/src/lib.rs
+	@wasm-pack build --no-typescript --target web --out-dir ../target/wasm teleterm-web

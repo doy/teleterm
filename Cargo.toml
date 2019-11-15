@@ -1,2 +1,3 @@
 [workspace]
-members = ["teleterm"]
+members = ["teleterm", "teleterm-web"]
+default-members = ["teleterm"]

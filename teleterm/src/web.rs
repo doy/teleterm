@@ -3,17 +3,46 @@ mod ws;
 use futures::{Future as _, Sink as _, Stream as _};
 use gotham::router::builder::{DefineSingleRoute as _, DrawRoutes as _};
 use gotham::state::FromState as _;
+use lazy_static::lazy_static;
+use lazy_static_include::*;
+
+lazy_static_include::lazy_static_include_bytes!(
+    INDEX_HTML,
+    "../static/index.html"
+);
+lazy_static_include::lazy_static_include_bytes!(
+    TELETERM_WEB_JS,
+    "../target/wasm/teleterm_web.js"
+);
+lazy_static_include::lazy_static_include_bytes!(
+    TELETERM_WEB_WASM,
+    "../target/wasm/teleterm_web_bg.wasm"
+);
 
 pub fn router() -> impl gotham::handler::NewHandler {
     gotham::router::builder::build_simple_router(|route| {
-        route.get("/").to(root);
+        route.get("/").to(serve_static("text/html", &INDEX_HTML));
+        route
+            .get("/teleterm_web.js")
+            .to(serve_static("application/javascript", &TELETERM_WEB_JS));
+        route
+            .get("/teleterm_web_bg.wasm")
+            .to(serve_static("application/wasm", &TELETERM_WEB_WASM));
         route.get("/ws").to(handle_websocket_connection);
     })
 }
 
-fn root(state: gotham::state::State) -> (gotham::state::State, String) {
-    log::info!("request for /");
-    (state, "hello world".to_string())
+fn serve_static(
+    content_type: &'static str,
+    s: &'static [u8],
+) -> impl gotham::handler::Handler + Copy {
+    move |state| {
+        let response = hyper::Response::builder()
+            .header("Content-Type", content_type)
+            .body(hyper::Body::from(s))
+            .unwrap();
+        (state, response)
+    }
 }
 
 fn handle_websocket_connection(

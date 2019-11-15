@@ -3,6 +3,9 @@ name = "teleterm-web"
 version = "0.1.0"
 authors = ["Jesse Luehrs <doy@tozt.net>"]
 edition = "2018"
+# this isn't intended to be published on its own - we just bake the generated
+# files into the main teleterm binary
+publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]

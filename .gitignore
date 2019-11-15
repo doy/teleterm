@@ -1,4 +1,6 @@
 /*.log
 /pkg
 /target
+/teleterm/target
+/teleterm-web/target
 **/*.rs.bk

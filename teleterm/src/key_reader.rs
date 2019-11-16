@@ -16,7 +16,7 @@ impl KeyReader {
     }
 }
 
-impl futures::stream::Stream for KeyReader {
+impl futures::Stream for KeyReader {
     type Item = crossterm::input::InputEvent;
     type Error = Error;
 

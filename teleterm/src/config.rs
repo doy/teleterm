@@ -39,7 +39,7 @@ pub trait Config: std::fmt::Debug {
     ) -> Result<()>;
     fn run(
         &self,
-    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send>;
+    ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send>;
 }
 
 pub fn config(

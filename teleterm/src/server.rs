@@ -9,7 +9,7 @@ enum ReadSocket<
     Connected(crate::protocol::FramedReadHalf<S>),
     Reading(
         Box<
-            dyn futures::future::Future<
+            dyn futures::Future<
                     Item = (
                         crate::protocol::Message,
                         crate::protocol::FramedReadHalf<S>,
@@ -21,7 +21,7 @@ enum ReadSocket<
     Processing(
         crate::protocol::FramedReadHalf<S>,
         Box<
-            dyn futures::future::Future<
+            dyn futures::Future<
                     Item = (ConnectionState, crate::protocol::Message),
                     Error = Error,
                 > + Send,
@@ -35,7 +35,7 @@ enum WriteSocket<
     Connected(crate::protocol::FramedWriteHalf<S>),
     Writing(
         Box<
-            dyn futures::future::Future<
+            dyn futures::Future<
                     Item = crate::protocol::FramedWriteHalf<S>,
                     Error = Error,
                 > + Send,
@@ -302,8 +302,7 @@ pub struct Server<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
 > {
     read_timeout: std::time::Duration,
-    acceptor:
-        Box<dyn futures::stream::Stream<Item = S, Error = Error> + Send>,
+    acceptor: Box<dyn futures::Stream<Item = S, Error = Error> + Send>,
     connections: std::collections::HashMap<String, Connection<S>>,
     rate_limiter: ratelimit_meter::KeyedRateLimiter<Option<String>>,
     allowed_auth_types: std::collections::HashSet<crate::protocol::AuthType>,
@@ -317,9 +316,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     Server<S>
 {
     pub fn new(
-        acceptor: Box<
-            dyn futures::stream::Stream<Item = S, Error = Error> + Send,
-        >,
+        acceptor: Box<dyn futures::Stream<Item = S, Error = Error> + Send>,
         read_timeout: std::time::Duration,
         allowed_auth_types: std::collections::HashSet<
             crate::protocol::AuthType,
@@ -351,7 +348,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> Result<
         Option<
             Box<
-                dyn futures::future::Future<
+                dyn futures::Future<
                         Item = (ConnectionState, crate::protocol::Message),
                         Error = Error,
                     > + Send,
@@ -597,7 +594,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> Result<
         Option<
             Box<
-                dyn futures::future::Future<
+                dyn futures::Future<
                         Item = (ConnectionState, crate::protocol::Message),
                         Error = Error,
                     > + Send,
@@ -634,7 +631,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> Result<
         Option<
             Box<
-                dyn futures::future::Future<
+                dyn futures::Future<
                         Item = (ConnectionState, crate::protocol::Message),
                         Error = Error,
                     > + Send,
@@ -659,7 +656,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> Result<
         Option<
             Box<
-                dyn futures::future::Future<
+                dyn futures::Future<
                         Item = (ConnectionState, crate::protocol::Message),
                         Error = Error,
                     > + Send,
@@ -756,7 +753,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> Result<
         Option<
             Box<
-                dyn futures::future::Future<
+                dyn futures::Future<
                         Item = (ConnectionState, crate::protocol::Message),
                         Error = Error,
                     > + Send,
@@ -1062,7 +1059,7 @@ fn classify_connection_error(e: Error) -> component_future::Poll<(), Error> {
 
 #[must_use = "futures do nothing unless polled"]
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
-    futures::future::Future for Server<S>
+    futures::Future for Server<S>
 {
     type Item = ();
     type Error = Error;

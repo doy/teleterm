@@ -20,8 +20,7 @@ impl crate::config::Config for Config {
 
     fn run(
         &self,
-    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send>
-    {
+    ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
         let auth = match self.client.auth {
             crate::protocol::AuthType::Plain => {
                 let username = self
@@ -194,10 +193,8 @@ struct WatchSession<
     key_reader: crate::key_reader::KeyReader,
     list_client: crate::client::Client<S>,
     resizer: Box<
-        dyn futures::stream::Stream<
-                Item = (u16, u16),
-                Error = crate::error::Error,
-            > + Send,
+        dyn futures::Stream<Item = (u16, u16), Error = crate::error::Error>
+            + Send,
     >,
     state: State<S>,
     raw_screen: Option<crossterm::screen::RawScreen>,
@@ -644,7 +641,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
 #[must_use = "futures do nothing unless polled"]
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
-    futures::future::Future for WatchSession<S>
+    futures::Future for WatchSession<S>
 {
     type Item = ();
     type Error = Error;

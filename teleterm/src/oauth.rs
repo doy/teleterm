@@ -32,8 +32,7 @@ pub trait Oauth {
     fn get_access_token_from_auth_code(
         &self,
         code: &str,
-    ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>
-    {
+    ) -> Box<dyn futures::Future<Item = String, Error = Error> + Send> {
         let token_cache_file = self.server_token_file(false).unwrap();
         let fut = self
             .client()
@@ -53,8 +52,7 @@ pub trait Oauth {
     fn get_access_token_from_refresh_token(
         &self,
         token: &str,
-    ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>
-    {
+    ) -> Box<dyn futures::Future<Item = String, Error = Error> + Send> {
         let token_cache_file = self.server_token_file(false).unwrap();
         let fut = self
             .client()
@@ -76,13 +74,13 @@ pub trait Oauth {
     fn get_username_from_access_token(
         self: Box<Self>,
         token: &str,
-    ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>;
+    ) -> Box<dyn futures::Future<Item = String, Error = Error> + Send>;
 }
 
 pub fn save_client_auth_id(
     auth: crate::protocol::AuthType,
     id: &str,
-) -> impl futures::future::Future<Item = (), Error = Error> {
+) -> impl futures::Future<Item = (), Error = Error> {
     let id_file = client_id_file(auth, false).unwrap();
     let id = id.to_string();
     tokio::fs::File::create(id_file.clone())
@@ -119,7 +117,7 @@ fn client_id_file(
 fn cache_refresh_token(
     token_cache_file: std::path::PathBuf,
     token: &oauth2::basic::BasicTokenResponse,
-) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send> {
+) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
     let token_data = format!(
         "{}\n{}\n",
         token.refresh_token().unwrap().secret(),

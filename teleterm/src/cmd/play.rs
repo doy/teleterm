@@ -24,8 +24,7 @@ impl crate::config::Config for Config {
 
     fn run(
         &self,
-    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send>
-    {
+    ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
         Box::new(PlaySession::new(
             &self.ttyrec.filename,
             self.play.play_at_start,
@@ -936,7 +935,7 @@ impl PlaySession {
 }
 
 #[must_use = "futures do nothing unless polled"]
-impl futures::future::Future for PlaySession {
+impl futures::Future for PlaySession {
     type Item = ();
     type Error = Error;
 

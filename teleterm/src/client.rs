@@ -19,7 +19,7 @@ enum ReadSocket<
     Connected(crate::protocol::FramedReadHalf<S>),
     Reading(
         Box<
-            dyn futures::future::Future<
+            dyn futures::Future<
                     Item = (
                         crate::protocol::Message,
                         crate::protocol::FramedReadHalf<S>,
@@ -31,7 +31,7 @@ enum ReadSocket<
     Processing(
         crate::protocol::FramedReadHalf<S>,
         Box<
-            dyn futures::future::Future<
+            dyn futures::Future<
                     Item = crate::protocol::Message,
                     Error = Error,
                 > + Send,
@@ -45,14 +45,13 @@ enum WriteSocket<
     NotConnected,
     Connecting(
         Box<
-            dyn futures::future::Future<Item = S, Error = crate::error::Error>
-                + Send,
+            dyn futures::Future<Item = S, Error = crate::error::Error> + Send,
         >,
     ),
     Connected(crate::protocol::FramedWriteHalf<S>),
     Writing(
         Box<
-            dyn futures::future::Future<
+            dyn futures::Future<
                     Item = crate::protocol::FramedWriteHalf<S>,
                     Error = Error,
                 > + Send,
@@ -68,8 +67,7 @@ pub enum Event {
 
 pub type Connector<S> = Box<
     dyn Fn() -> Box<
-            dyn futures::future::Future<Item = S, Error = crate::error::Error>
-                + Send,
+            dyn futures::Future<Item = S, Error = crate::error::Error> + Send,
         > + Send,
 >;
 
@@ -227,7 +225,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         component_future::Async<Option<Event>>,
         Option<
             Box<
-                dyn futures::future::Future<
+                dyn futures::Future<
                         Item = crate::protocol::Message,
                         Error = Error,
                     > + Send,
@@ -284,7 +282,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         id: &str,
     ) -> Result<
         Box<
-            dyn futures::future::Future<
+            dyn futures::Future<
                     Item = crate::protocol::Message,
                     Error = Error,
                 > + Send,
@@ -584,7 +582,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
 #[must_use = "streams do nothing unless polled"]
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
-    futures::stream::Stream for Client<S>
+    futures::Stream for Client<S>
 {
     type Item = Event;
     type Error = Error;

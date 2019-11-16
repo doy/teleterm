@@ -44,8 +44,7 @@ impl super::Oauth for RecurseCenter {
     fn get_username_from_access_token(
         self: Box<Self>,
         token: &str,
-    ) -> Box<dyn futures::future::Future<Item = String, Error = Error> + Send>
-    {
+    ) -> Box<dyn futures::Future<Item = String, Error = Error> + Send> {
         let fut = reqwest::r#async::Client::new()
             .get("https://www.recurse.com/api/v1/profiles/me")
             .bearer_auth(token)

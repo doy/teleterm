@@ -322,7 +322,7 @@ impl Message {
 
     pub fn read_async<T: tokio::io::AsyncRead>(
         r: FramedReader<T>,
-    ) -> impl futures::future::Future<Item = (Self, FramedReader<T>), Error = Error>
+    ) -> impl futures::Future<Item = (Self, FramedReader<T>), Error = Error>
     {
         Packet::read_async(r).and_then(|(packet, r)| {
             Self::try_from(packet).map(|msg| (msg, r))
@@ -337,8 +337,7 @@ impl Message {
     pub fn write_async<T: tokio::io::AsyncWrite>(
         &self,
         w: FramedWriter<T>,
-    ) -> impl futures::future::Future<Item = FramedWriter<T>, Error = Error>
-    {
+    ) -> impl futures::Future<Item = FramedWriter<T>, Error = Error> {
         Packet::from(self).write_async(w)
     }
 
@@ -393,7 +392,7 @@ impl Packet {
 
     fn read_async<T: tokio::io::AsyncRead>(
         r: FramedReader<T>,
-    ) -> impl futures::future::Future<Item = (Self, FramedReader<T>), Error = Error>
+    ) -> impl futures::Future<Item = (Self, FramedReader<T>), Error = Error>
     {
         r.0.into_future()
             .map_err(|(e, _)| Error::ReadPacket { source: e })
@@ -428,8 +427,7 @@ impl Packet {
     fn write_async<T: tokio::io::AsyncWrite>(
         &self,
         w: FramedWriter<T>,
-    ) -> impl futures::future::Future<Item = FramedWriter<T>, Error = Error>
-    {
+    ) -> impl futures::Future<Item = FramedWriter<T>, Error = Error> {
         w.0.send(bytes::Bytes::from(self.as_bytes()))
             .map(FramedWriter)
             .context(crate::error::WritePacket)

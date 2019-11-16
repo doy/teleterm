@@ -3,7 +3,7 @@ use crate::prelude::*;
 pub struct Server {
     server: super::Server<tokio_tls::TlsStream<tokio::net::TcpStream>>,
     acceptor: Box<
-        dyn futures::stream::Stream<
+        dyn futures::Stream<
                 Item = tokio_tls::Accept<tokio::net::TcpStream>,
                 Error = Error,
             > + Send,
@@ -17,7 +17,7 @@ pub struct Server {
 impl Server {
     pub fn new(
         acceptor: Box<
-            dyn futures::stream::Stream<
+            dyn futures::Stream<
                     Item = tokio_tls::Accept<tokio::net::TcpStream>,
                     Error = Error,
                 > + Send,
@@ -121,7 +121,7 @@ impl Server {
 }
 
 #[must_use = "futures do nothing unless polled"]
-impl futures::future::Future for Server {
+impl futures::Future for Server {
     type Item = ();
     type Error = Error;
 

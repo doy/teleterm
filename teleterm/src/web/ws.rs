@@ -1,6 +1,6 @@
 // from https://github.com/gotham-rs/gotham/blob/master/examples/websocket/src/main.rs
 
-use futures::future::Future as _;
+use futures::Future as _;
 
 const PROTO_WEBSOCKET: &str = "websocket";
 const SEC_WEBSOCKET_KEY: &str = "Sec-WebSocket-Key";

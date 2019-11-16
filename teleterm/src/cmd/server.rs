@@ -27,8 +27,7 @@ impl crate::config::Config for Config {
 
     fn run(
         &self,
-    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send>
-    {
+    ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
         if let Some(tls_identity_file) = &self.server.tls_identity_file {
             create_server_tls(
                 self.server.listen_address,
@@ -81,7 +80,7 @@ fn create_server(
     >,
     uid: Option<users::uid_t>,
     gid: Option<users::gid_t>,
-) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send> {
+) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
     let listener = match listen(address, uid, gid) {
         Ok(listener) => listener,
         Err(e) => return Box::new(futures::future::err(e)),
@@ -111,7 +110,7 @@ fn create_server_tls(
     >,
     uid: Option<users::uid_t>,
     gid: Option<users::gid_t>,
-) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send> {
+) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
     let tls_acceptor = match accept_tls(tls_identity_file) {
         Ok(acceptor) => acceptor,
         Err(e) => return Box::new(futures::future::err(e)),

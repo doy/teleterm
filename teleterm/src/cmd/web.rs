@@ -16,8 +16,7 @@ impl crate::config::Config for Config {
 
     fn run(
         &self,
-    ) -> Box<dyn futures::future::Future<Item = (), Error = Error> + Send>
-    {
+    ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
         Box::new(
             gotham::init_server(
                 self.web.listen_address,

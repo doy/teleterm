@@ -13,9 +13,10 @@ pub fn main() -> Result<(), JsValue> {
 
     let ws = web_sys::WebSocket::new("ws://127.0.0.1:4145/ws")?;
 
-    let msg_cb = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
-        log(&format!("message {:?}", event));
-    }) as Box<dyn FnMut(web_sys::MessageEvent)>);
+    let msg_cb =
+        Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+            log(&format!("message {:?}", event));
+        }) as Box<dyn FnMut(web_sys::MessageEvent)>);
     ws.set_onmessage(Some(msg_cb.as_ref().unchecked_ref()));
     msg_cb.forget();
 

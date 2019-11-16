@@ -17,13 +17,7 @@ impl crate::config::Config for Config {
     fn run(
         &self,
     ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
-        Box::new(
-            gotham::init_server(
-                self.web.listen_address,
-                crate::web::router(),
-            )
-            .map_err(|_| unreachable!()),
-        )
+        Box::new(crate::web::Server::new(self.web.listen_address))
     }
 }
 

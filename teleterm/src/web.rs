@@ -1,6 +1,7 @@
 mod ws;
 
-use futures::{Future as _, Sink as _, Stream as _};
+use crate::prelude::*;
+
 use gotham::router::builder::{DefineSingleRoute as _, DrawRoutes as _};
 use gotham::state::FromState as _;
 use lazy_static::lazy_static;
@@ -18,6 +19,46 @@ lazy_static_include::lazy_static_include_bytes!(
     TELETERM_WEB_WASM,
     "static/teleterm_web_bg.wasm"
 );
+
+pub struct Server {
+    server: Box<dyn futures::Future<Item = (), Error = ()> + Send>,
+}
+
+impl Server {
+    pub fn new<T: std::net::ToSocketAddrs + 'static>(addr: T) -> Self {
+        Self {
+            server: Box::new(gotham::init_server(addr, router())),
+        }
+    }
+}
+
+impl Server {
+    const POLL_FNS:
+        &'static [&'static dyn for<'a> Fn(
+            &'a mut Self,
+        )
+            -> component_future::Poll<
+            (),
+            Error,
+        >] = &[&Self::poll_web_server];
+
+    fn poll_web_server(&mut self) -> component_future::Poll<(), Error> {
+        component_future::try_ready!(self
+            .server
+            .poll()
+            .map_err(|_| unreachable!()));
+        Ok(component_future::Async::Ready(()))
+    }
+}
+
+impl futures::Future for Server {
+    type Item = ();
+    type Error = Error;
+
+    fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
+        component_future::poll_future(self, Self::POLL_FNS)
+    }
+}
 
 pub fn router() -> impl gotham::handler::NewHandler {
     gotham::router::builder::build_simple_router(|route| {

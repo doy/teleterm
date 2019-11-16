@@ -1,3 +1,6 @@
+// here it's mostly crlf which is made less clear by using the ln forms
+#![allow(clippy::print_with_newline)]
+
 use crate::prelude::*;
 use std::io::Write as _;
 
@@ -403,9 +406,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn display_loading_screen(&self) -> Result<()> {
         clear()?;
 
-        println!("loading...\r");
+        print!("loading...\r\n");
         if let Some(err) = self.list_client.last_error() {
-            println!("error: {}\r", err);
+            print!("error: {}\r\n", err);
         }
         print!("q: quit --> ");
 
@@ -468,11 +471,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             - 3;
 
         clear()?;
-        println!("welcome to teleterm\r");
-        println!("available sessions:\r");
-        println!("\r");
-        println!(
-            "{:5$} | {:6$} | {:7$} | {:8$} | {:9$} | title\r",
+        print!("welcome to teleterm\r\n");
+        print!("available sessions:\r\n");
+        print!("\r\n");
+        print!(
+            "{:5$} | {:6$} | {:7$} | {:8$} | {:9$} | title\r\n",
             "",
             "name",
             "size",
@@ -484,8 +487,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             idle_width,
             watch_width,
         );
-        println!(
-            "{}+{}+{}+{}+{}+{}\r",
+        print!(
+            "{}+{}+{}+{}+{}+{}\r\n",
             "-".repeat(char_width + 1),
             "-".repeat(name_width + 2),
             "-".repeat(size_width + 2),
@@ -524,8 +527,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             let display_title = truncate(&session.title, max_title_width);
             let display_watch = session.watchers;
 
-            println!(
-                "{:6$} | {:7$} | {:8$} | {:9$} | {:10$} | {}\r",
+            print!(
+                "{:6$} | {:7$} | {:8$} | {:9$} | {:10$} | {}\r\n",
                 display_char,
                 display_name,
                 display_size_full,

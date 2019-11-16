@@ -581,10 +581,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
     fn poll_input(&mut self) -> component_future::Poll<(), Error> {
         if self.raw_screen.is_none() {
-            self.raw_screen = Some(
-                crossterm::screen::RawScreen::into_raw_mode()
-                    .context(crate::error::ToRawMode)?,
-            );
+            self.raw_screen = Some(new_raw_screen()?);
         }
         if let State::Temporary = self.state {
             self.state = State::LoggingIn {
@@ -660,6 +657,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         }
         res
     }
+}
+
+fn new_raw_screen() -> Result<crossterm::screen::RawScreen> {
+    crossterm::screen::RawScreen::into_raw_mode()
+        .context(crate::error::ToRawMode)
 }
 
 fn new_alternate_screen() -> Result<crossterm::screen::AlternateScreen> {

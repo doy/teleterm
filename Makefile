@@ -98,6 +98,8 @@ install-arch: pkg/$(ARCH_PACKAGE)
 wasm: teleterm/static/teleterm_web.js teleterm/static/teleterm_web_bg.wasm
 .PHONY: wasm
 
+web rweb dweb: wasm
+
 teleterm/static/%: target/wasm/%
 	@cp -f $< $@
 

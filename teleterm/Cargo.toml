@@ -45,7 +45,6 @@ tokio-terminal-resize = "0.1"
 tokio-tls = "0.2"
 tokio-tungstenite = "0.9"
 ttyrec = "0.2"
-twoway = "0.2"
 url = "2"
 users = "0.9"
 uuid = { version = "0.8", features = ["v4"] }

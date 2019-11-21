@@ -16,6 +16,15 @@ useful.
       quite compressible)
 * block (server-side) and hide (client-side) functionality
     * it's pretty important for any social software
+* finish converting everything to async operations
+    * dns lookups are still synchronous, which means that `tt stream` won't
+      start up if you can't connect to the server (even though it's fine being
+      able to lazily reconnect in the background)
+    * a bunch of the stdout writing is still done synchronously
+    * is thinking about the `log` stuff useful here?
+    * once the standard library future stuff settles down, we probably want to
+      use that (even though it's currently "stabilized", it doesn't look quite
+      ready to build real things on yet)
 * integration tests
     * for instance, spin up separate server, stream, and watch subprocesses,
       and write tests for their stdout
@@ -38,4 +47,3 @@ useful.
       from the buffer after some timeout
     * if we go the popup drawing route, it could also potentially be used for
       error message displays
-* ability to adjust `tt play` playback speed

@@ -2032,7 +2032,6 @@ dependencies = [
  "snafu",
  "tokio",
  "tokio-pty-process-stream",
- "tokio-signal",
  "tokio-terminal-resize",
  "tokio-tls",
  "tokio-tungstenite",

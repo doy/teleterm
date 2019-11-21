@@ -187,6 +187,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 struct WatchSession<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
 > {
+    term_type: String,
     make_connector: Box<dyn Fn() -> crate::client::Connector<S> + Send>,
     auth: crate::protocol::Auth,
 
@@ -208,9 +209,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         make_connector: Box<dyn Fn() -> crate::client::Connector<S> + Send>,
         auth: &crate::protocol::Auth,
     ) -> Self {
-        let list_client = crate::client::Client::list(make_connector(), auth);
+        let term_type =
+            std::env::var("TERM").unwrap_or_else(|_| "".to_string());
+        let list_client =
+            crate::client::Client::list(&term_type, make_connector(), auth);
 
         Self {
+            term_type,
             make_connector,
             auth: auth.clone(),
 
@@ -323,6 +328,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             ) => {
                 if let Some(id) = sessions.id_for(*c) {
                     let client = crate::client::Client::watch(
+                        &self.term_type,
                         (self.make_connector)(),
                         &self.auth,
                         id,

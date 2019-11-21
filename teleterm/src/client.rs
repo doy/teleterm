@@ -97,10 +97,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     Client<S>
 {
     pub fn stream(
+        term_type: &str,
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
     ) -> Self {
         Self::new(
+            term_type,
             connect,
             auth,
             &[crate::protocol::Message::start_streaming()],
@@ -108,28 +110,33 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     }
 
     pub fn watch(
+        term_type: &str,
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
         id: &str,
     ) -> Self {
         Self::new(
+            term_type,
             connect,
             auth,
             &[crate::protocol::Message::start_watching(id)],
         )
     }
 
-    pub fn list(connect: Connector<S>, auth: &crate::protocol::Auth) -> Self {
-        Self::new(connect, auth, &[])
+    pub fn list(
+        term_type: &str,
+        connect: Connector<S>,
+        auth: &crate::protocol::Auth,
+    ) -> Self {
+        Self::new(term_type, connect, auth, &[])
     }
 
     fn new(
+        term_type: &str,
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
         on_login: &[crate::protocol::Message],
     ) -> Self {
-        let term_type =
-            std::env::var("TERM").unwrap_or_else(|_| "".to_string());
         let heartbeat_timer =
             tokio::timer::Interval::new_interval(HEARTBEAT_DURATION);
 
@@ -137,7 +144,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             connect,
             auth: auth.clone(),
 
-            term_type,
+            term_type: term_type.to_string(),
 
             heartbeat_timer,
             reconnect_timer: None,

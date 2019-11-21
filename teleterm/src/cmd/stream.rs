@@ -141,7 +141,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         connect: crate::client::Connector<S>,
         auth: &crate::protocol::Auth,
     ) -> Self {
-        let client = crate::client::Client::stream(connect, auth);
+        let term_type =
+            std::env::var("TERM").unwrap_or_else(|_| "".to_string());
+        let client = crate::client::Client::stream(&term_type, connect, auth);
 
         // TODO: tokio::io::stdin is broken (it's blocking)
         // see https://github.com/tokio-rs/tokio/issues/589

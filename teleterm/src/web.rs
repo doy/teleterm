@@ -69,7 +69,7 @@ pub fn router() -> impl gotham::handler::NewHandler {
         route
             .get("/teleterm_web_bg.wasm")
             .to(serve_static("application/wasm", &TELETERM_WEB_WASM));
-        route.get("/ws").to(handle_websocket_connection);
+        route.get("/watch").to(handle_watch);
     })
 }
 
@@ -86,7 +86,7 @@ fn serve_static(
     }
 }
 
-fn handle_websocket_connection(
+fn handle_watch(
     mut state: gotham::state::State,
 ) -> (gotham::state::State, hyper::Response<hyper::Body>) {
     let body = hyper::Body::take_from(&mut state);

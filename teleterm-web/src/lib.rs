@@ -11,7 +11,7 @@ extern "C" {
 pub fn main() -> Result<(), JsValue> {
     log("loaded");
 
-    let ws = web_sys::WebSocket::new("ws://127.0.0.1:4145/ws")?;
+    let ws = web_sys::WebSocket::new("ws://127.0.0.1:4145/watch")?;
 
     let msg_cb =
         Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {

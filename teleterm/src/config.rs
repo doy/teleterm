@@ -203,7 +203,8 @@ fn default_connect_address() -> (String, std::net::SocketAddr) {
 }
 
 // XXX this does a blocking dns lookup - should try to find an async version
-fn to_connect_address(
+// XXX shouldn't need to be pub
+pub fn to_connect_address(
     address: &str,
 ) -> Result<(String, std::net::SocketAddr)> {
     let mut address_parts = address.split(':');

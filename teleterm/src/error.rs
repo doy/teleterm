@@ -303,6 +303,9 @@ pub enum Error {
     #[snafu(display("received error from server: {}", message))]
     Server { message: String },
 
+    #[snafu(display("couldn't connect to server"))]
+    ServerDisconnected,
+
     #[snafu(display("SIGWINCH handler failed: {}", source))]
     SigWinchHandler { source: std::io::Error },
 

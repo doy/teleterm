@@ -4,7 +4,7 @@ use std::convert::{TryFrom as _, TryInto as _};
 pub type FramedReadHalf<S> = FramedReader<tokio::io::ReadHalf<S>>;
 pub type FramedWriteHalf<S> = FramedWriter<tokio::io::WriteHalf<S>>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Session {
     pub id: String,
     pub username: String,

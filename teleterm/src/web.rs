@@ -108,18 +108,7 @@ fn handle_list(
     tokio::spawn(lister.map_err(|e| log::warn!("error listing: {}", e)));
     match r_sessions.wait().unwrap() {
         Ok(sessions) => {
-            let mut body = String::new();
-            for session in sessions {
-                log::debug!(
-                    "found session with id {} and name {}",
-                    session.id,
-                    session.username
-                );
-                body.push_str(&format!(
-                    "{}: {}\n",
-                    session.id, session.username
-                ));
-            }
+            let body = serde_json::to_string(&sessions).unwrap();
             (state, hyper::Response::new(hyper::Body::from(body)))
         }
         Err(e) => {

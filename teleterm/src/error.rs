@@ -384,6 +384,14 @@ pub enum Error {
     #[snafu(display("failed to find user with username {}", name))]
     UnknownUser { name: String },
 
+    #[snafu(display("failure during websocket stream: {}", source))]
+    WebSocket {
+        source: tokio_tungstenite::tungstenite::Error,
+    },
+
+    #[snafu(display("failed to accept websocket connection: {}", source))]
+    WebSocketAccept { source: hyper::Error },
+
     #[snafu(display("failed to write to file: {}", source))]
     WriteFile { source: tokio::io::Error },
 

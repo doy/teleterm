@@ -105,16 +105,18 @@ fn handle_websocket_connection(
                 );
             }
         };
-        let req_id = gotham::state::request_id(&state).to_owned();
         let stream = stream
-            .map_err(|e| {
-                log::error!(
-                    "error upgrading connection for websockets: {}",
-                    e
-                )
-            })
-            .and_then(move |stream| handle_websocket_stream(req_id, stream));
-        tokio::spawn(stream);
+            .context(crate::error::WebSocketAccept)
+            .map(|stream| stream.context(crate::error::WebSocket))
+            .flatten_stream();
+
+        let req_id = gotham::state::request_id(&state).to_owned();
+        tokio::spawn(
+            stream
+                .for_each(move |msg| handle_websocket_message(&req_id, &msg))
+                .map_err(|e| log::error!("{}", e)),
+        );
+
         (state, response)
     } else {
         (
@@ -126,32 +128,11 @@ fn handle_websocket_connection(
     }
 }
 
-fn handle_websocket_stream<S>(
-    req_id: String,
-    stream: S,
-) -> impl futures::Future<Item = (), Error = ()>
-where
-    S: futures::Stream<
-            Item = tokio_tungstenite::tungstenite::protocol::Message,
-            Error = tokio_tungstenite::tungstenite::Error,
-        > + futures::Sink<
-            SinkItem = tokio_tungstenite::tungstenite::protocol::Message,
-            SinkError = tokio_tungstenite::tungstenite::Error,
-        >,
-{
-    let (sink, stream) = stream.split();
-    sink.send_all(stream.map(move |msg| {
-        handle_websocket_message(&req_id, &msg);
-        msg
-    }))
-    .map_err(|e| log::error!("error during websocket stream: {}", e))
-    .map(|_| log::info!("disconnect"))
-}
-
 fn handle_websocket_message(
     req_id: &str,
     msg: &tokio_tungstenite::tungstenite::protocol::Message,
-) {
+) -> Result<()> {
     // TODO
     log::info!("websocket stream message for {}: {:?}", req_id, msg);
+    Ok(())
 }

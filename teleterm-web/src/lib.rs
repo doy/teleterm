@@ -46,16 +46,16 @@ fn update(
         }
         Msg::Watch(id, event) => match event {
             ws::WebSocketEvent::Connected(_) => {
-                log::info!("connected");
+                log::info!("{}: connected", id);
             }
             ws::WebSocketEvent::Disconnected(_) => {
-                log::info!("disconnected");
+                log::info!("{}: disconnected", id);
             }
             ws::WebSocketEvent::Message(msg) => {
-                log::info!("message from id {}: {:?}", id, msg);
+                log::info!("{}: message: {:?}", id, msg);
             }
             ws::WebSocketEvent::Error(e) => {
-                log::error!("error from id {}: {:?}", id, e);
+                log::error!("{}: error: {:?}", id, e);
             }
         },
     }

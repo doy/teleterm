@@ -6,7 +6,7 @@ pub(crate) enum WebSocketEvent {
     Connected(JsValue),
     Disconnected(JsValue),
     Message(MessageEvent),
-    Error(JsValue),
+    Error(ErrorEvent),
 }
 
 pub(crate) fn connect(

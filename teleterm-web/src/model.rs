@@ -8,6 +8,12 @@ struct WatchConn {
     ws: WebSocket,
 }
 
+impl Drop for WatchConn {
+    fn drop(&mut self) {
+        self.ws.close().unwrap();
+    }
+}
+
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Session {
     pub id: String,

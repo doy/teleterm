@@ -60,6 +60,10 @@ impl Model {
         self.watch_conn.is_some()
     }
 
+    pub fn disconnect_watch(&mut self) {
+        self.watch_conn = None;
+    }
+
     pub fn process(&mut self, bytes: &[u8]) {
         if let Some(conn) = &mut self.watch_conn {
             conn.term.process(bytes);

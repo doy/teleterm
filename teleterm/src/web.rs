@@ -377,6 +377,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     .context(crate::error::SerializeMessage)?;
                 Ok(Some(tungstenite::Message::Text(json)))
             }
+            crate::protocol::Message::Disconnected => {
+                let json = serde_json::to_string(msg)
+                    .context(crate::error::SerializeMessage)?;
+                Ok(Some(tungstenite::Message::Text(json)))
+            }
             _ => Ok(None),
         }
     }

@@ -4,4 +4,5 @@
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub enum Message {
     TerminalOutput { data: Vec<u8> },
+    Disconnected,
 }

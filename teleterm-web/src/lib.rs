@@ -62,6 +62,10 @@ fn update(
                     crate::protocol::Message::TerminalOutput { data } => {
                         model.process(&data);
                     }
+                    crate::protocol::Message::Disconnected => {
+                        model.disconnect_watch();
+                        orders.perform_cmd(model.list());
+                    }
                 }
             }
             ws::WebSocketEvent::Error(e) => {

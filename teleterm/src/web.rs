@@ -6,6 +6,7 @@ use gotham::router::builder::{DefineSingleRoute as _, DrawRoutes as _};
 use gotham::state::FromState as _;
 use lazy_static::lazy_static;
 use lazy_static_include::*;
+use tokio_tungstenite::tungstenite;
 
 lazy_static_include::lazy_static_include_bytes!(
     INDEX_HTML,
@@ -292,16 +293,11 @@ type WebSocketConnectionFuture = Box<
         > + Send,
 >;
 type MessageSink = Box<
-    dyn futures::Sink<
-            SinkItem = tokio_tungstenite::tungstenite::protocol::Message,
-            SinkError = Error,
-        > + Send,
+    dyn futures::Sink<SinkItem = tungstenite::Message, SinkError = Error>
+        + Send,
 >;
 type MessageStream = Box<
-    dyn futures::Stream<
-            Item = tokio_tungstenite::tungstenite::protocol::Message,
-            Error = Error,
-        > + Send,
+    dyn futures::Stream<Item = tungstenite::Message, Error = Error> + Send,
 >;
 
 enum SenderState {
@@ -331,10 +327,7 @@ impl ConnectionState {
         }
     }
 
-    fn send(
-        &mut self,
-        msg: tokio_tungstenite::tungstenite::protocol::Message,
-    ) {
+    fn send(&mut self, msg: tungstenite::Message) {
         match self {
             Self::Connected(sender, _) => {
                 let fut =
@@ -375,19 +368,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn handle_client_message(
         &mut self,
         msg: &crate::protocol::Message,
-    ) -> Result<Option<tokio_tungstenite::tungstenite::protocol::Message>>
-    {
+    ) -> Result<Option<tungstenite::Message>> {
         log::info!("teleterm client message for {}: {:?}", self.id, msg);
 
         match msg {
             crate::protocol::Message::TerminalOutput { .. } => {
                 let json = serde_json::to_string(msg)
                     .context(crate::error::SerializeMessage)?;
-                Ok(Some(
-                    tokio_tungstenite::tungstenite::protocol::Message::Text(
-                        json,
-                    ),
-                ))
+                Ok(Some(tungstenite::Message::Text(json)))
             }
             _ => Ok(None),
         }
@@ -395,7 +383,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
     fn handle_websocket_message(
         &mut self,
-        msg: &tokio_tungstenite::tungstenite::protocol::Message,
+        msg: &tungstenite::Message,
     ) -> Result<()> {
         // TODO
         log::info!("websocket stream message for {}: {:?}", self.id, msg);

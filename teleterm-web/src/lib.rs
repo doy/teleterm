@@ -4,12 +4,6 @@ mod ws;
 
 use crate::prelude::*;
 
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(js_namespace = console)]
-    fn log(s: &str);
-}
-
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 enum Msg {
@@ -20,7 +14,7 @@ enum Msg {
 }
 
 fn init(_: Url, orders: &mut impl Orders<Msg>) -> Init<crate::model::Model> {
-    log("init");
+    log::trace!("init");
     let model = crate::model::Model::default();
     orders.perform_cmd(model.list());
     Init::new(model)
@@ -31,43 +25,44 @@ fn update(
     model: &mut crate::model::Model,
     orders: &mut impl Orders<Msg>,
 ) {
-    log("update");
+    log::trace!("update");
     match msg {
         Msg::List(sessions) => match sessions {
             Ok(sessions) => {
-                log("got sessions");
+                log::debug!("got sessions");
                 model.update_sessions(sessions);
             }
             Err(e) => {
-                log(&format!("error getting sessions: {:?}", e));
+                log::error!("error getting sessions: {:?}", e);
             }
         },
         Msg::Refresh => {
+            log::debug!("refreshing");
             orders.perform_cmd(model.list());
         }
         Msg::StartWatching(id) => {
-            log(&format!("watching {}", id));
+            log::debug!("watching {}", id);
             model.watch(&id, orders);
         }
         Msg::Watch(id, event) => match event {
             ws::WebSocketEvent::Connected(_) => {
-                log("connected");
+                log::info!("connected");
             }
             ws::WebSocketEvent::Disconnected(_) => {
-                log("disconnected");
+                log::info!("disconnected");
             }
             ws::WebSocketEvent::Message(msg) => {
-                log(&format!("message from id {}: {:?}", id, msg));
+                log::info!("message from id {}: {:?}", id, msg);
             }
             ws::WebSocketEvent::Error(e) => {
-                log(&format!("error from id {}: {:?}", id, e));
+                log::error!("error from id {}: {:?}", id, e);
             }
         },
     }
 }
 
 fn view(model: &crate::model::Model) -> impl View<Msg> {
-    log("view");
+    log::trace!("view");
     let mut list = vec![];
     for session in model.sessions() {
         list.push(seed::li![seed::button![
@@ -84,6 +79,7 @@ fn view(model: &crate::model::Model) -> impl View<Msg> {
 
 #[wasm_bindgen(start)]
 pub fn start() {
-    log("start");
+    console_log::init_with_level(log::Level::Debug).unwrap();
+    log::debug!("start");
     seed::App::build(init, update, view).build_and_start();
 }

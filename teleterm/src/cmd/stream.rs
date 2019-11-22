@@ -265,6 +265,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             Some(tokio_pty_process_stream::Event::Resize {
                 size: (rows, cols),
             }) => {
+                self.term.set_size(rows, cols);
                 self.client.send_message(crate::protocol::Message::resize(
                     crate::term::Size { rows, cols },
                 ));

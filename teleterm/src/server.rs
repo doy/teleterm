@@ -180,10 +180,11 @@ impl ConnectionState {
             term_info,
         } = std::mem::replace(self, Self::Accepted)
         {
+            let size = term_info.size;
             *self = Self::Streaming {
                 username,
                 term_info,
-                term: vt100::Parser::default(),
+                term: vt100::Parser::new(size.rows, size.cols, 0),
             };
         } else {
             unreachable!()

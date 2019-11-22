@@ -818,6 +818,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gotham_derive"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b207d2aa120b2d7be4bb7edc48b199297ebce4227979127b0879890a84163480"
+dependencies = [
+ "quote 0.6.13",
+ "syn 0.15.44",
+]
+
+[[package]]
 name = "h2"
 version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2095,6 +2105,7 @@ dependencies = [
  "env_logger",
  "futures",
  "gotham",
+ "gotham_derive",
  "hyper",
  "lazy-static-include",
  "lazy_static",

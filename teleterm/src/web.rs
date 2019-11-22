@@ -20,6 +20,15 @@ lazy_static_include::lazy_static_include_bytes!(
     "static/teleterm_web_bg.wasm"
 );
 
+#[derive(
+    serde::Deserialize,
+    gotham_derive::StateData,
+    gotham_derive::StaticResponseExtender,
+)]
+struct WatchQueryParams {
+    id: String,
+}
+
 pub struct Server {
     server: Box<dyn futures::Future<Item = (), Error = ()> + Send>,
 }
@@ -70,7 +79,10 @@ pub fn router() -> impl gotham::handler::NewHandler {
             .get("/teleterm_web_bg.wasm")
             .to(serve_static("application/wasm", &TELETERM_WEB_WASM));
         route.get("/list").to(handle_list);
-        route.get("/watch").to(handle_watch);
+        route
+            .get("/watch")
+            .with_query_string_extractor::<WatchQueryParams>()
+            .to(handle_watch);
     })
 }
 
@@ -238,8 +250,26 @@ fn handle_watch(
             .context(crate::error::WebSocketAccept)
             .map(|stream| stream.context(crate::error::WebSocket))
             .flatten_stream();
+
+        let query_params = WatchQueryParams::borrow_from(&state);
+        let address = "127.0.0.1:4144";
+        let (_, address) =
+            crate::config::to_connect_address(address).unwrap();
+        let connector: crate::client::Connector<_> = Box::new(move || {
+            Box::new(
+                tokio::net::tcp::TcpStream::connect(&address)
+                    .context(crate::error::Connect { address }),
+            )
+        });
+        let client = crate::client::Client::watch(
+            "teleterm-web",
+            connector,
+            &crate::protocol::Auth::plain("test"),
+            &query_params.id,
+        );
         let conn = Connection::new(
             gotham::state::request_id(&state),
+            client,
             Box::new(stream),
         );
 
@@ -263,17 +293,36 @@ type MessageStream = Box<
         > + Send,
 >;
 
-struct Connection {
+struct Connection<
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
+> {
     id: String,
+    client: crate::client::Client<S>,
     stream: MessageStream,
 }
 
-impl Connection {
-    fn new(id: &str, stream: MessageStream) -> Self {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    Connection<S>
+{
+    fn new(
+        id: &str,
+        client: crate::client::Client<S>,
+        stream: MessageStream,
+    ) -> Self {
         Self {
+            client,
             id: id.to_string(),
             stream,
         }
+    }
+
+    fn handle_client_message(
+        &mut self,
+        msg: &crate::protocol::Message,
+    ) -> Result<()> {
+        // TODO
+        log::info!("teleterm client message for {}: {:?}", self.id, msg);
+        Ok(())
     }
 
     fn handle_websocket_message(
@@ -286,7 +335,9 @@ impl Connection {
     }
 }
 
-impl Connection {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    Connection<S>
+{
     const POLL_FNS:
         &'static [&'static dyn for<'a> Fn(
             &'a mut Self,
@@ -294,7 +345,21 @@ impl Connection {
             -> component_future::Poll<
             (),
             Error,
-        >] = &[&Self::poll_websocket_stream];
+        >] = &[&Self::poll_client, &Self::poll_websocket_stream];
+
+    fn poll_client(&mut self) -> component_future::Poll<(), Error> {
+        match component_future::try_ready!(self.client.poll()).unwrap() {
+            crate::client::Event::Disconnect => {
+                // TODO: better reconnect handling?
+                return Ok(component_future::Async::Ready(()));
+            }
+            crate::client::Event::Connect => {}
+            crate::client::Event::ServerMessage(msg) => {
+                self.handle_client_message(&msg)?;
+            }
+        }
+        Ok(component_future::Async::DidWork)
+    }
 
     fn poll_websocket_stream(&mut self) -> component_future::Poll<(), Error> {
         if let Some(msg) = component_future::try_ready!(self.stream.poll()) {
@@ -307,7 +372,9 @@ impl Connection {
     }
 }
 
-impl futures::Future for Connection {
+impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
+    futures::Future for Connection<S>
+{
     type Item = ();
     type Error = Error;
 

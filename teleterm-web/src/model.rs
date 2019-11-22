@@ -33,7 +33,11 @@ impl Model {
         id: &str,
         orders: &mut impl Orders<crate::Msg>,
     ) {
-        let ws = crate::ws::connect(WATCH_URL, crate::Msg::Watch, orders);
+        let ws = crate::ws::connect(
+            &format!("{}?id={}", WATCH_URL, id),
+            crate::Msg::Watch,
+            orders,
+        );
         self.watch_conn = Some(WatchConn {
             id: id.to_string(),
             ws,

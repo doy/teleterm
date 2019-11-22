@@ -14,15 +14,9 @@ impl Drop for WatchConn {
     }
 }
 
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct Session {
-    pub id: String,
-    pub username: String,
-}
-
 #[derive(Default)]
 pub struct Model {
-    sessions: Vec<Session>,
+    sessions: Vec<crate::protocol::Session>,
     watch_conn: Option<WatchConn>,
 }
 
@@ -48,11 +42,14 @@ impl Model {
         self.watch_conn = Some(WatchConn { ws, term })
     }
 
-    pub fn sessions(&self) -> &[Session] {
+    pub fn sessions(&self) -> &[crate::protocol::Session] {
         &self.sessions
     }
 
-    pub fn update_sessions(&mut self, sessions: Vec<Session>) {
+    pub fn update_sessions(
+        &mut self,
+        sessions: Vec<crate::protocol::Session>,
+    ) {
         self.sessions = sessions;
     }
 

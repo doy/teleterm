@@ -9,7 +9,7 @@ use crate::prelude::*;
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 enum Msg {
-    List(seed::fetch::ResponseDataResult<Vec<crate::model::Session>>),
+    List(seed::fetch::ResponseDataResult<Vec<crate::protocol::Session>>),
     Refresh,
     StartWatching(String),
     Watch(String, ws::WebSocketEvent),

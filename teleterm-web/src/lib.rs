@@ -1,5 +1,6 @@
 mod model;
 mod prelude;
+mod protocol;
 mod ws;
 
 use crate::prelude::*;
@@ -53,6 +54,18 @@ fn update(
             }
             ws::WebSocketEvent::Message(msg) => {
                 log::info!("{}: message: {:?}", id, msg);
+                let json = msg.data().as_string().unwrap();
+                let msg: crate::protocol::Message =
+                    serde_json::from_str(&json).unwrap();
+                match msg {
+                    crate::protocol::Message::TerminalOutput { data } => {
+                        log::info!(
+                            "{}: got bytes: {}",
+                            id,
+                            String::from_utf8_lossy(&data)
+                        );
+                    }
+                }
             }
             ws::WebSocketEvent::Error(e) => {
                 log::error!("{}: error: {:?}", id, e);

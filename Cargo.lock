@@ -2127,8 +2127,11 @@ dependencies = [
 name = "teleterm-web"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "js-sys",
  "seed",
+ "serde",
+ "serde_json",
  "wasm-bindgen",
  "web-sys",
 ]

@@ -1,33 +1,46 @@
 use crate::prelude::*;
 use wasm_bindgen::JsCast as _;
 
+#[derive(Clone)]
+pub(crate) enum WebSocketEvent {
+    Connected(JsValue),
+    Disconnected(JsValue),
+    Message(MessageEvent),
+    Error(JsValue),
+}
+
 pub(crate) fn connect(
     url: &str,
+    msg: fn(WebSocketEvent) -> crate::Msg,
     orders: &mut impl Orders<crate::Msg>,
 ) -> WebSocket {
     let ws = WebSocket::new(url).unwrap();
 
     register_ws_handler(
         WebSocket::set_onopen,
-        crate::Msg::Connected,
+        WebSocketEvent::Connected,
+        msg,
         &ws,
         orders,
     );
     register_ws_handler(
         WebSocket::set_onclose,
-        crate::Msg::Disconnected,
+        WebSocketEvent::Disconnected,
+        msg,
         &ws,
         orders,
     );
     register_ws_handler(
         WebSocket::set_onmessage,
-        crate::Msg::Message,
+        WebSocketEvent::Message,
+        msg,
         &ws,
         orders,
     );
     register_ws_handler(
         WebSocket::set_onerror,
-        crate::Msg::Error,
+        WebSocketEvent::Error,
+        msg,
         &ws,
         orders,
     );
@@ -38,16 +51,17 @@ pub(crate) fn connect(
 fn register_ws_handler<T, F>(
     ws_cb_setter: fn(&WebSocket, Option<&js_sys::Function>),
     msg: F,
+    ws_msg: fn(WebSocketEvent) -> crate::Msg,
     ws: &web_sys::WebSocket,
     orders: &mut impl Orders<crate::Msg>,
 ) where
     T: wasm_bindgen::convert::FromWasmAbi + 'static,
-    F: Fn(T) -> crate::Msg + 'static,
+    F: Fn(T) -> WebSocketEvent + 'static,
 {
     let (app, msg_mapper) = (orders.clone_app(), orders.msg_mapper());
 
     let closure = Closure::new(move |data| {
-        app.update(msg_mapper(msg(data)));
+        app.update(msg_mapper(ws_msg(msg(data))));
     });
 
     ws_cb_setter(ws, Some(closure.as_ref().unchecked_ref()));

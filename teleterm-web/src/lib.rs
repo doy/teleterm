@@ -55,7 +55,6 @@ fn update(
             }
             ws::WebSocketEvent::Disconnected(_) => {
                 log("disconnected");
-                model.watch_disconnect();
             }
             ws::WebSocketEvent::Message(msg) => {
                 log(&format!("message from id {}: {:?}", id, msg));

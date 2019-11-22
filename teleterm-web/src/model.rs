@@ -54,8 +54,4 @@ impl Model {
     pub fn update_sessions(&mut self, sessions: Vec<Session>) {
         self.sessions = sessions;
     }
-
-    pub fn watch_disconnect(&mut self) {
-        self.watch_conn = None;
-    }
 }

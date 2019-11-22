@@ -4,7 +4,6 @@ const LIST_URL: &str = "http://127.0.0.1:4145/list";
 const WATCH_URL: &str = "ws://127.0.0.1:4145/watch";
 
 struct WatchConn {
-    id: String,
     #[allow(dead_code)] // no idea why it thinks this is dead
     ws: WebSocket,
 }
@@ -35,13 +34,11 @@ impl Model {
     ) {
         let ws = crate::ws::connect(
             &format!("{}?id={}", WATCH_URL, id),
+            id,
             crate::Msg::Watch,
             orders,
         );
-        self.watch_conn = Some(WatchConn {
-            id: id.to_string(),
-            ws,
-        })
+        self.watch_conn = Some(WatchConn { ws })
     }
 
     pub fn sessions(&self) -> &[Session] {
@@ -50,14 +47,6 @@ impl Model {
 
     pub fn update_sessions(&mut self, sessions: Vec<Session>) {
         self.sessions = sessions;
-    }
-
-    pub fn watch_id(&self) -> Option<&str> {
-        if let Some(conn) = &self.watch_conn {
-            Some(&conn.id)
-        } else {
-            None
-        }
     }
 
     pub fn watch_disconnect(&mut self) {

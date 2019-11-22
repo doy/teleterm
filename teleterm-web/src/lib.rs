@@ -16,7 +16,7 @@ enum Msg {
     List(seed::fetch::ResponseDataResult<Vec<crate::model::Session>>),
     Refresh,
     StartWatching(String),
-    Watch(ws::WebSocketEvent),
+    Watch(String, ws::WebSocketEvent),
 }
 
 fn init(_: Url, orders: &mut impl Orders<Msg>) -> Init<crate::model::Model> {
@@ -49,7 +49,7 @@ fn update(
             log(&format!("watching {}", id));
             model.watch(&id, orders);
         }
-        Msg::Watch(event) => match event {
+        Msg::Watch(id, event) => match event {
             ws::WebSocketEvent::Connected(_) => {
                 log("connected");
             }
@@ -58,18 +58,10 @@ fn update(
                 model.watch_disconnect();
             }
             ws::WebSocketEvent::Message(msg) => {
-                log(&format!(
-                    "message from id {}: {:?}",
-                    model.watch_id().unwrap(),
-                    msg
-                ));
+                log(&format!("message from id {}: {:?}", id, msg));
             }
             ws::WebSocketEvent::Error(e) => {
-                log(&format!(
-                    "error from id {}: {:?}",
-                    model.watch_id().unwrap(),
-                    e
-                ));
+                log(&format!("error from id {}: {:?}", id, e));
             }
         },
     }

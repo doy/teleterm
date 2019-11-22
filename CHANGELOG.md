@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+* Watch clients now receive resize events (although the terminal watch client
+  just ignores them)
+
+### Fixed
+
+* Streaming while using a terminal of size other than 80x24 works properly
+  again.
+* Fixed a few more terminal parsing/drawing bugs.
+
 ## [0.2.0] - 2019-11-14
 
 ### Added

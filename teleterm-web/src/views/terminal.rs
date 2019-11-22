@@ -8,6 +8,7 @@ pub(crate) fn render(model: &crate::model::Model) -> Node<crate::Msg> {
         return seed::empty![];
     };
     let (rows, cols) = screen.size();
+    let (cursor_row, cursor_col) = screen.cursor_position();
 
     let mut grid = vec![];
     for row_idx in 0..rows {
@@ -20,7 +21,12 @@ pub(crate) fn render(model: &crate::model::Model) -> Node<crate::Msg> {
             }
             row.push(seed::td![
                 seed::attrs! { At::Class => "cell" },
-                style_for_cell(cell),
+                style_for_cell(
+                    cell,
+                    cursor_row == row_idx
+                        && cursor_col == col_idx
+                        && !screen.hide_cursor()
+                ),
                 contents
             ])
         }
@@ -30,10 +36,16 @@ pub(crate) fn render(model: &crate::model::Model) -> Node<crate::Msg> {
     seed::table![seed::attrs! { At::Class => "grid" }, grid]
 }
 
-fn style_for_cell(cell: &vt100::Cell) -> seed::dom_types::Style {
+fn style_for_cell(
+    cell: &vt100::Cell,
+    is_cursor: bool,
+) -> seed::dom_types::Style {
     let mut fgcolor = cell.fgcolor();
     let mut bgcolor = cell.bgcolor();
-    if cell.inverse() {
+    if is_cursor {
+        fgcolor = vt100::Color::Rgb(0, 0, 0);
+        bgcolor = vt100::Color::Rgb(0, 0xff, 0);
+    } else if cell.inverse() {
         if fgcolor == bgcolor {
             fgcolor = vt100::Color::Rgb(0, 0, 0);
             bgcolor = vt100::Color::Rgb(0xd3, 0xd3, 0xd3);

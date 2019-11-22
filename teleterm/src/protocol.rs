@@ -105,7 +105,7 @@ impl std::convert::TryFrom<&str> for AuthType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum Auth {
     Plain { username: String },
     RecurseCenter { id: Option<String> },
@@ -183,7 +183,7 @@ impl std::convert::TryFrom<u8> for MessageType {
 
 // XXX https://github.com/rust-lang/rust/issues/64362
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum Message {
     Login {
         proto_version: u8,

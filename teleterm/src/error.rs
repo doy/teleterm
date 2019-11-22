@@ -300,6 +300,9 @@ pub enum Error {
         source: std::io::Error,
     },
 
+    #[snafu(display("failed to serialize message as json: {}", source))]
+    SerializeMessage { source: serde_json::Error },
+
     #[snafu(display("received error from server: {}", message))]
     Server { message: String },
 

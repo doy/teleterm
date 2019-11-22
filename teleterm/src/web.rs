@@ -376,8 +376,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         &mut self,
         msg: &crate::protocol::Message,
     ) -> Result<Option<tungstenite::Message>> {
-        log::info!("teleterm client message for {}: {:?}", self.id, msg);
-
         match msg {
             crate::protocol::Message::TerminalOutput { .. } => {
                 let json = serde_json::to_string(msg)

@@ -109,5 +109,5 @@ teleterm/static/teleterm_web.js: target/wasm/teleterm_web.js
 target/wasm/%_opt.wasm: target/wasm/%.wasm
 	@wasm-opt -Oz $< -o $@
 
-target/wasm/teleterm_web.js target/wasm/teleterm_web_bg.wasm: teleterm-web/Cargo.toml teleterm-web/src/lib.rs
+target/wasm/teleterm_web.js target/wasm/teleterm_web_bg.wasm: teleterm-web/Cargo.toml teleterm-web/src/*.rs
 	@wasm-pack build --no-typescript --target web --out-dir ../target/wasm teleterm-web

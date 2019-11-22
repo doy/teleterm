@@ -56,6 +56,10 @@ impl Model {
         self.sessions = sessions;
     }
 
+    pub fn watching(&self) -> bool {
+        self.watch_conn.is_some()
+    }
+
     pub fn process(&mut self, bytes: &[u8]) {
         if let Some(conn) = &mut self.watch_conn {
             conn.term.process(bytes);

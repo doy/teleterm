@@ -1,6 +1,7 @@
 mod model;
 mod prelude;
 mod protocol;
+mod views;
 mod ws;
 
 use crate::prelude::*;
@@ -72,19 +73,7 @@ fn update(
 
 fn view(model: &crate::model::Model) -> impl View<Msg> {
     log::trace!("view");
-    let mut list = vec![];
-    for session in model.sessions() {
-        list.push(seed::li![seed::button![
-            simple_ev(Ev::Click, Msg::StartWatching(session.id.clone())),
-            format!("{}: {}", session.username, session.id),
-        ]]);
-    }
-    vec![
-        seed::h1!["it's a seed app"],
-        seed::ul![list],
-        seed::button![simple_ev(Ev::Click, Msg::Refresh), "refresh"],
-        seed::pre![model.screen()],
-    ]
+    crate::views::page::render(model)
 }
 
 #[wasm_bindgen(start)]

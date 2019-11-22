@@ -489,16 +489,17 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         let username = conn.state.username().unwrap();
 
         if let Some(stream_conn) = self.connections.get(&id) {
-            let data = stream_conn
-                .state
-                .term()
-                .map(|parser| parser.screen().contents_formatted())
-                .ok_or_else(|| Error::InvalidWatchId {
-                    id: id.to_string(),
-                })?;
+            let term = stream_conn.state.term().ok_or_else(|| {
+                Error::InvalidWatchId { id: id.to_string() }
+            })?;
+            let (rows, cols) = term.screen().size();
+            let data = term.screen().contents_formatted();
 
             log::info!("{}: watch({}, {})", conn.id, username, id);
             conn.state.watch(&id);
+            conn.send_message(crate::protocol::Message::resize(
+                crate::term::Size { rows, cols },
+            ));
             conn.send_message(crate::protocol::Message::terminal_output(
                 &data,
             ));
@@ -583,6 +584,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
         if let Some(parser) = conn.state.term_mut() {
             parser.set_size(size.rows, size.cols);
+        }
+
+        for watch_conn in self.watchers_mut() {
+            let watch_id = watch_conn.state.watch_id().unwrap();
+            if conn.id == watch_id {
+                watch_conn
+                    .send_message(crate::protocol::Message::resize(size));
+            }
         }
 
         Ok(())

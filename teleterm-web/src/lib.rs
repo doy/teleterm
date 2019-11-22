@@ -67,6 +67,9 @@ fn update(
                         model.disconnect_watch();
                         orders.perform_cmd(model.list());
                     }
+                    crate::protocol::Message::Resize { size } => {
+                        model.set_size(size.rows, size.cols);
+                    }
                 }
             }
             ws::WebSocketEvent::Error(e) => {

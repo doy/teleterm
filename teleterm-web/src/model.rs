@@ -67,6 +67,12 @@ impl Model {
         }
     }
 
+    pub fn set_size(&mut self, rows: u16, cols: u16) {
+        if let Some(conn) = &mut self.watch_conn {
+            conn.term.set_size(rows, cols);
+        }
+    }
+
     pub fn screen(&self) -> Option<&vt100::Screen> {
         self.watch_conn.as_ref().map(|conn| conn.term.screen())
     }

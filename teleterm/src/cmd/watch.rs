@@ -360,6 +360,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             crate::protocol::Message::Error { msg } => {
                 return Err(Error::Server { message: msg });
             }
+            crate::protocol::Message::Resize { .. } => {
+                // do nothing
+            }
             msg => {
                 return Err(crate::error::Error::UnexpectedMessage {
                     message: msg,

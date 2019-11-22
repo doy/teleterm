@@ -377,12 +377,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         msg: &crate::protocol::Message,
     ) -> Result<Option<tungstenite::Message>> {
         match msg {
-            crate::protocol::Message::TerminalOutput { .. } => {
-                let json = serde_json::to_string(msg)
-                    .context(crate::error::SerializeMessage)?;
-                Ok(Some(tungstenite::Message::Text(json)))
-            }
-            crate::protocol::Message::Disconnected => {
+            crate::protocol::Message::TerminalOutput { .. }
+            | crate::protocol::Message::Disconnected
+            | crate::protocol::Message::Resize { .. } => {
                 let json = serde_json::to_string(msg)
                     .context(crate::error::SerializeMessage)?;
                 Ok(Some(tungstenite::Message::Text(json)))

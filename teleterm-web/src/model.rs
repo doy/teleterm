@@ -67,11 +67,7 @@ impl Model {
         }
     }
 
-    pub fn screen(&self) -> String {
-        if let Some(conn) = &self.watch_conn {
-            conn.term.screen().contents()
-        } else {
-            "".to_string()
-        }
+    pub fn screen(&self) -> Option<&vt100::Screen> {
+        self.watch_conn.as_ref().map(|conn| conn.term.screen())
     }
 }

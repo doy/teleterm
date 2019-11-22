@@ -13,6 +13,7 @@ enum Msg {
     Refresh,
     StartWatching(String),
     Watch(String, ws::WebSocketEvent),
+    StopWatching,
 }
 
 fn init(_: Url, orders: &mut impl Orders<Msg>) -> Init<crate::model::Model> {
@@ -72,6 +73,10 @@ fn update(
                 log::error!("{}: error: {:?}", id, e);
             }
         },
+        Msg::StopWatching => {
+            model.disconnect_watch();
+            orders.perform_cmd(model.list());
+        }
     }
 }
 

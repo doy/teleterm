@@ -106,11 +106,8 @@ teleterm/static/teleterm_web_bg.wasm: target/wasm/teleterm_web_bg_opt.wasm
 teleterm/static/teleterm_web.js: target/wasm/teleterm_web.js
 	@cp -f $< $@
 
-target/wasm/%_snipped.wasm: target/wasm/%.wasm
-	@wasm-snip --snip-rust-panicking-code $< -o $@
-
-target/wasm/%_opt.wasm: target/wasm/%_snipped.wasm
-	@wasm-opt --dce -Oz $< -o $@
+target/wasm/%_opt.wasm: target/wasm/%.wasm
+	@wasm-opt -Oz $< -o $@
 
 target/wasm/teleterm_web.js target/wasm/teleterm_web_bg.wasm: teleterm-web/Cargo.toml teleterm-web/src/lib.rs
 	@wasm-pack build --no-typescript --target web --out-dir ../target/wasm teleterm-web

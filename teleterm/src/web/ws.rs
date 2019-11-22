@@ -3,8 +3,6 @@
 use futures::Future as _;
 
 const PROTO_WEBSOCKET: &str = "websocket";
-const SEC_WEBSOCKET_KEY: &str = "Sec-WebSocket-Key";
-const SEC_WEBSOCKET_ACCEPT: &str = "Sec-WebSocket-Accept";
 
 pub fn requested(headers: &hyper::HeaderMap) -> bool {
     headers.get(hyper::header::UPGRADE)
@@ -41,12 +39,15 @@ pub fn accept(
 fn response(
     headers: &hyper::HeaderMap,
 ) -> Result<hyper::Response<hyper::Body>, ()> {
-    let key = headers.get(SEC_WEBSOCKET_KEY).ok_or(())?;
+    let key = headers.get(hyper::header::SEC_WEBSOCKET_KEY).ok_or(())?;
 
     Ok(hyper::Response::builder()
         .header(hyper::header::UPGRADE, PROTO_WEBSOCKET)
         .header(hyper::header::CONNECTION, "upgrade")
-        .header(SEC_WEBSOCKET_ACCEPT, accept_key(key.as_bytes()))
+        .header(
+            hyper::header::SEC_WEBSOCKET_ACCEPT,
+            accept_key(key.as_bytes()),
+        )
         .status(hyper::StatusCode::SWITCHING_PROTOCOLS)
         .body(hyper::Body::empty())
         .unwrap())

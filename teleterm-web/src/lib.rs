@@ -1,3 +1,4 @@
+mod model;
 mod prelude;
 mod ws;
 
@@ -9,64 +10,33 @@ extern "C" {
     fn log(s: &str);
 }
 
-const LIST_URL: &str = "http://127.0.0.1:4145/list";
-const WATCH_URL: &str = "ws://127.0.0.1:4145/watch";
-
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 enum Msg {
-    List(seed::fetch::ResponseDataResult<Vec<Session>>),
+    List(seed::fetch::ResponseDataResult<Vec<crate::model::Session>>),
     Refresh,
     StartWatching(String),
     Watch(ws::WebSocketEvent),
 }
 
-struct WatchConn {
-    id: String,
-    #[allow(dead_code)] // no idea why it thinks this is dead
-    ws: WebSocket,
-}
-
-#[derive(Clone, Debug, serde::Deserialize)]
-struct Session {
-    id: String,
-    username: String,
-}
-
-#[derive(Default)]
-struct Model {
-    sessions: Vec<Session>,
-    watch_conn: Option<WatchConn>,
-}
-
-impl Model {
-    fn list(&self) -> impl futures::Future<Item = Msg, Error = Msg> {
-        seed::Request::new(LIST_URL).fetch_json_data(Msg::List)
-    }
-
-    fn watch(&mut self, id: &str, orders: &mut impl Orders<Msg>) {
-        let ws = ws::connect(WATCH_URL, Msg::Watch, orders);
-        self.watch_conn = Some(WatchConn {
-            id: id.to_string(),
-            ws,
-        })
-    }
-}
-
-fn init(_: Url, orders: &mut impl Orders<Msg>) -> Init<Model> {
+fn init(_: Url, orders: &mut impl Orders<Msg>) -> Init<crate::model::Model> {
     log("init");
-    let model = Model::default();
+    let model = crate::model::Model::default();
     orders.perform_cmd(model.list());
     Init::new(model)
 }
 
-fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
+fn update(
+    msg: Msg,
+    model: &mut crate::model::Model,
+    orders: &mut impl Orders<Msg>,
+) {
     log("update");
     match msg {
         Msg::List(sessions) => match sessions {
             Ok(sessions) => {
                 log("got sessions");
-                model.sessions = sessions;
+                model.update_sessions(sessions);
             }
             Err(e) => {
                 log(&format!("error getting sessions: {:?}", e));
@@ -85,19 +55,19 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
             }
             ws::WebSocketEvent::Disconnected(_) => {
                 log("disconnected");
-                model.watch_conn = None;
+                model.watch_disconnect();
             }
             ws::WebSocketEvent::Message(msg) => {
                 log(&format!(
                     "message from id {}: {:?}",
-                    model.watch_conn.as_ref().unwrap().id,
+                    model.watch_id().unwrap(),
                     msg
                 ));
             }
             ws::WebSocketEvent::Error(e) => {
                 log(&format!(
                     "error from id {}: {:?}",
-                    model.watch_conn.as_ref().unwrap().id,
+                    model.watch_id().unwrap(),
                     e
                 ));
             }
@@ -105,10 +75,10 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
     }
 }
 
-fn view(model: &Model) -> impl View<Msg> {
+fn view(model: &crate::model::Model) -> impl View<Msg> {
     log("view");
     let mut list = vec![];
-    for session in &model.sessions {
+    for session in model.sessions() {
         list.push(seed::li![seed::button![
             simple_ev(Ev::Click, Msg::StartWatching(session.id.clone())),
             format!("{}: {}", session.username, session.id),

@@ -4,6 +4,7 @@ pub(crate) fn render(model: &crate::model::Model) -> Vec<Node<crate::Msg>> {
     let rows: Vec<_> = model.sessions().iter().map(row).collect();
     vec![
         seed::table![
+            seed::attrs! { At::Class => "list" },
             seed::tr![
                 seed::th!["username"],
                 seed::th!["size"],
@@ -19,13 +20,10 @@ pub(crate) fn render(model: &crate::model::Model) -> Vec<Node<crate::Msg>> {
 
 fn row(session: &crate::protocol::Session) -> Node<crate::Msg> {
     seed::tr![
-        seed::td![seed::a![
-            simple_ev(
-                Ev::Click,
-                crate::Msg::StartWatching(session.id.clone())
-            ),
-            session.username,
-        ]],
+        simple_ev(Ev::Click, crate::Msg::StartWatching(session.id.clone())),
+        seed::td![
+            seed::a![seed::attrs! {At::Href => "#"}, session.username,]
+        ],
         seed::td![format!("{}x{}", session.size.cols, session.size.rows)],
         seed::td![format_time(session.idle_time)],
         seed::td![format!("{}", session.watchers)],

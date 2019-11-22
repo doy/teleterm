@@ -20,6 +20,10 @@ lazy_static_include::lazy_static_include_bytes!(
     TELETERM_WEB_WASM,
     "static/teleterm_web_bg.wasm"
 );
+lazy_static_include::lazy_static_include_bytes!(
+    TELETERM_CSS,
+    "static/teleterm.css"
+);
 
 #[derive(
     serde::Deserialize,
@@ -79,6 +83,9 @@ pub fn router() -> impl gotham::handler::NewHandler {
         route
             .get("/teleterm_web_bg.wasm")
             .to(serve_static("application/wasm", &TELETERM_WEB_WASM));
+        route
+            .get("/teleterm.css")
+            .to(serve_static("text/css", &TELETERM_CSS));
         route.get("/list").to(handle_list);
         route
             .get("/watch")

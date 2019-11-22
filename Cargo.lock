@@ -2155,6 +2155,7 @@ dependencies = [
  "seed",
  "serde",
  "serde_json",
+ "unicode-width",
  "vt100",
  "wasm-bindgen",
  "web-sys",

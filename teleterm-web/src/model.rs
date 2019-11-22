@@ -4,7 +4,6 @@ const LIST_URL: &str = "http://127.0.0.1:4145/list";
 const WATCH_URL: &str = "ws://127.0.0.1:4145/watch";
 
 struct WatchConn {
-    #[allow(dead_code)] // no idea why it thinks this is dead
     ws: WebSocket,
     term: vt100::Parser,
 }

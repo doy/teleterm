@@ -59,11 +59,7 @@ fn update(
                     serde_json::from_str(&json).unwrap();
                 match msg {
                     crate::protocol::Message::TerminalOutput { data } => {
-                        log::info!(
-                            "{}: got bytes: {}",
-                            id,
-                            String::from_utf8_lossy(&data)
-                        );
+                        model.process(&data);
                     }
                 }
             }
@@ -87,6 +83,7 @@ fn view(model: &crate::model::Model) -> impl View<Msg> {
         seed::h1!["it's a seed app"],
         seed::ul![list],
         seed::button![simple_ev(Ev::Click, Msg::Refresh), "refresh"],
+        seed::pre![model.screen()],
     ]
 }
 

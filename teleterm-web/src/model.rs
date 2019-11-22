@@ -6,6 +6,7 @@ const WATCH_URL: &str = "ws://127.0.0.1:4145/watch";
 struct WatchConn {
     #[allow(dead_code)] // no idea why it thinks this is dead
     ws: WebSocket,
+    term: vt100::Parser,
 }
 
 impl Drop for WatchConn {
@@ -44,7 +45,8 @@ impl Model {
             crate::Msg::Watch,
             orders,
         );
-        self.watch_conn = Some(WatchConn { ws })
+        let term = vt100::Parser::default();
+        self.watch_conn = Some(WatchConn { ws, term })
     }
 
     pub fn sessions(&self) -> &[Session] {
@@ -53,5 +55,19 @@ impl Model {
 
     pub fn update_sessions(&mut self, sessions: Vec<Session>) {
         self.sessions = sessions;
+    }
+
+    pub fn process(&mut self, bytes: &[u8]) {
+        if let Some(conn) = &mut self.watch_conn {
+            conn.term.process(bytes);
+        }
+    }
+
+    pub fn screen(&self) -> String {
+        if let Some(conn) = &self.watch_conn {
+            conn.term.screen().contents()
+        } else {
+            "".to_string()
+        }
     }
 }

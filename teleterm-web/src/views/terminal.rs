@@ -72,18 +72,18 @@ fn style_for_cell(
     }
 }
 
-fn color(color: vt100::Color, bold: bool) -> Option<String> {
+fn color(color: vt100::Color, bright: bool) -> Option<String> {
     match color {
         vt100::Color::Default => None,
-        vt100::Color::Idx(n) => Some(indexed_color(n, bold).to_string()),
+        vt100::Color::Idx(n) => Some(indexed_color(n, bright).to_string()),
         vt100::Color::Rgb(r, g, b) => {
             Some(format!("#{:02x}{:02x}{:02x}", r, g, b))
         }
     }
 }
 
-fn indexed_color(mut idx: u8, bold: bool) -> &'static str {
-    if idx < 8 && bold {
+fn indexed_color(mut idx: u8, bright: bool) -> &'static str {
+    if idx < 8 && bright {
         idx += 8;
     }
 

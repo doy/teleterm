@@ -9,8 +9,8 @@ use lazy_static_include::*;
 use tokio_tungstenite::tungstenite;
 
 lazy_static_include::lazy_static_include_bytes!(
-    INDEX_HTML,
-    "static/index.html"
+    INDEX_HTML_TMPL,
+    "static/index.html.tmpl"
 );
 lazy_static_include::lazy_static_include_bytes!(
     TELETERM_WEB_JS,
@@ -34,14 +34,22 @@ struct WatchQueryParams {
     id: String,
 }
 
+#[derive(Clone, serde::Serialize)]
+struct TemplateData {
+    title: String,
+}
+
 pub struct Server {
     server: Box<dyn futures::Future<Item = (), Error = ()> + Send>,
 }
 
 impl Server {
     pub fn new<T: std::net::ToSocketAddrs + 'static>(addr: T) -> Self {
+        let data = TemplateData {
+            title: "teleterm".to_string(),
+        };
         Self {
-            server: Box::new(gotham::init_server(addr, router())),
+            server: Box::new(gotham::init_server(addr, router(&data))),
         }
     }
 }
@@ -74,9 +82,13 @@ impl futures::Future for Server {
     }
 }
 
-pub fn router() -> impl gotham::handler::NewHandler {
+fn router(data: &TemplateData) -> impl gotham::handler::NewHandler {
     gotham::router::builder::build_simple_router(|route| {
-        route.get("/").to(serve_static("text/html", &INDEX_HTML));
+        route.get("/").to_new_handler(serve_template(
+            "text/html",
+            &INDEX_HTML_TMPL,
+            data,
+        ));
         route
             .get("/teleterm_web.js")
             .to(serve_static("application/javascript", &TELETERM_WEB_JS));
@@ -104,6 +116,30 @@ fn serve_static(
             .body(hyper::Body::from(s))
             .unwrap();
         (state, response)
+    }
+}
+
+fn serve_template(
+    content_type: &'static str,
+    s: &'static [u8],
+    data: &TemplateData,
+) -> impl gotham::handler::NewHandler {
+    let data = data.clone();
+    move || {
+        let data = data.clone();
+        Ok(move |state| {
+            let rendered = handlebars::Handlebars::new()
+                .render_template(
+                    &String::from_utf8(s.to_vec()).unwrap(),
+                    &data,
+                )
+                .unwrap();
+            let response = hyper::Response::builder()
+                .header("Content-Type", content_type)
+                .body(hyper::Body::from(rendered))
+                .unwrap();
+            (state, response)
+        })
     }
 }
 

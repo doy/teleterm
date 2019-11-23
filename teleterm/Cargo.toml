@@ -24,6 +24,7 @@ futures = "0.1.29"
 # for websocket support - should be able to go back to released version in 0.5
 gotham = { git = "https://github.com/gotham-rs/gotham", rev = "d2395926b93710832f8d72b49c9bd3e77516e386" }
 gotham_derive = "0.4"
+handlebars = "2"
 hyper = "0.12"
 lazy_static = "1"
 lazy-static-include = "2"

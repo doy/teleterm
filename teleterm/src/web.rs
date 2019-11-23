@@ -81,11 +81,9 @@ fn router(data: &Config) -> impl gotham::handler::NewHandler {
             .build(),
     );
     gotham::router::builder::build_router(chain, pipeline, |route| {
-        route.get("/").to_new_handler(serve_template(
-            "text/html",
-            view::INDEX_HTML_TMPL_NAME,
-            data,
-        ));
+        route
+            .get("/")
+            .to(serve_template("text/html", view::INDEX_HTML_TMPL_NAME));
         route.get("/teleterm_web.js").to(serve_static(
             "application/javascript",
             &view::TELETERM_WEB_JS,
@@ -120,19 +118,15 @@ fn serve_static(
 fn serve_template(
     content_type: &'static str,
     name: &'static str,
-    data: &Config,
-) -> impl gotham::handler::NewHandler {
-    let data = data.clone();
-    move || {
-        let data = data.clone();
-        Ok(move |state| {
-            let rendered = view::HANDLEBARS.render(name, &data).unwrap();
-            let response = hyper::Response::builder()
-                .header("Content-Type", content_type)
-                .body(hyper::Body::from(rendered))
-                .unwrap();
-            (state, response)
-        })
+) -> impl gotham::handler::Handler + Copy {
+    move |state| {
+        let config = Config::borrow_from(&state);
+        let rendered = view::HANDLEBARS.render(name, &config).unwrap();
+        let response = hyper::Response::builder()
+            .header("Content-Type", content_type)
+            .body(hyper::Body::from(rendered))
+            .unwrap();
+        (state, response)
     }
 }
 

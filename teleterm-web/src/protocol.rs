@@ -2,14 +2,14 @@
 // crate or something? but ideally in a way that doesn't require pulling in
 // tokio
 #[derive(Clone, Debug, serde::Deserialize)]
-pub enum Message {
+pub(crate) enum Message {
     TerminalOutput { data: Vec<u8> },
     Disconnected,
     Resize { size: Size },
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
-pub struct Session {
+pub(crate) struct Session {
     pub id: String,
     pub username: String,
     pub term_type: String,
@@ -20,7 +20,7 @@ pub struct Session {
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
-pub struct Size {
+pub(crate) struct Size {
     pub rows: u16,
     pub cols: u16,
 }

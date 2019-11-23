@@ -1,2 +1,2 @@
-pub use seed::prelude::*;
-pub use web_sys::{ErrorEvent, MessageEvent, WebSocket};
+pub(crate) use seed::prelude::*;
+pub(crate) use web_sys::{ErrorEvent, MessageEvent, WebSocket};

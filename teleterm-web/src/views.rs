@@ -1,4 +1,4 @@
-pub mod list;
-pub mod page;
-pub mod terminal;
-pub mod watch;
+pub(crate) mod list;
+pub(crate) mod page;
+pub(crate) mod terminal;
+pub(crate) mod watch;

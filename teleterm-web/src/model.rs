@@ -15,7 +15,7 @@ impl Drop for WatchConn {
 }
 
 #[derive(Default)]
-pub struct Model {
+pub(crate) struct Model {
     sessions: Vec<crate::protocol::Session>,
     watch_conn: Option<WatchConn>,
 }
@@ -38,7 +38,10 @@ impl Model {
             },
             crate::Msg::Refresh => {
                 log::debug!("refreshing");
-                orders.perform_cmd(self.list());
+                orders.perform_cmd(
+                    seed::Request::new(LIST_URL)
+                        .fetch_json_data(crate::Msg::List),
+                );
             }
             crate::Msg::StartWatching(id) => {
                 log::debug!("watching {}", id);
@@ -62,7 +65,7 @@ impl Model {
                         }
                         crate::protocol::Message::Disconnected => {
                             self.disconnect_watch();
-                            orders.perform_cmd(self.list());
+                            orders.send_msg(crate::Msg::Refresh);
                         }
                         crate::protocol::Message::Resize { size } => {
                             self.set_size(size.rows, size.cols);
@@ -75,22 +78,24 @@ impl Model {
             },
             crate::Msg::StopWatching => {
                 self.disconnect_watch();
-                orders.perform_cmd(self.list());
+                orders.send_msg(crate::Msg::Refresh);
             }
         }
     }
 
-    pub(crate) fn list(
-        &self,
-    ) -> impl futures::Future<Item = crate::Msg, Error = crate::Msg> {
-        seed::Request::new(LIST_URL).fetch_json_data(crate::Msg::List)
+    pub(crate) fn screen(&self) -> Option<&vt100::Screen> {
+        self.watch_conn.as_ref().map(|conn| conn.term.screen())
     }
 
-    pub(crate) fn watch(
-        &mut self,
-        id: &str,
-        orders: &mut impl Orders<crate::Msg>,
-    ) {
+    pub(crate) fn sessions(&self) -> &[crate::protocol::Session] {
+        &self.sessions
+    }
+
+    pub(crate) fn watching(&self) -> bool {
+        self.watch_conn.is_some()
+    }
+
+    fn watch(&mut self, id: &str, orders: &mut impl Orders<crate::Msg>) {
         let ws = crate::ws::connect(
             &format!("{}?id={}", WATCH_URL, id),
             id,
@@ -101,38 +106,23 @@ impl Model {
         self.watch_conn = Some(WatchConn { ws, term })
     }
 
-    pub fn sessions(&self) -> &[crate::protocol::Session] {
-        &self.sessions
-    }
-
-    pub fn update_sessions(
-        &mut self,
-        sessions: Vec<crate::protocol::Session>,
-    ) {
+    fn update_sessions(&mut self, sessions: Vec<crate::protocol::Session>) {
         self.sessions = sessions;
     }
 
-    pub fn watching(&self) -> bool {
-        self.watch_conn.is_some()
-    }
-
-    pub fn disconnect_watch(&mut self) {
+    fn disconnect_watch(&mut self) {
         self.watch_conn = None;
     }
 
-    pub fn process(&mut self, bytes: &[u8]) {
+    fn process(&mut self, bytes: &[u8]) {
         if let Some(conn) = &mut self.watch_conn {
             conn.term.process(bytes);
         }
     }
 
-    pub fn set_size(&mut self, rows: u16, cols: u16) {
+    fn set_size(&mut self, rows: u16, cols: u16) {
         if let Some(conn) = &mut self.watch_conn {
             conn.term.set_size(rows, cols);
         }
-    }
-
-    pub fn screen(&self) -> Option<&vt100::Screen> {
-        self.watch_conn.as_ref().map(|conn| conn.term.screen())
     }
 }

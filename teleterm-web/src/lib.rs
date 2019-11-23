@@ -18,9 +18,8 @@ enum Msg {
 
 fn init(_: Url, orders: &mut impl Orders<Msg>) -> Init<crate::model::Model> {
     log::trace!("init");
-    let model = crate::model::Model::default();
-    orders.perform_cmd(model.list());
-    Init::new(model)
+    orders.send_msg(Msg::Refresh);
+    Init::new(crate::model::Model::default())
 }
 
 fn update(

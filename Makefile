@@ -103,11 +103,14 @@ web rweb dweb: wasm
 teleterm/static/teleterm_web_bg.wasm: target/wasm/teleterm_web_bg_opt.wasm
 	@cp -f $< $@
 
-teleterm/static/teleterm_web.js: target/wasm/teleterm_web.js
+teleterm/static/teleterm_web.js: target/wasm/teleterm_web_min.js
 	@cp -f $< $@
 
 target/wasm/%_opt.wasm: target/wasm/%.wasm
 	@wasm-opt -Oz $< -o $@
+
+target/wasm/%_min.js: target/wasm/%.js
+	@terser $< > $@
 
 target/wasm/teleterm_web.js target/wasm/teleterm_web_bg.wasm: teleterm-web/Cargo.toml teleterm-web/src/*.rs teleterm-web/src/views/*.rs
 	@wasm-pack build --no-typescript --target web --out-dir ../target/wasm teleterm-web

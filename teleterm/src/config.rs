@@ -19,6 +19,7 @@ const MAX_FRAME_LENGTH_OPTION: &str = "max-frame-length";
 const PLAY_AT_START_OPTION: &str = "play-at-start";
 const PLAYBACK_RATIO_OPTION: &str = "playback-ratio";
 const READ_TIMEOUT_OPTION: &str = "read-timeout-secs";
+const SERVER_ADDRESS_OPTION: &str = "server-address";
 const TLS_IDENTITY_FILE_OPTION: &str = "tls-identity-file";
 const TLS_OPTION: &str = "tls";
 
@@ -203,8 +204,7 @@ fn default_connect_address() -> (String, std::net::SocketAddr) {
 }
 
 // XXX this does a blocking dns lookup - should try to find an async version
-// XXX shouldn't need to be pub
-pub fn to_connect_address(
+fn to_connect_address(
     address: &str,
 ) -> Result<(String, std::net::SocketAddr)> {
     let mut address_parts = address.split(':');
@@ -560,12 +560,20 @@ pub struct Web {
         default = "default_web_listen_address"
     )]
     pub listen_address: std::net::SocketAddr,
+
+    #[serde(
+        deserialize_with = "connect_address",
+        default = "default_connect_address"
+    )]
+    pub server_address: (String, std::net::SocketAddr),
 }
 
 impl Web {
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         let listen_address_help =
-            "Host and port to listen on (defaults to localhost:4144)";
+            "Host and port to listen on (defaults to localhost:4145)";
+        let server_address_help =
+            "Host and port of the teleterm server (defaults to localhost:4144)";
         app.arg(
             clap::Arg::with_name(LISTEN_ADDRESS_OPTION)
                 .long(LISTEN_ADDRESS_OPTION)
@@ -573,7 +581,15 @@ impl Web {
                 .value_name("HOST:PORT")
                 .help(listen_address_help),
         )
+        .arg(
+            clap::Arg::with_name(SERVER_ADDRESS_OPTION)
+                .long(SERVER_ADDRESS_OPTION)
+                .takes_value(true)
+                .value_name("HOST:PORT")
+                .help(server_address_help),
+        )
     }
+
     pub fn merge_args<'a>(
         &mut self,
         matches: &clap::ArgMatches<'a>,
@@ -585,6 +601,10 @@ impl Web {
                 .parse()
                 .context(crate::error::ParseAddr)?;
         }
+        if matches.is_present(SERVER_ADDRESS_OPTION) {
+            let address = matches.value_of(SERVER_ADDRESS_OPTION).unwrap();
+            self.server_address = to_connect_address(address)?;
+        }
         Ok(())
     }
 }
@@ -593,6 +613,7 @@ impl Default for Web {
     fn default() -> Self {
         Self {
             listen_address: default_web_listen_address(),
+            server_address: default_connect_address(),
         }
     }
 }

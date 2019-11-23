@@ -17,7 +17,10 @@ impl crate::config::Config for Config {
     fn run(
         &self,
     ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
-        Box::new(crate::web::Server::new(self.web.listen_address))
+        Box::new(crate::web::Server::new(
+            self.web.listen_address,
+            self.web.server_address.clone(),
+        ))
     }
 }
 

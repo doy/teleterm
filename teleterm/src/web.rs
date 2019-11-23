@@ -19,6 +19,7 @@ struct WatchQueryParams {
 #[derive(Clone, serde::Serialize)]
 struct Config {
     title: String,
+    server_address: (String, std::net::SocketAddr),
 }
 
 pub struct Server {
@@ -26,12 +27,19 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new<T: std::net::ToSocketAddrs + 'static>(addr: T) -> Self {
+    pub fn new(
+        listen_address: std::net::SocketAddr,
+        server_address: (String, std::net::SocketAddr),
+    ) -> Self {
         let data = Config {
             title: "teleterm".to_string(),
+            server_address,
         };
         Self {
-            server: Box::new(gotham::init_server(addr, router(&data))),
+            server: Box::new(gotham::init_server(
+                listen_address,
+                router(&data),
+            )),
         }
     }
 }
@@ -81,11 +89,13 @@ fn router(data: &Config) -> impl gotham::handler::NewHandler {
         route
             .get("/teleterm.css")
             .to(serve_static("text/css", &view::TELETERM_CSS));
-        route.get("/list").to(handle_list);
+        route
+            .get("/list")
+            .to_new_handler(serve_dynamic(data, handle_list));
         route
             .get("/watch")
             .with_query_string_extractor::<WatchQueryParams>()
-            .to(handle_watch);
+            .to_new_handler(serve_dynamic(data, handle_watch));
     })
 }
 
@@ -121,11 +131,25 @@ fn serve_template(
     }
 }
 
+fn serve_dynamic(
+    data: &Config,
+    handler: fn(
+        &Config,
+        gotham::state::State,
+    ) -> (gotham::state::State, hyper::Response<hyper::Body>),
+) -> impl gotham::handler::NewHandler {
+    let data = data.clone();
+    move || {
+        let data = data.clone();
+        Ok(move |state| handler(&data, state))
+    }
+}
+
 fn handle_list(
+    config: &Config,
     state: gotham::state::State,
 ) -> (gotham::state::State, hyper::Response<hyper::Body>) {
-    let address = "127.0.0.1:4144";
-    let (_, address) = crate::config::to_connect_address(address).unwrap();
+    let (_, address) = config.server_address;
     let connector: crate::client::Connector<_> = Box::new(move || {
         Box::new(
             tokio::net::tcp::TcpStream::connect(&address)
@@ -249,6 +273,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 }
 
 fn handle_watch(
+    config: &Config,
     mut state: gotham::state::State,
 ) -> (gotham::state::State, hyper::Response<hyper::Body>) {
     let body = hyper::Body::take_from(&mut state);
@@ -269,9 +294,7 @@ fn handle_watch(
         };
 
         let query_params = WatchQueryParams::borrow_from(&state);
-        let address = "127.0.0.1:4144";
-        let (_, address) =
-            crate::config::to_connect_address(address).unwrap();
+        let (_, address) = config.server_address;
         let connector: crate::client::Connector<_> = Box::new(move || {
             Box::new(
                 tokio::net::tcp::TcpStream::connect(&address)

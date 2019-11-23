@@ -1,3 +1,6 @@
 [workspace]
 members = ["teleterm", "teleterm-web"]
 default-members = ["teleterm"]
+
+[profile.release]
+lto = true

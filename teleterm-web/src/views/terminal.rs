@@ -15,10 +15,17 @@ pub(crate) fn render(model: &crate::model::Model) -> Node<crate::Msg> {
         let mut row = vec![];
         for col_idx in 0..cols {
             let cell = screen.cell(row_idx, col_idx).unwrap();
+
             let mut contents = cell.contents();
+            // if we don't use a non-breaking space for cells with no
+            // foreground contents, the table layout may just collapse those
+            // cells. we can't just set a fixed height because there's no way
+            // (that i'm aware of) in css to set a box to have a fixed height
+            // that is the same as the line height of the current font.
             if contents.trim().is_empty() || contents.width() == 0 {
                 contents = "\u{00a0}".to_string();
             }
+
             row.push(seed::td![
                 seed::attrs! { At::Class => "cell" },
                 style_for_cell(

@@ -15,13 +15,21 @@ impl Drop for WatchConn {
     }
 }
 
-#[derive(Default)]
 pub(crate) struct Model {
+    config: crate::config::Config,
     sessions: Vec<crate::protocol::Session>,
     watch_conn: Option<WatchConn>,
 }
 
 impl Model {
+    pub(crate) fn new(config: crate::config::Config) -> Self {
+        Self {
+            config,
+            sessions: vec![],
+            watch_conn: None,
+        }
+    }
+
     pub(crate) fn update(
         &mut self,
         msg: crate::Msg,
@@ -82,6 +90,10 @@ impl Model {
                 orders.send_msg(crate::Msg::Refresh);
             }
         }
+    }
+
+    pub(crate) fn title(&self) -> &str {
+        &self.config.title
     }
 
     pub(crate) fn screen(&self) -> Option<&vt100::Screen> {

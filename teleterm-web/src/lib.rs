@@ -1,3 +1,4 @@
+mod config;
 mod model;
 mod prelude;
 mod protocol;
@@ -19,7 +20,7 @@ enum Msg {
 fn init(_: Url, orders: &mut impl Orders<Msg>) -> Init<crate::model::Model> {
     log::trace!("init");
     orders.send_msg(Msg::Refresh);
-    Init::new(crate::model::Model::default())
+    Init::new(crate::model::Model::new(crate::config::Config::load()))
 }
 
 fn update(

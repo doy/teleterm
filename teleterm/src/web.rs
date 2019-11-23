@@ -1,43 +1,11 @@
+mod view;
 mod ws;
 
 use crate::prelude::*;
 
 use gotham::router::builder::{DefineSingleRoute as _, DrawRoutes as _};
 use gotham::state::FromState as _;
-use lazy_static::lazy_static;
-use lazy_static_include::*;
 use tokio_tungstenite::tungstenite;
-
-lazy_static_include::lazy_static_include_bytes!(
-    INDEX_HTML_TMPL,
-    "static/index.html.tmpl"
-);
-lazy_static_include::lazy_static_include_bytes!(
-    TELETERM_WEB_JS,
-    "static/teleterm_web.js"
-);
-lazy_static_include::lazy_static_include_bytes!(
-    TELETERM_WEB_WASM,
-    "static/teleterm_web_bg.wasm"
-);
-lazy_static_include::lazy_static_include_bytes!(
-    TELETERM_CSS,
-    "static/teleterm.css"
-);
-
-const INDEX_HTML_TMPL_NAME: &str = "index";
-lazy_static::lazy_static! {
-    static ref HANDLEBARS: handlebars::Handlebars = {
-        let mut handlebars = handlebars::Handlebars::new();
-        handlebars
-            .register_template_string(
-                INDEX_HTML_TMPL_NAME,
-                String::from_utf8(INDEX_HTML_TMPL.to_vec()).unwrap(),
-            )
-            .unwrap();
-        handlebars
-    };
-}
 
 #[derive(
     serde::Deserialize,
@@ -49,7 +17,7 @@ struct WatchQueryParams {
 }
 
 #[derive(Clone, serde::Serialize)]
-struct TemplateData {
+struct Config {
     title: String,
 }
 
@@ -59,7 +27,7 @@ pub struct Server {
 
 impl Server {
     pub fn new<T: std::net::ToSocketAddrs + 'static>(addr: T) -> Self {
-        let data = TemplateData {
+        let data = Config {
             title: "teleterm".to_string(),
         };
         Self {
@@ -96,22 +64,23 @@ impl futures::Future for Server {
     }
 }
 
-fn router(data: &TemplateData) -> impl gotham::handler::NewHandler {
+fn router(data: &Config) -> impl gotham::handler::NewHandler {
     gotham::router::builder::build_simple_router(|route| {
         route.get("/").to_new_handler(serve_template(
             "text/html",
-            INDEX_HTML_TMPL_NAME,
+            view::INDEX_HTML_TMPL_NAME,
             data,
         ));
-        route
-            .get("/teleterm_web.js")
-            .to(serve_static("application/javascript", &TELETERM_WEB_JS));
+        route.get("/teleterm_web.js").to(serve_static(
+            "application/javascript",
+            &view::TELETERM_WEB_JS,
+        ));
         route
             .get("/teleterm_web_bg.wasm")
-            .to(serve_static("application/wasm", &TELETERM_WEB_WASM));
+            .to(serve_static("application/wasm", &view::TELETERM_WEB_WASM));
         route
             .get("/teleterm.css")
-            .to(serve_static("text/css", &TELETERM_CSS));
+            .to(serve_static("text/css", &view::TELETERM_CSS));
         route.get("/list").to(handle_list);
         route
             .get("/watch")
@@ -136,13 +105,13 @@ fn serve_static(
 fn serve_template(
     content_type: &'static str,
     name: &'static str,
-    data: &TemplateData,
+    data: &Config,
 ) -> impl gotham::handler::NewHandler {
     let data = data.clone();
     move || {
         let data = data.clone();
         Ok(move |state| {
-            let rendered = HANDLEBARS.render(name, &data).unwrap();
+            let rendered = view::HANDLEBARS.render(name, &data).unwrap();
             let response = hyper::Response::builder()
                 .header("Content-Type", content_type)
                 .body(hyper::Body::from(rendered))

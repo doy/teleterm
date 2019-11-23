@@ -25,6 +25,20 @@ lazy_static_include::lazy_static_include_bytes!(
     "static/teleterm.css"
 );
 
+const INDEX_HTML_TMPL_NAME: &str = "index";
+lazy_static::lazy_static! {
+    static ref HANDLEBARS: handlebars::Handlebars = {
+        let mut handlebars = handlebars::Handlebars::new();
+        handlebars
+            .register_template_string(
+                INDEX_HTML_TMPL_NAME,
+                String::from_utf8(INDEX_HTML_TMPL.to_vec()).unwrap(),
+            )
+            .unwrap();
+        handlebars
+    };
+}
+
 #[derive(
     serde::Deserialize,
     gotham_derive::StateData,
@@ -86,7 +100,7 @@ fn router(data: &TemplateData) -> impl gotham::handler::NewHandler {
     gotham::router::builder::build_simple_router(|route| {
         route.get("/").to_new_handler(serve_template(
             "text/html",
-            &INDEX_HTML_TMPL,
+            INDEX_HTML_TMPL_NAME,
             data,
         ));
         route
@@ -121,19 +135,14 @@ fn serve_static(
 
 fn serve_template(
     content_type: &'static str,
-    s: &'static [u8],
+    name: &'static str,
     data: &TemplateData,
 ) -> impl gotham::handler::NewHandler {
     let data = data.clone();
     move || {
         let data = data.clone();
         Ok(move |state| {
-            let rendered = handlebars::Handlebars::new()
-                .render_template(
-                    &String::from_utf8(s.to_vec()).unwrap(),
-                    &data,
-                )
-                .unwrap();
+            let rendered = HANDLEBARS.render(name, &data).unwrap();
             let response = hyper::Response::builder()
                 .header("Content-Type", content_type)
                 .body(hyper::Body::from(rendered))

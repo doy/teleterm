@@ -12,7 +12,7 @@ enum Msg {
     List(seed::fetch::ResponseDataResult<Vec<crate::protocol::Session>>),
     Refresh,
     StartWatching(String),
-    Watch(String, ws::WebSocketEvent),
+    Watch(String, crate::ws::WebSocketEvent),
     StopWatching,
 }
 
@@ -29,58 +29,7 @@ fn update(
     orders: &mut impl Orders<Msg>,
 ) {
     log::trace!("update");
-    match msg {
-        Msg::List(sessions) => match sessions {
-            Ok(sessions) => {
-                log::debug!("got sessions");
-                model.update_sessions(sessions);
-            }
-            Err(e) => {
-                log::error!("error getting sessions: {:?}", e);
-            }
-        },
-        Msg::Refresh => {
-            log::debug!("refreshing");
-            orders.perform_cmd(model.list());
-        }
-        Msg::StartWatching(id) => {
-            log::debug!("watching {}", id);
-            model.watch(&id, orders);
-        }
-        Msg::Watch(id, event) => match event {
-            ws::WebSocketEvent::Connected(_) => {
-                log::info!("{}: connected", id);
-            }
-            ws::WebSocketEvent::Disconnected(_) => {
-                log::info!("{}: disconnected", id);
-            }
-            ws::WebSocketEvent::Message(msg) => {
-                log::info!("{}: message: {:?}", id, msg);
-                let json = msg.data().as_string().unwrap();
-                let msg: crate::protocol::Message =
-                    serde_json::from_str(&json).unwrap();
-                match msg {
-                    crate::protocol::Message::TerminalOutput { data } => {
-                        model.process(&data);
-                    }
-                    crate::protocol::Message::Disconnected => {
-                        model.disconnect_watch();
-                        orders.perform_cmd(model.list());
-                    }
-                    crate::protocol::Message::Resize { size } => {
-                        model.set_size(size.rows, size.cols);
-                    }
-                }
-            }
-            ws::WebSocketEvent::Error(e) => {
-                log::error!("{}: error: {:?}", id, e);
-            }
-        },
-        Msg::StopWatching => {
-            model.disconnect_watch();
-            orders.perform_cmd(model.list());
-        }
-    }
+    model.update(msg, orders);
 }
 
 fn view(model: &crate::model::Model) -> impl View<Msg> {

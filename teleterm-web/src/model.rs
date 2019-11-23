@@ -21,6 +21,65 @@ pub struct Model {
 }
 
 impl Model {
+    pub(crate) fn update(
+        &mut self,
+        msg: crate::Msg,
+        orders: &mut impl Orders<crate::Msg>,
+    ) {
+        match msg {
+            crate::Msg::List(sessions) => match sessions {
+                Ok(sessions) => {
+                    log::debug!("got sessions");
+                    self.update_sessions(sessions);
+                }
+                Err(e) => {
+                    log::error!("error getting sessions: {:?}", e);
+                }
+            },
+            crate::Msg::Refresh => {
+                log::debug!("refreshing");
+                orders.perform_cmd(self.list());
+            }
+            crate::Msg::StartWatching(id) => {
+                log::debug!("watching {}", id);
+                self.watch(&id, orders);
+            }
+            crate::Msg::Watch(id, event) => match event {
+                crate::ws::WebSocketEvent::Connected(_) => {
+                    log::info!("{}: connected", id);
+                }
+                crate::ws::WebSocketEvent::Disconnected(_) => {
+                    log::info!("{}: disconnected", id);
+                }
+                crate::ws::WebSocketEvent::Message(msg) => {
+                    log::info!("{}: message: {:?}", id, msg);
+                    let json = msg.data().as_string().unwrap();
+                    let msg: crate::protocol::Message =
+                        serde_json::from_str(&json).unwrap();
+                    match msg {
+                        crate::protocol::Message::TerminalOutput { data } => {
+                            self.process(&data);
+                        }
+                        crate::protocol::Message::Disconnected => {
+                            self.disconnect_watch();
+                            orders.perform_cmd(self.list());
+                        }
+                        crate::protocol::Message::Resize { size } => {
+                            self.set_size(size.rows, size.cols);
+                        }
+                    }
+                }
+                crate::ws::WebSocketEvent::Error(e) => {
+                    log::error!("{}: error: {:?}", id, e);
+                }
+            },
+            crate::Msg::StopWatching => {
+                self.disconnect_watch();
+                orders.perform_cmd(self.list());
+            }
+        }
+    }
+
     pub(crate) fn list(
         &self,
     ) -> impl futures::Future<Item = crate::Msg, Error = crate::Msg> {

@@ -2819,9 +2819,9 @@ checksum = "078775d0255232fb988e6fccf26ddc9d1ac274299aaedcedce21c6f72cc533ce"
 
 [[package]]
 name = "vt100"
-version = "0.6.3"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab2fb7c2a84d2b7d5973770bff882ec87618479fe7b5ed88fa9d3ade606352e4"
+checksum = "1abc6eb014f6d798f61d4c511de1006c3857dd6e06f0773eca933dc5cfdf33d7"
 dependencies = [
  "enumset",
  "itoa",

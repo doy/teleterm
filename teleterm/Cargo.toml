@@ -50,7 +50,7 @@ ttyrec = "0.2"
 url = "2"
 users = "0.9"
 uuid = { version = "0.8", features = ["v4"] }
-vt100 = "0.6"
+vt100 = "0.7"
 
 [[bin]]
 name = "tt"

@@ -19,6 +19,7 @@ impl crate::config::Config for Config {
     ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
         Box::new(crate::web::Server::new(
             self.web.listen_address,
+            self.web.public_address.clone(),
             self.web.server_address.clone(),
         ))
     }

@@ -18,6 +18,7 @@ const LOGIN_RECURSE_CENTER_OPTION: &str = "login-recurse-center";
 const MAX_FRAME_LENGTH_OPTION: &str = "max-frame-length";
 const PLAY_AT_START_OPTION: &str = "play-at-start";
 const PLAYBACK_RATIO_OPTION: &str = "playback-ratio";
+const PUBLIC_ADDRESS_OPTION: &str = "public-address";
 const READ_TIMEOUT_OPTION: &str = "read-timeout-secs";
 const SERVER_ADDRESS_OPTION: &str = "server-address";
 const TLS_IDENTITY_FILE_OPTION: &str = "tls-identity-file";
@@ -561,6 +562,9 @@ pub struct Web {
     )]
     pub listen_address: std::net::SocketAddr,
 
+    #[serde(default = "default_web_public_address")]
+    pub public_address: String,
+
     #[serde(
         deserialize_with = "connect_address",
         default = "default_connect_address"
@@ -572,6 +576,8 @@ impl Web {
     pub fn cmd<'a, 'b>(app: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
         let listen_address_help =
             "Host and port to listen on (defaults to localhost:4145)";
+        let public_address_help =
+            "Host and port that the web server will be publicly available on (defaults to the listen address)";
         let server_address_help =
             "Host and port of the teleterm server (defaults to localhost:4144)";
         app.arg(
@@ -580,6 +586,13 @@ impl Web {
                 .takes_value(true)
                 .value_name("HOST:PORT")
                 .help(listen_address_help),
+        )
+        .arg(
+            clap::Arg::with_name(PUBLIC_ADDRESS_OPTION)
+                .long(PUBLIC_ADDRESS_OPTION)
+                .takes_value(true)
+                .value_name("HOST:PORT")
+                .help(public_address_help),
         )
         .arg(
             clap::Arg::with_name(SERVER_ADDRESS_OPTION)
@@ -601,6 +614,13 @@ impl Web {
                 .parse()
                 .context(crate::error::ParseAddr)?;
         }
+        if matches.is_present(PUBLIC_ADDRESS_OPTION) {
+            self.public_address =
+                matches.value_of(PUBLIC_ADDRESS_OPTION).unwrap().to_string();
+        } else if matches.is_present(LISTEN_ADDRESS_OPTION) {
+            self.public_address =
+                matches.value_of(LISTEN_ADDRESS_OPTION).unwrap().to_string();
+        }
         if matches.is_present(SERVER_ADDRESS_OPTION) {
             let address = matches.value_of(SERVER_ADDRESS_OPTION).unwrap();
             self.server_address = to_connect_address(address)?;
@@ -613,6 +633,7 @@ impl Default for Web {
     fn default() -> Self {
         Self {
             listen_address: default_web_listen_address(),
+            public_address: default_web_public_address(),
             server_address: default_connect_address(),
         }
     }
@@ -620,6 +641,10 @@ impl Default for Web {
 
 fn default_web_listen_address() -> std::net::SocketAddr {
     to_listen_address(DEFAULT_WEB_LISTEN_ADDRESS).unwrap()
+}
+
+fn default_web_public_address() -> String {
+    DEFAULT_WEB_LISTEN_ADDRESS.to_string()
 }
 
 #[derive(serde::Deserialize, Debug)]

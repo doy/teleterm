@@ -1,8 +1,5 @@
 use crate::prelude::*;
 
-const LIST_URL: &str = "http://127.0.0.1:4145/list";
-const WATCH_URL: &str = "ws://127.0.0.1:4145/watch";
-
 struct WatchConn {
     ws: WebSocket,
     term: vt100::Parser,
@@ -47,9 +44,10 @@ impl Model {
             },
             crate::Msg::Refresh => {
                 log::debug!("refreshing");
+                let url =
+                    format!("http://{}/list", self.config.public_address);
                 orders.perform_cmd(
-                    seed::Request::new(LIST_URL)
-                        .fetch_json_data(crate::Msg::List),
+                    seed::Request::new(url).fetch_json_data(crate::Msg::List),
                 );
             }
             crate::Msg::StartWatching(id) => {
@@ -116,12 +114,9 @@ impl Model {
     }
 
     fn watch(&mut self, id: &str, orders: &mut impl Orders<crate::Msg>) {
-        let ws = crate::ws::connect(
-            &format!("{}?id={}", WATCH_URL, id),
-            id,
-            crate::Msg::Watch,
-            orders,
-        );
+        let url =
+            format!("ws://{}/watch?id={}", self.config.public_address, id);
+        let ws = crate::ws::connect(&url, id, crate::Msg::Watch, orders);
         let term = vt100::Parser::default();
         self.watch_conn = Some(WatchConn {
             ws,

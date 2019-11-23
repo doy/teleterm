@@ -12,6 +12,7 @@ use gotham::state::FromState as _;
 struct Config {
     title: String,
     server_address: (String, std::net::SocketAddr),
+    public_address: String,
 }
 
 pub struct Server {
@@ -21,11 +22,13 @@ pub struct Server {
 impl Server {
     pub fn new(
         listen_address: std::net::SocketAddr,
+        public_address: String,
         server_address: (String, std::net::SocketAddr),
     ) -> Self {
         let data = Config {
             title: "teleterm".to_string(),
             server_address,
+            public_address,
         };
         Self {
             server: Box::new(gotham::init_server(

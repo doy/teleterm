@@ -13,6 +13,7 @@ impl Drop for WatchConn {
 }
 
 pub(crate) struct Model {
+    logged_in: bool,
     config: crate::config::Config,
     sessions: Vec<crate::protocol::Session>,
     watch_conn: Option<WatchConn>,
@@ -21,6 +22,7 @@ pub(crate) struct Model {
 impl Model {
     pub(crate) fn new(config: crate::config::Config) -> Self {
         Self {
+            logged_in: false,
             config,
             sessions: vec![],
             watch_conn: None,
@@ -33,6 +35,22 @@ impl Model {
         orders: &mut impl Orders<crate::Msg>,
     ) {
         match msg {
+            crate::Msg::Login => {
+                log::debug!("logging in");
+                let url = format!(
+                    "http://{}/login?username=foo",
+                    self.config.public_address
+                );
+                orders.perform_cmd(
+                    seed::Request::new(url)
+                        .fetch_json_data(crate::Msg::LoggedIn),
+                );
+            }
+            crate::Msg::LoggedIn(..) => {
+                log::debug!("logged in");
+                self.logged_in = true;
+                orders.send_msg(crate::Msg::Refresh);
+            }
             crate::Msg::List(sessions) => match sessions {
                 Ok(sessions) => {
                     log::debug!("got sessions");
@@ -88,6 +106,10 @@ impl Model {
                 orders.send_msg(crate::Msg::Refresh);
             }
         }
+    }
+
+    pub(crate) fn logged_in(&self) -> bool {
+        self.logged_in
     }
 
     pub(crate) fn title(&self) -> &str {

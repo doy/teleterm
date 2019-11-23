@@ -5,6 +5,19 @@ use gotham::state::FromState as _;
 pub fn run(
     state: gotham::state::State,
 ) -> (gotham::state::State, hyper::Response<hyper::Body>) {
+    let session = gotham::middleware::session::SessionData::<
+        crate::web::SessionData,
+    >::borrow_from(&state);
+    if session.username.is_none() {
+        return (
+            state,
+            hyper::Response::builder()
+                .status(hyper::StatusCode::FORBIDDEN)
+                .body(hyper::Body::empty())
+                .unwrap(),
+        );
+    }
+
     let config = crate::web::Config::borrow_from(&state);
 
     let (_, address) = config.server_address;

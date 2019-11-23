@@ -1,4 +1,6 @@
+mod disk_session;
 mod list;
+mod login;
 mod view;
 mod watch;
 mod ws;
@@ -13,6 +15,11 @@ struct Config {
     title: String,
     server_address: (String, std::net::SocketAddr),
     public_address: String,
+}
+
+#[derive(Default, serde::Deserialize, serde::Serialize)]
+struct SessionData {
+    username: Option<String>,
 }
 
 pub struct Server {
@@ -54,6 +61,14 @@ fn router(data: &Config) -> impl gotham::handler::NewHandler {
             .add(gotham::middleware::state::StateMiddleware::new(
                 data.clone(),
             ))
+            .add(
+                gotham::middleware::session::NewSessionMiddleware::new(
+                    disk_session::DiskSession,
+                )
+                .insecure()
+                .with_cookie_name("teleterm")
+                .with_session_type::<SessionData>(),
+            )
             .build(),
     );
     gotham::router::builder::build_router(chain, pipeline, |route| {
@@ -75,6 +90,10 @@ fn router(data: &Config) -> impl gotham::handler::NewHandler {
             .get("/watch")
             .with_query_string_extractor::<watch::QueryParams>()
             .to(watch::run);
+        route
+            .get("/login")
+            .with_query_string_extractor::<login::QueryParams>()
+            .to(login::run);
     })
 }
 

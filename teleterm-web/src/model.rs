@@ -6,6 +6,7 @@ const WATCH_URL: &str = "ws://127.0.0.1:4145/watch";
 struct WatchConn {
     ws: WebSocket,
     term: vt100::Parser,
+    received_data: bool,
 }
 
 impl Drop for WatchConn {
@@ -95,6 +96,13 @@ impl Model {
         self.watch_conn.is_some()
     }
 
+    pub(crate) fn received_data(&self) -> bool {
+        self.watch_conn
+            .as_ref()
+            .map(|conn| conn.received_data)
+            .unwrap_or(false)
+    }
+
     fn watch(&mut self, id: &str, orders: &mut impl Orders<crate::Msg>) {
         let ws = crate::ws::connect(
             &format!("{}?id={}", WATCH_URL, id),
@@ -103,7 +111,11 @@ impl Model {
             orders,
         );
         let term = vt100::Parser::default();
-        self.watch_conn = Some(WatchConn { ws, term })
+        self.watch_conn = Some(WatchConn {
+            ws,
+            term,
+            received_data: false,
+        })
     }
 
     fn update_sessions(&mut self, sessions: Vec<crate::protocol::Session>) {
@@ -117,6 +129,7 @@ impl Model {
     fn process(&mut self, bytes: &[u8]) {
         if let Some(conn) = &mut self.watch_conn {
             conn.term.process(bytes);
+            conn.received_data = true;
         }
     }
 

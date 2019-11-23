@@ -1,12 +1,7 @@
 use crate::prelude::*;
 use unicode_width::UnicodeWidthStr as _;
 
-pub(crate) fn render(model: &crate::model::Model) -> Node<crate::Msg> {
-    let screen = if let Some(screen) = model.screen() {
-        screen
-    } else {
-        return seed::empty![];
-    };
+pub(crate) fn render(screen: &vt100::Screen) -> Node<crate::Msg> {
     let (rows, cols) = screen.size();
     let (cursor_row, cursor_col) = screen.cursor_position();
 

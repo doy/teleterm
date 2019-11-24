@@ -10,10 +10,10 @@ use crate::prelude::*;
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 enum Msg {
-    Login,
+    Login(String),
     LoggedIn(seed::fetch::ResponseDataResult<()>),
-    List(seed::fetch::ResponseDataResult<Vec<crate::protocol::Session>>),
     Refresh,
+    List(seed::fetch::ResponseDataResult<Vec<crate::protocol::Session>>),
     StartWatching(String),
     Watch(String, crate::ws::WebSocketEvent),
     StopWatching,
@@ -21,7 +21,7 @@ enum Msg {
 
 fn init(_: Url, orders: &mut impl Orders<Msg>) -> Init<crate::model::Model> {
     log::trace!("init");
-    orders.send_msg(Msg::Login);
+    orders.send_msg(Msg::Login("foo".to_string()));
     Init::new(crate::model::Model::new(crate::config::Config::load()))
 }
 

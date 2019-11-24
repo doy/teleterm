@@ -6,6 +6,16 @@ struct WatchConn {
     received_data: bool,
 }
 
+impl WatchConn {
+    fn new(ws: WebSocket) -> Self {
+        Self {
+            ws,
+            term: vt100::Parser::default(),
+            received_data: false,
+        }
+    }
+}
+
 impl Drop for WatchConn {
     fn drop(&mut self) {
         self.ws.close().unwrap();
@@ -38,39 +48,27 @@ impl Model {
         orders: &mut impl Orders<crate::Msg>,
     ) {
         match msg {
-            crate::Msg::Login => {
-                log::debug!("logging in");
-                let url = format!(
-                    "http://{}/login?username=foo",
-                    self.config.public_address
-                );
-                orders.perform_cmd(
-                    seed::Request::new(url)
-                        .fetch_json_data(crate::Msg::LoggedIn),
-                );
+            crate::Msg::Login(username) => {
+                log::debug!("login");
+                self.login(&username, orders);
             }
             crate::Msg::LoggedIn(..) => {
                 log::debug!("logged in");
-                self.state = State::List(vec![]);
                 orders.send_msg(crate::Msg::Refresh);
+            }
+            crate::Msg::Refresh => {
+                log::debug!("refreshing");
+                self.list(orders);
             }
             crate::Msg::List(sessions) => match sessions {
                 Ok(sessions) => {
                     log::debug!("got sessions");
-                    self.update_sessions(sessions);
+                    self.state = State::List(sessions);
                 }
                 Err(e) => {
                     log::error!("error getting sessions: {:?}", e);
                 }
             },
-            crate::Msg::Refresh => {
-                log::debug!("refreshing");
-                let url =
-                    format!("http://{}/list", self.config.public_address);
-                orders.perform_cmd(
-                    seed::Request::new(url).fetch_json_data(crate::Msg::List),
-                );
-            }
             crate::Msg::StartWatching(id) => {
                 log::debug!("watching {}", id);
                 self.watch(&id, orders);
@@ -92,8 +90,7 @@ impl Model {
                             self.process(&data);
                         }
                         crate::protocol::Message::Disconnected => {
-                            self.disconnect_watch();
-                            orders.send_msg(crate::Msg::Refresh);
+                            self.list(orders);
                         }
                         crate::protocol::Message::Resize { size } => {
                             self.set_size(size.rows, size.cols);
@@ -105,8 +102,7 @@ impl Model {
                 }
             },
             crate::Msg::StopWatching => {
-                self.disconnect_watch();
-                orders.send_msg(crate::Msg::Refresh);
+                self.list(orders);
             }
         }
     }
@@ -155,29 +151,28 @@ impl Model {
         }
     }
 
+    fn login(&self, username: &str, orders: &mut impl Orders<crate::Msg>) {
+        let url = format!(
+            "http://{}/login?username={}",
+            self.config.public_address, username
+        );
+        orders.perform_cmd(
+            seed::Request::new(url).fetch_json_data(crate::Msg::LoggedIn),
+        );
+    }
+
+    fn list(&self, orders: &mut impl Orders<crate::Msg>) {
+        let url = format!("http://{}/list", self.config.public_address);
+        orders.perform_cmd(
+            seed::Request::new(url).fetch_json_data(crate::Msg::List),
+        );
+    }
+
     fn watch(&mut self, id: &str, orders: &mut impl Orders<crate::Msg>) {
         let url =
             format!("ws://{}/watch?id={}", self.config.public_address, id);
         let ws = crate::ws::connect(&url, id, crate::Msg::Watch, orders);
-        let term = vt100::Parser::default();
-        self.state = State::Watch(WatchConn {
-            ws,
-            term,
-            received_data: false,
-        })
-    }
-
-    fn update_sessions(
-        &mut self,
-        new_sessions: Vec<crate::protocol::Session>,
-    ) {
-        if let State::List(ref mut sessions) = self.state {
-            *sessions = new_sessions;
-        }
-    }
-
-    fn disconnect_watch(&mut self) {
-        self.state = State::List(vec![])
+        self.state = State::Watch(WatchConn::new(ws));
     }
 
     fn process(&mut self, bytes: &[u8]) {

@@ -12,20 +12,23 @@ impl Drop for WatchConn {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
+enum State {
+    Login,
+    List(Vec<crate::protocol::Session>),
+    Watch(WatchConn),
+}
+
 pub(crate) struct Model {
-    logged_in: bool,
     config: crate::config::Config,
-    sessions: Vec<crate::protocol::Session>,
-    watch_conn: Option<WatchConn>,
+    state: State,
 }
 
 impl Model {
     pub(crate) fn new(config: crate::config::Config) -> Self {
         Self {
-            logged_in: false,
             config,
-            sessions: vec![],
-            watch_conn: None,
+            state: State::Login,
         }
     }
 
@@ -48,7 +51,7 @@ impl Model {
             }
             crate::Msg::LoggedIn(..) => {
                 log::debug!("logged in");
-                self.logged_in = true;
+                self.state = State::List(vec![]);
                 orders.send_msg(crate::Msg::Refresh);
             }
             crate::Msg::List(sessions) => match sessions {
@@ -109,7 +112,11 @@ impl Model {
     }
 
     pub(crate) fn logged_in(&self) -> bool {
-        self.logged_in
+        if let State::Login = self.state {
+            false
+        } else {
+            true
+        }
     }
 
     pub(crate) fn title(&self) -> &str {
@@ -117,22 +124,35 @@ impl Model {
     }
 
     pub(crate) fn screen(&self) -> Option<&vt100::Screen> {
-        self.watch_conn.as_ref().map(|conn| conn.term.screen())
+        if let State::Watch(conn) = &self.state {
+            Some(conn.term.screen())
+        } else {
+            None
+        }
     }
 
     pub(crate) fn sessions(&self) -> &[crate::protocol::Session] {
-        &self.sessions
+        if let State::List(sessions) = &self.state {
+            sessions
+        } else {
+            &[]
+        }
     }
 
     pub(crate) fn watching(&self) -> bool {
-        self.watch_conn.is_some()
+        if let State::Watch(..) = self.state {
+            true
+        } else {
+            false
+        }
     }
 
     pub(crate) fn received_data(&self) -> bool {
-        self.watch_conn
-            .as_ref()
-            .map(|conn| conn.received_data)
-            .unwrap_or(false)
+        if let State::Watch(conn) = &self.state {
+            conn.received_data
+        } else {
+            false
+        }
     }
 
     fn watch(&mut self, id: &str, orders: &mut impl Orders<crate::Msg>) {
@@ -140,30 +160,35 @@ impl Model {
             format!("ws://{}/watch?id={}", self.config.public_address, id);
         let ws = crate::ws::connect(&url, id, crate::Msg::Watch, orders);
         let term = vt100::Parser::default();
-        self.watch_conn = Some(WatchConn {
+        self.state = State::Watch(WatchConn {
             ws,
             term,
             received_data: false,
         })
     }
 
-    fn update_sessions(&mut self, sessions: Vec<crate::protocol::Session>) {
-        self.sessions = sessions;
+    fn update_sessions(
+        &mut self,
+        new_sessions: Vec<crate::protocol::Session>,
+    ) {
+        if let State::List(ref mut sessions) = self.state {
+            *sessions = new_sessions;
+        }
     }
 
     fn disconnect_watch(&mut self) {
-        self.watch_conn = None;
+        self.state = State::List(vec![])
     }
 
     fn process(&mut self, bytes: &[u8]) {
-        if let Some(conn) = &mut self.watch_conn {
+        if let State::Watch(conn) = &mut self.state {
             conn.term.process(bytes);
             conn.received_data = true;
         }
     }
 
     fn set_size(&mut self, rows: u16, cols: u16) {
-        if let Some(conn) = &mut self.watch_conn {
+        if let State::Watch(conn) = &mut self.state {
             conn.term.set_size(rows, cols);
         }
     }

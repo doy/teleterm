@@ -19,9 +19,8 @@ enum Msg {
     StopWatching,
 }
 
-fn init(_: Url, orders: &mut impl Orders<Msg>) -> Init<crate::model::Model> {
+fn init(_: Url, _orders: &mut impl Orders<Msg>) -> Init<crate::model::Model> {
     log::trace!("init");
-    orders.send_msg(Msg::Login("foo".to_string()));
     Init::new(crate::model::Model::new(crate::config::Config::load()))
 }
 

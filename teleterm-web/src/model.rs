@@ -107,24 +107,32 @@ impl Model {
         }
     }
 
-    pub(crate) fn logged_in(&self) -> bool {
+    pub(crate) fn logging_in(&self) -> bool {
         if let State::Login = self.state {
-            false
-        } else {
             true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn choosing(&self) -> bool {
+        if let State::List(..) = self.state {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn watching(&self) -> bool {
+        if let State::Watch(..) = self.state {
+            true
+        } else {
+            false
         }
     }
 
     pub(crate) fn title(&self) -> &str {
         &self.config.title
-    }
-
-    pub(crate) fn screen(&self) -> Option<&vt100::Screen> {
-        if let State::Watch(conn) = &self.state {
-            Some(conn.term.screen())
-        } else {
-            None
-        }
     }
 
     pub(crate) fn sessions(&self) -> &[crate::protocol::Session] {
@@ -135,11 +143,11 @@ impl Model {
         }
     }
 
-    pub(crate) fn watching(&self) -> bool {
-        if let State::Watch(..) = self.state {
-            true
+    pub(crate) fn screen(&self) -> Option<&vt100::Screen> {
+        if let State::Watch(conn) = &self.state {
+            Some(conn.term.screen())
         } else {
-            false
+            None
         }
     }
 

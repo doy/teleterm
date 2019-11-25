@@ -56,11 +56,7 @@ impl Model {
         orders: &mut impl Orders<crate::Msg>,
     ) {
         match msg {
-            crate::Msg::Login => {
-                let username = seed::to_input(
-                    &seed::document().get_element_by_id("username").unwrap(),
-                )
-                .value();
+            crate::Msg::Login(username) => {
                 log::debug!("login for username {}", username);
                 self.login(&username, orders);
             }

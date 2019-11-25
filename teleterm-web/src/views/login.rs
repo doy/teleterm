@@ -2,7 +2,6 @@ use crate::prelude::*;
 
 pub(crate) fn render(_: &crate::model::Model) -> Vec<Node<crate::Msg>> {
     vec![seed::form![
-        seed::attrs! { At::Action => "#" },
         seed::label![seed::attrs! { At::For => "username" }, "username"],
         seed::input![seed::attrs! {
             At::Id => "username",
@@ -12,6 +11,13 @@ pub(crate) fn render(_: &crate::model::Model) -> Vec<Node<crate::Msg>> {
         seed::input![
             seed::attrs! { At::Type => "submit", At::Value => "login" }
         ],
-        simple_ev(Ev::Submit, crate::Msg::Login),
+        raw_ev(Ev::Submit, |event| {
+            event.prevent_default();
+            let username = seed::to_input(
+                &seed::document().get_element_by_id("username").unwrap(),
+            )
+            .value();
+            crate::Msg::Login(username)
+        }),
     ]]
 }

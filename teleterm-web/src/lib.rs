@@ -10,7 +10,7 @@ use crate::prelude::*;
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 enum Msg {
-    Login,
+    Login(String),
     LoggedIn(seed::fetch::ResponseDataResult<crate::protocol::LoginResponse>),
     Refresh,
     List(seed::fetch::ResponseDataResult<Vec<crate::protocol::Session>>),

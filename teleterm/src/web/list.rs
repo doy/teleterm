@@ -8,7 +8,9 @@ pub fn run(
     let session = gotham::middleware::session::SessionData::<
         crate::web::SessionData,
     >::borrow_from(&state);
-    if session.username.is_none() {
+    let auth = if let Some(username) = &session.username {
+        crate::protocol::Auth::plain(username)
+    } else {
         return (
             state,
             hyper::Response::builder()
@@ -16,7 +18,7 @@ pub fn run(
                 .body(hyper::Body::empty())
                 .unwrap(),
         );
-    }
+    };
 
     let config = crate::web::Config::borrow_from(&state);
 
@@ -27,11 +29,8 @@ pub fn run(
                 .context(crate::error::Connect { address }),
         )
     });
-    let client = crate::client::Client::list(
-        "teleterm-web",
-        connector,
-        &crate::protocol::Auth::plain("test"),
-    );
+    let client =
+        crate::client::Client::list("teleterm-web", connector, &auth);
 
     let (w_sessions, r_sessions) = tokio::sync::oneshot::channel();
 

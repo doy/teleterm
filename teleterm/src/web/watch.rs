@@ -18,7 +18,9 @@ pub fn run(
     let session = gotham::middleware::session::SessionData::<
         crate::web::SessionData,
     >::borrow_from(&state);
-    if session.username.is_none() {
+    let auth = if let Some(username) = &session.username {
+        crate::protocol::Auth::plain(username)
+    } else {
         return (
             state,
             hyper::Response::builder()
@@ -26,7 +28,7 @@ pub fn run(
                 .body(hyper::Body::empty())
                 .unwrap(),
         );
-    }
+    };
 
     let body = hyper::Body::take_from(&mut state);
     let headers = hyper::HeaderMap::take_from(&mut state);
@@ -60,7 +62,7 @@ pub fn run(
         let client = crate::client::Client::watch(
             "teleterm-web",
             connector,
-            &crate::protocol::Auth::plain("test"),
+            &auth,
             &query_params.id,
         );
 

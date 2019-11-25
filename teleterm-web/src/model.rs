@@ -35,11 +35,19 @@ pub(crate) struct Model {
 }
 
 impl Model {
-    pub(crate) fn new(config: crate::config::Config) -> Self {
-        Self {
+    pub(crate) fn new(
+        config: crate::config::Config,
+        orders: &mut impl Orders<crate::Msg>,
+    ) -> Self {
+        let logged_in = config.username.is_some();
+        let self_ = Self {
             config,
             state: State::Login,
+        };
+        if logged_in {
+            self_.list(orders);
         }
+        self_
     }
 
     pub(crate) fn update(
@@ -48,14 +56,28 @@ impl Model {
         orders: &mut impl Orders<crate::Msg>,
     ) {
         match msg {
-            crate::Msg::Login(username) => {
-                log::debug!("login");
+            crate::Msg::Login => {
+                let username = seed::to_input(
+                    &seed::document().get_element_by_id("username").unwrap(),
+                )
+                .value();
+                log::debug!("login for username {}", username);
                 self.login(&username, orders);
             }
-            crate::Msg::LoggedIn(..) => {
-                log::debug!("logged in");
-                orders.send_msg(crate::Msg::Refresh);
-            }
+            crate::Msg::LoggedIn(response) => match response {
+                Ok(response) => {
+                    self.config.username = response.username.clone();
+                    if let Some(username) = response.username {
+                        log::debug!("logged in as {}", username);
+                        orders.send_msg(crate::Msg::Refresh);
+                    } else {
+                        log::error!("failed to log in");
+                    }
+                }
+                Err(e) => {
+                    log::error!("error logging in: {:?}", e);
+                }
+            },
             crate::Msg::Refresh => {
                 log::debug!("refreshing");
                 self.list(orders);
@@ -133,6 +155,10 @@ impl Model {
 
     pub(crate) fn title(&self) -> &str {
         &self.config.title
+    }
+
+    pub(crate) fn username(&self) -> Option<&str> {
+        self.config.username.as_ref().map(|s| s.as_str())
     }
 
     pub(crate) fn sessions(&self) -> &[crate::protocol::Session] {

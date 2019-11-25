@@ -22,6 +22,26 @@ struct SessionData {
     username: Option<String>,
 }
 
+#[derive(Debug, serde::Serialize)]
+struct WebConfig<'a> {
+    title: &'a str,
+    username: Option<&'a str>,
+    public_address: &'a str,
+}
+
+impl<'a> WebConfig<'a> {
+    fn new(config: &'a Config, session: &'a SessionData) -> Self {
+        Self {
+            title: &config.title,
+            username: session
+                .username
+                .as_ref()
+                .map(std::string::String::as_str),
+            public_address: &config.public_address,
+        }
+    }
+}
+
 pub struct Server {
     server: Box<dyn futures::Future<Item = (), Error = ()> + Send>,
 }
@@ -116,7 +136,11 @@ fn serve_template(
 ) -> impl gotham::handler::Handler + Copy {
     move |state| {
         let config = Config::borrow_from(&state);
-        let rendered = view::HANDLEBARS.render(name, &config).unwrap();
+        let session = gotham::middleware::session::SessionData::<
+            crate::web::SessionData,
+        >::borrow_from(&state);
+        let web_config = WebConfig::new(config, session);
+        let rendered = view::HANDLEBARS.render(name, &web_config).unwrap();
         let response = hyper::Response::builder()
             .header("Content-Type", content_type)
             .body(hyper::Body::from(rendered))

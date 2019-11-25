@@ -12,6 +12,6 @@ pub(crate) fn render(_: &crate::model::Model) -> Vec<Node<crate::Msg>> {
         seed::input![
             seed::attrs! { At::Type => "submit", At::Value => "login" }
         ],
-        input_ev(Ev::Submit, crate::Msg::Login),
+        simple_ev(Ev::Submit, crate::Msg::Login),
     ]]
 }

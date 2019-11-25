@@ -9,6 +9,7 @@ extern "C" {
 #[derive(Clone, Debug, serde::Deserialize)]
 pub(crate) struct Config {
     pub(crate) title: String,
+    pub(crate) username: Option<String>,
     pub(crate) public_address: String,
 }
 

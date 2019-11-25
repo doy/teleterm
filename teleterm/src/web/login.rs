@@ -9,6 +9,11 @@ pub struct QueryParams {
     username: Option<String>,
 }
 
+#[derive(serde::Serialize)]
+struct Response {
+    username: Option<String>,
+}
+
 pub fn run(
     mut state: gotham::state::State,
 ) -> (gotham::state::State, hyper::Response<hyper::Body>) {
@@ -20,7 +25,12 @@ pub fn run(
         crate::web::SessionData,
     >::borrow_mut_from(&mut state);
 
-    session.username = username;
+    session.username = username.clone();
 
-    (state, hyper::Response::new(hyper::Body::from("{}")))
+    (
+        state,
+        hyper::Response::new(hyper::Body::from(
+            serde_json::to_string(&Response { username }).unwrap(),
+        )),
+    )
 }

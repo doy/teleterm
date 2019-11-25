@@ -24,3 +24,8 @@ pub(crate) struct Size {
     pub rows: u16,
     pub cols: u16,
 }
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub(crate) struct LoginResponse {
+    pub username: Option<String>,
+}

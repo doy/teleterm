@@ -1,6 +1,13 @@
 // it's possible we should just consider pulling the real protocol out into a
 // crate or something? but ideally in a way that doesn't require pulling in
 // tokio
+
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, serde::Deserialize)]
+pub enum AuthType {
+    Plain,
+    RecurseCenter,
+}
+
 #[derive(Clone, Debug, serde::Deserialize)]
 pub(crate) enum Message {
     TerminalOutput { data: Vec<u8> },

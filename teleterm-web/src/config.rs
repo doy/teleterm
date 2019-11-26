@@ -10,6 +10,10 @@ extern "C" {
 pub(crate) struct Config {
     pub(crate) username: Option<String>,
     pub(crate) public_address: String,
+    pub(crate) allowed_login_methods:
+        std::collections::HashSet<crate::protocol::AuthType>,
+    pub(crate) oauth_login_urls:
+        std::collections::HashMap<crate::protocol::AuthType, String>,
 }
 
 impl Config {

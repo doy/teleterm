@@ -187,6 +187,20 @@ impl Model {
         }
     }
 
+    pub(crate) fn allowed_login_method(
+        &self,
+        ty: crate::protocol::AuthType,
+    ) -> bool {
+        self.config.allowed_login_methods.contains(&ty)
+    }
+
+    pub(crate) fn oauth_login_url(
+        &self,
+        ty: crate::protocol::AuthType,
+    ) -> Option<&str> {
+        self.config.oauth_login_urls.get(&ty).map(|s| s.as_str())
+    }
+
     fn login(&self, username: &str, orders: &mut impl Orders<crate::Msg>) {
         let url = format!(
             "http://{}/login?username={}",

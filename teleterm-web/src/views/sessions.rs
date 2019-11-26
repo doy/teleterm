@@ -20,9 +20,7 @@ pub(crate) fn render(
 fn row(session: &crate::protocol::Session) -> Node<crate::Msg> {
     seed::tr![
         simple_ev(Ev::Click, crate::Msg::StartWatching(session.id.clone())),
-        seed::td![
-            seed::a![seed::attrs! {At::Href => "#"}, session.username,]
-        ],
+        seed::td![seed::a![seed::attrs! {At::Href => "#"}, session.username]],
         seed::td![format!("{}x{}", session.size.cols, session.size.rows)],
         seed::td![format_time(session.idle_time)],
         seed::td![format!("{}", session.watchers)],

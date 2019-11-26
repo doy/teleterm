@@ -5,6 +5,10 @@ pub(crate) fn render(model: &crate::model::Model) -> Vec<Node<crate::Msg>> {
 
     if let Some(username) = model.username() {
         view.push(seed::p!["logged in as ", username]);
+        view.push(seed::button![
+            simple_ev(Ev::Click, crate::Msg::Logout),
+            "logout"
+        ]);
     } else {
         view.push(seed::p!["not logged in"]);
     }

@@ -120,7 +120,17 @@ impl Model {
                 }
             },
             crate::Msg::StopWatching => {
+                log::debug!("stop watching");
                 self.list(orders);
+            }
+            crate::Msg::Logout => {
+                log::debug!("logout");
+                self.logout(orders);
+            }
+            crate::Msg::LoggedOut(..) => {
+                log::debug!("logged out");
+                self.config.username = None;
+                self.state = State::Login;
             }
         }
     }
@@ -199,6 +209,13 @@ impl Model {
             format!("ws://{}/watch?id={}", self.config.public_address, id);
         let ws = crate::ws::connect(&url, id, crate::Msg::Watch, orders);
         self.state = State::Watch(WatchConn::new(ws));
+    }
+
+    fn logout(&self, orders: &mut impl Orders<crate::Msg>) {
+        let url = format!("http://{}/logout", self.config.public_address);
+        orders.perform_cmd(
+            seed::Request::new(url).fetch(crate::Msg::LoggedOut),
+        );
     }
 
     fn process(&mut self, bytes: &[u8]) {

@@ -17,6 +17,8 @@ enum Msg {
     StartWatching(String),
     Watch(String, crate::ws::WebSocketEvent),
     StopWatching,
+    Logout,
+    LoggedOut(seed::fetch::FetchObject<()>),
 }
 
 fn init(_: Url, orders: &mut impl Orders<Msg>) -> Init<crate::model::Model> {

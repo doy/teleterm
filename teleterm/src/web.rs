@@ -1,6 +1,7 @@
 mod disk_session;
 mod list;
 mod login;
+mod logout;
 mod view;
 mod watch;
 mod ws;
@@ -119,6 +120,7 @@ fn router(data: &Config) -> impl gotham::handler::NewHandler {
             .get("/login")
             .with_query_string_extractor::<login::QueryParams>()
             .to(login::run);
+        route.get("/logout").to(logout::run);
     })
 }
 

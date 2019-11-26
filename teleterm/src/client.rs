@@ -87,6 +87,10 @@ pub struct Client<
     rsock: ReadSocket<S>,
     wsock: WriteSocket<S>,
 
+    // `raw` means to just connect and send Login, then forward all messages
+    // as ServerMessage events rather than handling connection messages
+    // internally. Connect and Disconnect events will not be sent.
+    raw: bool,
     on_login: Vec<crate::protocol::Message>,
     to_send: std::collections::VecDeque<crate::protocol::Message>,
 
@@ -106,6 +110,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             connect,
             auth,
             &[crate::protocol::Message::start_streaming()],
+            false,
         )
     }
 
@@ -120,6 +125,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             connect,
             auth,
             &[crate::protocol::Message::start_watching(id)],
+            false,
         )
     }
 
@@ -128,7 +134,15 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
     ) -> Self {
-        Self::new(term_type, connect, auth, &[])
+        Self::new(term_type, connect, auth, &[], false)
+    }
+
+    pub fn raw(
+        term_type: &str,
+        connect: Connector<S>,
+        auth: &crate::protocol::Auth,
+    ) -> Self {
+        Self::new(term_type, connect, auth, &[], true)
     }
 
     fn new(
@@ -136,6 +150,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
         on_login: &[crate::protocol::Message],
+        raw: bool,
     ) -> Self {
         let heartbeat_timer =
             tokio::timer::Interval::new_interval(HEARTBEAT_DURATION);
@@ -154,6 +169,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             rsock: ReadSocket::NotConnected,
             wsock: WriteSocket::NotConnected,
 
+            raw,
             on_login: on_login.to_vec(),
             to_send: std::collections::VecDeque::new(),
 
@@ -241,46 +257,50 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     )> {
         log::debug!("recv_message({})", msg.format_log());
 
-        match msg {
-            crate::protocol::Message::OauthRequest { url, id } => {
-                let mut state = None;
-                let parsed_url = url::Url::parse(&url).unwrap();
-                for (k, v) in parsed_url.query_pairs() {
-                    if k == "state" {
-                        state = Some(v);
+        if !self.raw {
+            match msg {
+                crate::protocol::Message::OauthRequest { url, id } => {
+                    let mut state = None;
+                    let parsed_url = url::Url::parse(&url).unwrap();
+                    for (k, v) in parsed_url.query_pairs() {
+                        if k == "state" {
+                            state = Some(v);
+                        }
                     }
+                    open::that(url).context(crate::error::OpenLink)?;
+                    return Ok((
+                        component_future::Async::DidWork,
+                        Some(self.wait_for_oauth_response(
+                            state.map(|s| s.to_string()),
+                            &id,
+                        )?),
+                    ));
                 }
-                open::that(url).context(crate::error::OpenLink)?;
-                Ok((
-                    component_future::Async::DidWork,
-                    Some(self.wait_for_oauth_response(
-                        state.map(|s| s.to_string()),
-                        &id,
-                    )?),
-                ))
-            }
-            crate::protocol::Message::LoggedIn { username } => {
-                log::info!("successfully logged into server as {}", username);
-                self.reset_reconnect_timer();
-                for msg in &self.on_login {
-                    self.to_send.push_back(msg.clone());
+                crate::protocol::Message::LoggedIn { username } => {
+                    log::info!(
+                        "successfully logged into server as {}",
+                        username
+                    );
+                    self.reset_reconnect_timer();
+                    for msg in &self.on_login {
+                        self.to_send.push_back(msg.clone());
+                    }
+                    self.last_error = None;
+                    return Ok((
+                        component_future::Async::Ready(Some(Event::Connect)),
+                        None,
+                    ));
                 }
-                self.last_error = None;
-                Ok((
-                    component_future::Async::Ready(Some(Event::Connect)),
-                    None,
-                ))
+                crate::protocol::Message::Heartbeat => {
+                    return Ok((component_future::Async::DidWork, None));
+                }
+                _ => {}
             }
-            crate::protocol::Message::Heartbeat => {
-                Ok((component_future::Async::DidWork, None))
-            }
-            _ => Ok((
-                component_future::Async::Ready(Some(Event::ServerMessage(
-                    msg,
-                ))),
-                None,
-            )),
         }
+        Ok((
+            component_future::Async::Ready(Some(Event::ServerMessage(msg))),
+            None,
+        ))
     }
 
     fn wait_for_oauth_response(
@@ -414,6 +434,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     return Ok(component_future::Async::NotReady);
                 }
                 Err(e) => {
+                    if self.raw {
+                        return Err(e);
+                    }
+
                     log::warn!("error while connecting, reconnecting: {}", e);
                     self.reconnect();
                     self.last_error = Some(format!("{}", e));
@@ -423,7 +447,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 }
             },
             WriteSocket::Connected(..) | WriteSocket::Writing(..) => {
-                if self.has_seen_server_recently() {
+                if self.has_seen_server_recently() || self.raw {
                     return Ok(component_future::Async::NothingToDo);
                 } else {
                     log::warn!(
@@ -474,6 +498,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                             Ok(poll)
                         }
                         Err(e) => {
+                            if self.raw {
+                                return Err(e);
+                            }
+
                             log::warn!(
                                 "error handling message, reconnecting: {}",
                                 e
@@ -490,6 +518,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     Ok(component_future::Async::NotReady)
                 }
                 Err(e) => {
+                    if self.raw {
+                        return Err(e);
+                    }
+
                     log::warn!("error reading message, reconnecting: {}", e);
                     self.reconnect();
                     self.last_error = Some(format!("{}", e));
@@ -515,6 +547,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     Ok(component_future::Async::NotReady)
                 }
                 Err(e) => {
+                    if self.raw {
+                        return Err(e);
+                    }
+
                     log::warn!(
                         "error processing message, reconnecting: {}",
                         e
@@ -564,6 +600,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     Ok(component_future::Async::NotReady)
                 }
                 Err(e) => {
+                    if self.raw {
+                        return Err(e);
+                    }
+
                     log::warn!("error writing message, reconnecting: {}", e);
                     self.reconnect();
                     self.last_error = Some(format!("{}", e));

@@ -35,7 +35,7 @@ pub fn run(
     let (w_sessions, r_sessions) = tokio::sync::oneshot::channel();
 
     tokio::spawn(
-        Lister::new(client, w_sessions)
+        Client::new(client, w_sessions)
             .map_err(|e| log::warn!("error listing: {}", e)),
     );
 
@@ -57,7 +57,7 @@ pub fn run(
     }
 }
 
-struct Lister<
+struct Client<
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static,
 > {
     client: crate::client::Client<S>,
@@ -67,7 +67,7 @@ struct Lister<
 }
 
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
-    Lister<S>
+    Client<S>
 {
     fn new(
         client: crate::client::Client<S>,
@@ -103,7 +103,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 }
 
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
-    Lister<S>
+    Client<S>
 {
     const POLL_FNS:
         &'static [&'static dyn for<'a> Fn(
@@ -137,7 +137,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 }
 
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
-    futures::Future for Lister<S>
+    futures::Future for Client<S>
 {
     type Item = ();
     type Error = Error;

@@ -1023,10 +1023,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     not_ready = true;
                 }
                 Err(e) => {
-                    log::error!(
-                        "error reading from active connection: {}",
-                        e
-                    );
+                    log::error!("error writing to active connection: {}", e);
                     continue;
                 }
                 _ => {}

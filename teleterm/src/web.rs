@@ -12,7 +12,6 @@ use gotham::state::FromState as _;
 
 #[derive(Clone, serde::Serialize, gotham_derive::StateData)]
 struct Config {
-    title: String,
     server_address: (String, std::net::SocketAddr),
     public_address: String,
 }
@@ -24,7 +23,6 @@ struct SessionData {
 
 #[derive(Debug, serde::Serialize)]
 struct WebConfig<'a> {
-    title: &'a str,
     username: Option<&'a str>,
     public_address: &'a str,
 }
@@ -32,7 +30,6 @@ struct WebConfig<'a> {
 impl<'a> WebConfig<'a> {
     fn new(config: &'a Config, session: &'a SessionData) -> Self {
         Self {
-            title: &config.title,
             username: session
                 .username
                 .as_ref()
@@ -53,7 +50,6 @@ impl Server {
         server_address: (String, std::net::SocketAddr),
     ) -> Self {
         let data = Config {
-            title: "teleterm".to_string(),
             server_address,
             public_address,
         };

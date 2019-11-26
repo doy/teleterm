@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 pub(crate) fn render(model: &crate::model::Model) -> Vec<Node<crate::Msg>> {
-    let mut view = vec![seed::h1![model.title()]];
+    let mut view = vec![seed::h1!["teleterm"]];
 
     if let Some(username) = model.username() {
         view.push(seed::p!["logged in as ", username]);

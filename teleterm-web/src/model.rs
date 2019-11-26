@@ -149,10 +149,6 @@ impl Model {
         }
     }
 
-    pub(crate) fn title(&self) -> &str {
-        &self.config.title
-    }
-
     pub(crate) fn username(&self) -> Option<&str> {
         self.config.username.as_ref().map(|s| s.as_str())
     }

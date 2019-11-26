@@ -4,6 +4,19 @@ use crate::prelude::*;
 pub struct Config {
     #[serde(default)]
     web: crate::config::Web,
+
+    #[serde(
+        rename = "oauth",
+        deserialize_with = "crate::config::oauth_configs",
+        default
+    )]
+    oauth_configs: std::collections::HashMap<
+        crate::protocol::AuthType,
+        std::collections::HashMap<
+            crate::protocol::AuthClient,
+            crate::oauth::Config,
+        >,
+    >,
 }
 
 impl crate::config::Config for Config {
@@ -22,6 +35,7 @@ impl crate::config::Config for Config {
             self.web.public_address.clone(),
             self.web.server_address.clone(),
             self.web.allowed_login_methods.clone(),
+            self.oauth_configs.clone(),
         ))
     }
 }

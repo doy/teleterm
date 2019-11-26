@@ -11,12 +11,19 @@ use crate::prelude::*;
 use gotham::router::builder::{DefineSingleRoute as _, DrawRoutes as _};
 use gotham::state::FromState as _;
 
-#[derive(Clone, serde::Serialize, gotham_derive::StateData)]
+#[derive(Clone, gotham_derive::StateData)]
 struct Config {
     server_address: (String, std::net::SocketAddr),
     public_address: String,
     allowed_login_methods:
         std::collections::HashSet<crate::protocol::AuthType>,
+    oauth_configs: std::collections::HashMap<
+        crate::protocol::AuthType,
+        std::collections::HashMap<
+            crate::protocol::AuthClient,
+            crate::oauth::Config,
+        >,
+    >,
 }
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
@@ -30,18 +37,35 @@ struct WebConfig<'a> {
     public_address: &'a str,
     allowed_login_methods:
         &'a std::collections::HashSet<crate::protocol::AuthType>,
+    oauth_login_urls:
+        std::collections::HashMap<crate::protocol::AuthType, String>,
 }
 
 impl<'a> WebConfig<'a> {
-    fn new(config: &'a Config, session: &'a SessionData) -> Self {
-        Self {
+    fn new(config: &'a Config, session: &'a SessionData) -> Result<Self> {
+        let mut oauth_login_urls = std::collections::HashMap::new();
+        for ty in crate::protocol::AuthType::iter().filter(|ty| {
+            ty.is_oauth() && config.allowed_login_methods.contains(ty)
+        }) {
+            let oauth_config = config
+                .oauth_configs
+                .get(&ty)
+                .and_then(|configs| {
+                    configs.get(&crate::protocol::AuthClient::Web)
+                })
+                .context(crate::error::AuthTypeMissingOauthConfig { ty })?;
+            let client = ty.oauth_client(oauth_config, None).unwrap();
+            oauth_login_urls.insert(ty, client.generate_authorize_url());
+        }
+        Ok(Self {
             username: session
                 .username
                 .as_ref()
                 .map(std::string::String::as_str),
             public_address: &config.public_address,
             allowed_login_methods: &config.allowed_login_methods,
-        }
+            oauth_login_urls,
+        })
     }
 }
 
@@ -57,11 +81,19 @@ impl Server {
         allowed_login_methods: std::collections::HashSet<
             crate::protocol::AuthType,
         >,
+        oauth_configs: std::collections::HashMap<
+            crate::protocol::AuthType,
+            std::collections::HashMap<
+                crate::protocol::AuthClient,
+                crate::oauth::Config,
+            >,
+        >,
     ) -> Self {
         let data = Config {
             server_address,
             public_address,
             allowed_login_methods,
+            oauth_configs,
         };
         Self {
             server: Box::new(gotham::init_server(
@@ -146,7 +178,20 @@ fn serve_template(
         let session = gotham::middleware::session::SessionData::<
             crate::web::SessionData,
         >::borrow_from(&state);
-        let web_config = WebConfig::new(config, session);
+        let web_config = match WebConfig::new(config, session) {
+            Ok(config) => config,
+            Err(e) => {
+                // this means that the server configuration is incorrect, and
+                // there's nothing the client can do about it
+                return (
+                    state,
+                    hyper::Response::builder()
+                        .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(hyper::Body::from(format!("{}", e)))
+                        .unwrap(),
+                );
+            }
+        };
         let rendered = view::HANDLEBARS.render(name, &web_config).unwrap();
         let response = hyper::Response::builder()
             .header("Content-Type", content_type)

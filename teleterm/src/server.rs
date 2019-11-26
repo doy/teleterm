@@ -399,12 +399,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         )?;
                         (
                             id.is_some(),
-                            Box::new(crate::oauth::RecurseCenter::new(
-                                config.clone(),
-                                &id.clone().unwrap_or_else(|| {
-                                    format!("{}", uuid::Uuid::new_v4())
-                                }),
-                            )),
+                            ty.oauth_client(
+                                config,
+                                id.as_ref().map(std::string::String::as_str),
+                            )
+                            .unwrap(),
                         )
                     }
                     _ => unreachable!(),

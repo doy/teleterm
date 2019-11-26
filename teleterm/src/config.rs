@@ -570,6 +570,13 @@ pub struct Web {
         default = "default_connect_address"
     )]
     pub server_address: (String, std::net::SocketAddr),
+
+    #[serde(
+        deserialize_with = "allowed_login_methods",
+        default = "default_allowed_login_methods"
+    )]
+    pub allowed_login_methods:
+        std::collections::HashSet<crate::protocol::AuthType>,
 }
 
 impl Web {
@@ -580,6 +587,7 @@ impl Web {
             "Host and port that the web server will be publicly available on (defaults to the listen address)";
         let server_address_help =
             "Host and port of the teleterm server (defaults to localhost:4144)";
+        let allowed_login_methods_help = "Comma separated list containing the auth methods this server should allow. Allows everything by default, valid values are plain, recurse_center";
         app.arg(
             clap::Arg::with_name(LISTEN_ADDRESS_OPTION)
                 .long(LISTEN_ADDRESS_OPTION)
@@ -600,6 +608,14 @@ impl Web {
                 .takes_value(true)
                 .value_name("HOST:PORT")
                 .help(server_address_help),
+        )
+        .arg(
+            clap::Arg::with_name(ALLOWED_LOGIN_METHODS_OPTION)
+                .long(ALLOWED_LOGIN_METHODS_OPTION)
+                .use_delimiter(true)
+                .takes_value(true)
+                .value_name("AUTH_METHODS")
+                .help(allowed_login_methods_help),
         )
     }
 
@@ -625,6 +641,15 @@ impl Web {
             let address = matches.value_of(SERVER_ADDRESS_OPTION).unwrap();
             self.server_address = to_connect_address(address)?;
         }
+        if matches.is_present(ALLOWED_LOGIN_METHODS_OPTION) {
+            self.allowed_login_methods = matches
+                .values_of(ALLOWED_LOGIN_METHODS_OPTION)
+                .unwrap()
+                .map(crate::protocol::AuthType::try_from)
+                .collect::<Result<
+                    std::collections::HashSet<crate::protocol::AuthType>,
+                >>()?;
+        }
         Ok(())
     }
 }
@@ -635,6 +660,7 @@ impl Default for Web {
             listen_address: default_web_listen_address(),
             public_address: default_web_public_address(),
             server_address: default_connect_address(),
+            allowed_login_methods: default_allowed_login_methods(),
         }
     }
 }

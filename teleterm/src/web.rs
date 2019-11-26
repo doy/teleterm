@@ -14,6 +14,8 @@ use gotham::state::FromState as _;
 struct Config {
     server_address: (String, std::net::SocketAddr),
     public_address: String,
+    allowed_login_methods:
+        std::collections::HashSet<crate::protocol::AuthType>,
 }
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
@@ -25,6 +27,8 @@ struct SessionData {
 struct WebConfig<'a> {
     username: Option<&'a str>,
     public_address: &'a str,
+    allowed_login_methods:
+        &'a std::collections::HashSet<crate::protocol::AuthType>,
 }
 
 impl<'a> WebConfig<'a> {
@@ -35,6 +39,7 @@ impl<'a> WebConfig<'a> {
                 .as_ref()
                 .map(std::string::String::as_str),
             public_address: &config.public_address,
+            allowed_login_methods: &config.allowed_login_methods,
         }
     }
 }
@@ -48,10 +53,14 @@ impl Server {
         listen_address: std::net::SocketAddr,
         public_address: String,
         server_address: (String, std::net::SocketAddr),
+        allowed_login_methods: std::collections::HashSet<
+            crate::protocol::AuthType,
+        >,
     ) -> Self {
         let data = Config {
             server_address,
             public_address,
+            allowed_login_methods,
         };
         Self {
             server: Box::new(gotham::init_server(

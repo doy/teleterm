@@ -52,7 +52,7 @@ impl<T: tokio::io::AsyncWrite> FramedWriter<T> {
 pub const PROTO_VERSION: u8 = 1;
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, serde::Serialize)]
 pub enum AuthType {
     Plain = 0,
     RecurseCenter,

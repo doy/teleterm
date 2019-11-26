@@ -21,6 +21,7 @@ impl crate::config::Config for Config {
             self.web.listen_address,
             self.web.public_address.clone(),
             self.web.server_address.clone(),
+            self.web.allowed_login_methods.clone(),
         ))
     }
 }

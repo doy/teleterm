@@ -35,7 +35,14 @@ impl crate::config::Config for Config {
             self.web.public_address.clone(),
             self.web.server_address.clone(),
             self.web.allowed_login_methods.clone(),
-            self.oauth_configs.clone(),
+            self.oauth_configs
+                .iter()
+                .filter_map(|(ty, configs)| {
+                    configs
+                        .get(&crate::protocol::AuthClient::Web)
+                        .map(|config| (*ty, config.clone()))
+                })
+                .collect(),
         ))
     }
 }

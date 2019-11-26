@@ -19,11 +19,19 @@ struct Config {
         std::collections::HashSet<crate::protocol::AuthType>,
     oauth_configs: std::collections::HashMap<
         crate::protocol::AuthType,
-        std::collections::HashMap<
-            crate::protocol::AuthClient,
-            crate::oauth::Config,
-        >,
+        crate::oauth::Config,
     >,
+}
+
+impl Config {
+    fn allowed_oauth_login_methods(
+        &self,
+    ) -> impl Iterator<Item = crate::protocol::AuthType> + '_ {
+        self.allowed_login_methods
+            .iter()
+            .copied()
+            .filter(|ty| ty.is_oauth())
+    }
 }
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
@@ -44,15 +52,10 @@ struct WebConfig<'a> {
 impl<'a> WebConfig<'a> {
     fn new(config: &'a Config, session: &'a SessionData) -> Result<Self> {
         let mut oauth_login_urls = std::collections::HashMap::new();
-        for ty in crate::protocol::AuthType::iter().filter(|ty| {
-            ty.is_oauth() && config.allowed_login_methods.contains(ty)
-        }) {
+        for ty in config.allowed_oauth_login_methods() {
             let oauth_config = config
                 .oauth_configs
                 .get(&ty)
-                .and_then(|configs| {
-                    configs.get(&crate::protocol::AuthClient::Web)
-                })
                 .context(crate::error::AuthTypeMissingOauthConfig { ty })?;
             let client = ty.oauth_client(oauth_config, None).unwrap();
             oauth_login_urls.insert(ty, client.generate_authorize_url());
@@ -83,10 +86,7 @@ impl Server {
         >,
         oauth_configs: std::collections::HashMap<
             crate::protocol::AuthType,
-            std::collections::HashMap<
-                crate::protocol::AuthClient,
-                crate::oauth::Config,
-            >,
+            crate::oauth::Config,
         >,
     ) -> Self {
         let data = Config {

@@ -34,9 +34,15 @@ impl Config {
     }
 }
 
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub(crate) struct LoginState {
+    auth: crate::protocol::Auth,
+    username: String,
+}
+
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 struct SessionData {
-    username: Option<String>,
+    login: Option<LoginState>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -62,9 +68,9 @@ impl<'a> WebConfig<'a> {
         }
         Ok(Self {
             username: session
-                .username
+                .login
                 .as_ref()
-                .map(std::string::String::as_str),
+                .map(|login| login.username.as_str()),
             public_address: &config.public_address,
             allowed_login_methods: &config.allowed_login_methods,
             oauth_login_urls,

@@ -25,7 +25,10 @@ pub fn run(
         crate::web::SessionData,
     >::borrow_mut_from(&mut state);
 
-    session.username = username.clone();
+    session.login = username.clone().map(|username| super::LoginState {
+        username: username.clone(),
+        auth: crate::protocol::Auth::plain(&username),
+    });
 
     (
         state,

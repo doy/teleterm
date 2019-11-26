@@ -8,8 +8,8 @@ pub fn run(
     let session = gotham::middleware::session::SessionData::<
         crate::web::SessionData,
     >::borrow_from(&state);
-    let auth = if let Some(username) = &session.username {
-        crate::protocol::Auth::plain(username)
+    let auth = if let Some(login) = &session.login {
+        &login.auth
     } else {
         return (
             state,

@@ -185,7 +185,9 @@ impl std::convert::TryFrom<&str> for AuthType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize,
+)]
 pub enum Auth {
     Plain {
         username: String,

@@ -13,7 +13,10 @@ pub struct Config {
     )]
     oauth_configs: std::collections::HashMap<
         crate::protocol::AuthType,
-        crate::oauth::Config,
+        std::collections::HashMap<
+            crate::protocol::AuthClient,
+            crate::oauth::Config,
+        >,
     >,
 }
 
@@ -76,7 +79,10 @@ fn create_server(
     >,
     oauth_configs: std::collections::HashMap<
         crate::protocol::AuthType,
-        crate::oauth::Config,
+        std::collections::HashMap<
+            crate::protocol::AuthClient,
+            crate::oauth::Config,
+        >,
     >,
     uid: Option<users::uid_t>,
     gid: Option<users::gid_t>,
@@ -106,7 +112,10 @@ fn create_server_tls(
     >,
     oauth_configs: std::collections::HashMap<
         crate::protocol::AuthType,
-        crate::oauth::Config,
+        std::collections::HashMap<
+            crate::protocol::AuthClient,
+            crate::oauth::Config,
+        >,
     >,
     uid: Option<users::uid_t>,
     gid: Option<users::gid_t>,

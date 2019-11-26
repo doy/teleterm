@@ -155,16 +155,23 @@ create one for you automatically. The configuration has several sections:
     * Same as `uid`, except sets the user's primary group.
     * Default: unset
 
-#### `[oauth.<method>]` (used by `tt server`)
+#### `[oauth.<method>.<client>]` (used by `tt server`)
 
-`<method>` corresponds to an OAuth-using login method - for instance, a section
-would be named something like `[oauth.recurse_center]`. Note that OAuth login
-methods are required to use `http://localhost:44141` as their redirect URL.
+`<method>` corresponds to an OAuth-using login method. Currently only
+`recurse_center` is supported. `<client>` describes what types of clients will
+be using this configuration. Currently valid values for `<client>` are `cli`
+(for `tt stream` and `tt watch`) and `web` (for `tt web`). For example, a valid
+configuration section will look like `[oauth.recurse_center.cli]`. You will
+need to configure separate OAuth applications for `cli` and `web` since the
+`redirect_url` will need to be different in each case.
 
 * `client_id`
-    * OAuth client id.
+    * OAuth client id. Required.
 * `client_secret`
-    * OAuth client secret.
+    * OAuth client secret. Required.
+* `redirect_url`
+    * OAuth client redirect url. Required if `<client>` is `web`, and must be
+      the `/oauth` path at the externally reachable domain of your web server.
 
 #### `[client]` (used by `tt stream` and `tt watch`)
 

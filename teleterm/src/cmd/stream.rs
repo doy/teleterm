@@ -38,6 +38,7 @@ impl crate::config::Config for Config {
             crate::protocol::AuthType::RecurseCenter => {
                 let id = crate::oauth::load_client_auth_id(self.client.auth);
                 crate::protocol::Auth::recurse_center(
+                    crate::protocol::AuthClient::Cli,
                     id.as_ref().map(std::string::String::as_str),
                 )
             }

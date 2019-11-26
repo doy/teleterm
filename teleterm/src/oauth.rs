@@ -6,7 +6,7 @@ mod recurse_center;
 pub use recurse_center::RecurseCenter;
 
 // this needs to be fixed because we listen for it in a hardcoded place
-pub const REDIRECT_URL: &str = "http://localhost:44141/oauth";
+pub const CLI_REDIRECT_URL: &str = "http://localhost:44141/oauth";
 
 pub trait Oauth {
     fn client(&self) -> &oauth2::basic::BasicClient;

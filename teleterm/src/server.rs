@@ -309,7 +309,10 @@ pub struct Server<
     allowed_auth_types: std::collections::HashSet<crate::protocol::AuthType>,
     oauth_configs: std::collections::HashMap<
         crate::protocol::AuthType,
-        crate::oauth::Config,
+        std::collections::HashMap<
+            crate::protocol::AuthClient,
+            crate::oauth::Config,
+        >,
     >,
 }
 
@@ -324,7 +327,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         >,
         oauth_configs: std::collections::HashMap<
             crate::protocol::AuthType,
-            crate::oauth::Config,
+            std::collections::HashMap<
+                crate::protocol::AuthClient,
+                crate::oauth::Config,
+            >,
         >,
     ) -> Self {
         Self {
@@ -379,19 +385,28 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 ));
             }
             oauth if oauth.is_oauth() => {
-                let config = self.oauth_configs.get(&ty).context(
+                let configs = self.oauth_configs.get(&ty).context(
                     crate::error::AuthTypeMissingOauthConfig { ty },
                 )?;
                 let (refresh, client) = match oauth {
-                    crate::protocol::Auth::RecurseCenter { id } => (
-                        id.is_some(),
-                        Box::new(crate::oauth::RecurseCenter::new(
-                            config.clone(),
-                            &id.clone().unwrap_or_else(|| {
-                                format!("{}", uuid::Uuid::new_v4())
-                            }),
-                        )),
-                    ),
+                    crate::protocol::Auth::RecurseCenter {
+                        auth_client,
+                        id,
+                        ..
+                    } => {
+                        let config = configs.get(auth_client).context(
+                            crate::error::AuthTypeMissingOauthConfig { ty },
+                        )?;
+                        (
+                            id.is_some(),
+                            Box::new(crate::oauth::RecurseCenter::new(
+                                config.clone(),
+                                &id.clone().unwrap_or_else(|| {
+                                    format!("{}", uuid::Uuid::new_v4())
+                                }),
+                            )),
+                        )
+                    }
                     _ => unreachable!(),
                 };
 

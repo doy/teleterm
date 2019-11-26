@@ -13,7 +13,11 @@ impl RecurseCenter {
         }
     }
 
-    pub fn config(client_id: &str, client_secret: &str) -> super::Config {
+    pub fn config(
+        client_id: &str,
+        client_secret: &str,
+        redirect_url: &url::Url,
+    ) -> super::Config {
         super::Config {
             client_id: client_id.to_string(),
             client_secret: client_secret.to_string(),
@@ -23,7 +27,7 @@ impl RecurseCenter {
             .unwrap(),
             token_url: url::Url::parse("https://www.recurse.com/oauth/token")
                 .unwrap(),
-            redirect_url: url::Url::parse(super::REDIRECT_URL).unwrap(),
+            redirect_url: redirect_url.clone(),
         }
     }
 }

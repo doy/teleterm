@@ -52,7 +52,67 @@ impl<T: tokio::io::AsyncWrite> FramedWriter<T> {
 pub const PROTO_VERSION: u8 = 1;
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, serde::Serialize)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    serde::Deserialize,
+    serde::Serialize,
+)]
+pub enum AuthClient {
+    Cli = 0,
+    Web,
+}
+
+impl AuthClient {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Cli => "cli",
+            Self::Web => "web",
+        }
+    }
+}
+
+impl std::convert::TryFrom<u8> for AuthClient {
+    type Error = Error;
+
+    fn try_from(n: u8) -> Result<Self> {
+        Ok(match n {
+            0 => Self::Cli,
+            1 => Self::Web,
+            _ => return Err(Error::InvalidAuthClient { ty: n }),
+        })
+    }
+}
+
+impl std::convert::TryFrom<&str> for AuthClient {
+    type Error = Error;
+
+    fn try_from(s: &str) -> Result<Self> {
+        Ok(match s {
+            s if Self::Cli.name() == s => Self::Cli,
+            s if Self::Web.name() == s => Self::Web,
+            _ => {
+                return Err(Error::InvalidAuthClientStr { ty: s.to_string() })
+            }
+        })
+    }
+}
+
+#[repr(u8)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub enum AuthType {
     Plain = 0,
     RecurseCenter,
@@ -107,8 +167,13 @@ impl std::convert::TryFrom<&str> for AuthType {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum Auth {
-    Plain { username: String },
-    RecurseCenter { id: Option<String> },
+    Plain {
+        username: String,
+    },
+    RecurseCenter {
+        auth_client: AuthClient,
+        id: Option<String>,
+    },
 }
 
 impl Auth {
@@ -118,8 +183,9 @@ impl Auth {
         }
     }
 
-    pub fn recurse_center(id: Option<&str>) -> Self {
+    pub fn recurse_center(auth_client: AuthClient, id: Option<&str>) -> Self {
         Self::RecurseCenter {
+            auth_client,
             id: id.map(std::string::ToString::to_string),
         }
     }
@@ -128,8 +194,13 @@ impl Auth {
         self.auth_type().is_oauth()
     }
 
-    pub fn name(&self) -> &'static str {
-        self.auth_type().name()
+    pub fn name(&self) -> String {
+        match &self {
+            Self::RecurseCenter { auth_client, .. } => {
+                format!("{}.{}", self.auth_type().name(), auth_client.name())
+            }
+            _ => self.auth_type().name().to_string(),
+        }
     }
 
     pub fn auth_type(&self) -> AuthType {
@@ -489,8 +560,9 @@ impl From<&Message> for Packet {
                 Auth::Plain { username } => {
                     write_str(username, data);
                 }
-                Auth::RecurseCenter { id } => {
+                Auth::RecurseCenter { auth_client, id } => {
                     let id = id.as_ref().map_or("", |s| s.as_str());
+                    write_u8(*auth_client as u8, data);
                     write_str(id, data);
                 }
             }
@@ -656,9 +728,11 @@ impl std::convert::TryFrom<Packet> for Message {
                     (auth, data)
                 }
                 AuthType::RecurseCenter => {
+                    let (auth_client, data) = read_u8(data)?;
+                    let auth_client = AuthClient::try_from(auth_client)?;
                     let (id, data) = read_str(data)?;
                     let id = if id == "" { None } else { Some(id) };
-                    let auth = Auth::RecurseCenter { id };
+                    let auth = Auth::RecurseCenter { auth_client, id };
                     (auth, data)
                 }
             };
@@ -876,13 +950,17 @@ mod test {
             ),
             Message::login(
                 &Auth::RecurseCenter {
+                    auth_client: AuthClient::Cli,
                     id: Some("some-random-id".to_string()),
                 },
                 "screen",
                 crate::term::Size { rows: 24, cols: 80 },
             ),
             Message::login(
-                &Auth::RecurseCenter { id: None },
+                &Auth::RecurseCenter {
+                    auth_client: AuthClient::Cli,
+                    id: None,
+                },
                 "screen",
                 crate::term::Size { rows: 24, cols: 80 },
             ),

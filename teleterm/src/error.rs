@@ -107,6 +107,12 @@ pub enum Error {
     #[snafu(display("failed to find any resolvable addresses"))]
     HasResolvedAddr,
 
+    #[snafu(display("invalid auth client {}", ty))]
+    InvalidAuthClient { ty: u8 },
+
+    #[snafu(display("invalid auth client {}", ty))]
+    InvalidAuthClientStr { ty: String },
+
     #[snafu(display("invalid auth type {}", ty))]
     InvalidAuthType { ty: u8 },
 
@@ -143,13 +149,15 @@ pub enum Error {
     NotAFileName { path: String },
 
     #[snafu(display(
-        "missing oauth configuration item {} for auth type {}",
+        "missing oauth configuration item {} for section oauth.{}.{}",
         field,
         auth_type.name(),
+        auth_client.name(),
     ))]
     OauthMissingConfiguration {
         field: String,
         auth_type: crate::protocol::AuthType,
+        auth_client: crate::protocol::AuthClient,
     },
 
     #[snafu(display("failed to open file {}: {}", filename, source))]

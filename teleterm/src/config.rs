@@ -872,51 +872,80 @@ pub fn oauth_configs<'a, D>(
 ) -> std::result::Result<
     std::collections::HashMap<
         crate::protocol::AuthType,
-        crate::oauth::Config,
+        std::collections::HashMap<
+            crate::protocol::AuthClient,
+            crate::oauth::Config,
+        >,
     >,
     D::Error,
 >
 where
     D: serde::de::Deserializer<'a>,
 {
-    let configs =
-        <std::collections::HashMap<String, OauthConfig>>::deserialize(
-            deserializer,
-        )?;
-    let mut ret = std::collections::HashMap::new();
-    for (key, config) in configs {
+    let configs = <std::collections::HashMap<
+        String,
+        std::collections::HashMap<String, OauthConfig>,
+    >>::deserialize(deserializer)?;
+    let mut all_configs = std::collections::HashMap::new();
+    for (key, client_configs) in configs {
         let auth_type = crate::protocol::AuthType::try_from(key.as_str())
             .map_err(serde::de::Error::custom)?;
-        let real_config = match auth_type {
-            crate::protocol::AuthType::RecurseCenter => {
-                let client_id = config
-                    .client_id
-                    .context(crate::error::OauthMissingConfiguration {
-                        field: "client_id",
-                        auth_type,
-                    })
+        let mut auth_type_configs = std::collections::HashMap::new();
+        for (key, config) in client_configs {
+            let auth_client =
+                crate::protocol::AuthClient::try_from(key.as_str())
                     .map_err(serde::de::Error::custom)?;
-                let client_secret = config
-                    .client_secret
-                    .context(crate::error::OauthMissingConfiguration {
-                        field: "client_secret",
-                        auth_type,
-                    })
-                    .map_err(serde::de::Error::custom)?;
-                crate::oauth::RecurseCenter::config(
-                    &client_id,
-                    &client_secret,
-                )
-            }
-            ty if !ty.is_oauth() => {
-                return Err(Error::AuthTypeNotOauth { ty: auth_type })
-                    .map_err(serde::de::Error::custom);
-            }
-            _ => unreachable!(),
-        };
-        ret.insert(auth_type, real_config);
+            let real_config = match auth_type {
+                crate::protocol::AuthType::RecurseCenter => {
+                    let client_id = config
+                        .client_id
+                        .context(crate::error::OauthMissingConfiguration {
+                            field: "client_id",
+                            auth_type,
+                            auth_client,
+                        })
+                        .map_err(serde::de::Error::custom)?;
+                    let client_secret = config
+                        .client_secret
+                        .context(crate::error::OauthMissingConfiguration {
+                            field: "client_secret",
+                            auth_type,
+                            auth_client,
+                        })
+                        .map_err(serde::de::Error::custom)?;
+                    let redirect_url =
+                        if auth_client == crate::protocol::AuthClient::Cli {
+                            url::Url::parse(crate::oauth::CLI_REDIRECT_URL)
+                                .unwrap()
+                        } else {
+                            config
+                                .redirect_url
+                                .context(
+                                    crate::error::OauthMissingConfiguration {
+                                        field: "redirect_url",
+                                        auth_type,
+                                        auth_client,
+                                    },
+                                )
+                                .map_err(serde::de::Error::custom)?
+                        };
+                    crate::oauth::RecurseCenter::config(
+                        &client_id,
+                        &client_secret,
+                        &redirect_url,
+                    )
+                }
+                ty if !ty.is_oauth() => {
+                    return Err(Error::AuthTypeNotOauth { ty: auth_type })
+                        .map_err(serde::de::Error::custom);
+                }
+                _ => unreachable!(),
+            };
+            auth_type_configs.insert(auth_client, real_config);
+        }
+        all_configs.insert(auth_type, auth_type_configs);
     }
-    Ok(ret)
+    Ok(all_configs)
 }
 
 #[derive(serde::Deserialize, Debug)]

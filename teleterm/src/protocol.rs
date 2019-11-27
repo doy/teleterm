@@ -316,7 +316,8 @@ pub enum Message {
         code: String,
     },
     OauthResponseToken {
-        token: String,
+        access_token: String,
+        refresh_token: String,
     },
 }
 
@@ -395,9 +396,13 @@ impl Message {
         }
     }
 
-    pub fn oauth_response_token(token: &str) -> Self {
+    pub fn oauth_response_token(
+        access_token: &str,
+        refresh_token: &str,
+    ) -> Self {
         Self::OauthResponseToken {
-            token: token.to_string(),
+            access_token: access_token.to_string(),
+            refresh_token: refresh_token.to_string(),
         }
     }
 
@@ -651,8 +656,12 @@ impl From<&Message> for Packet {
             Message::OauthResponseCode { code } => {
                 write_str(code, &mut data);
             }
-            Message::OauthResponseToken { token } => {
-                write_str(token, &mut data);
+            Message::OauthResponseToken {
+                access_token,
+                refresh_token,
+            } => {
+                write_str(access_token, &mut data);
+                write_str(refresh_token, &mut data);
             }
         }
 
@@ -846,9 +855,16 @@ impl std::convert::TryFrom<Packet> for Message {
                 (Self::OauthResponseCode { code }, data)
             }
             MessageType::OauthResponseToken => {
-                let (token, data) = read_str(data)?;
+                let (access_token, data) = read_str(data)?;
+                let (refresh_token, data) = read_str(data)?;
 
-                (Self::OauthResponseToken { token }, data)
+                (
+                    Self::OauthResponseToken {
+                        access_token,
+                        refresh_token,
+                    },
+                    data,
+                )
             }
         };
 

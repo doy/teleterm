@@ -379,15 +379,25 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     username,
                 ));
             }
-            oauth if oauth.is_oauth() => match auth_client {
-                crate::protocol::AuthClient::Cli => {
-                    return self
-                        .handle_oauth_login_cli(conn, auth, term_type, size);
+            oauth if oauth.is_oauth() => {
+                log::info!(
+                    "{}: login(oauth({}.{}), {:?})",
+                    conn.id,
+                    auth.name(),
+                    auth_client.name(),
+                    auth.oauth_id(),
+                );
+                match auth_client {
+                    crate::protocol::AuthClient::Cli => {
+                        return self.handle_oauth_login_cli(
+                            conn, auth, term_type, size,
+                        );
+                    }
+                    crate::protocol::AuthClient::Web => {
+                        return self.handle_oauth_login_web();
+                    }
                 }
-                crate::protocol::AuthClient::Web => {
-                    return self.handle_oauth_login_web();
-                }
-            },
+            }
             _ => unreachable!(),
         }
 
@@ -416,17 +426,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             .get(&ty)
             .context(crate::error::AuthTypeMissingOauthConfig { ty })?;
         let refresh = auth.oauth_id().is_some();
-        let client = auth.oauth_client(config).unwrap();
 
-        conn.oauth_client = Some(client);
+        conn.oauth_client = Some(auth.oauth_client(config).unwrap());
         let client = conn.oauth_client.as_ref().unwrap();
-
-        log::info!(
-            "{}: login(oauth({}), {:?})",
-            conn.id,
-            auth.name(),
-            client.user_id()
-        );
 
         let token_filename = client.server_token_file(true);
         if let (Some(token_filename), true) = (token_filename, refresh) {

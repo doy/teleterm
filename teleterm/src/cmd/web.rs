@@ -38,9 +38,20 @@ impl crate::config::Config for Config {
             self.oauth_configs
                 .iter()
                 .filter_map(|(ty, configs)| {
-                    configs
-                        .get(&crate::protocol::AuthClient::Web)
-                        .map(|config| (*ty, config.clone()))
+                    configs.get(&crate::protocol::AuthClient::Web).map(
+                        |config| {
+                            let mut config = config.clone();
+                            // TODO: tls
+                            let url = url::Url::parse(&format!(
+                                "http://{}/oauth/{}",
+                                self.web.public_address,
+                                ty.name()
+                            ))
+                            .unwrap();
+                            config.set_redirect_url(url);
+                            (*ty, config)
+                        },
+                    )
                 })
                 .collect(),
         ))

@@ -169,9 +169,6 @@ need to configure separate OAuth applications for `cli` and `web` since the
     * OAuth client id. Required.
 * `client_secret`
     * OAuth client secret. Required.
-* `redirect_url`
-    * OAuth client redirect url. Required if `<client>` is `web`, and must be
-      the `/oauth` path at the externally reachable domain of your web server.
 
 #### `[client]` (used by `tt stream` and `tt watch`)
 
@@ -212,6 +209,20 @@ need to configure separate OAuth applications for `cli` and `web` since the
 * `filename`
     * Name of the TTYrec file to save to or read from.
     * Default: `teleterm.ttyrec`
+
+### OAuth
+
+`tt` expects OAuth applications to be configured with specific values for the
+`redirect_url` setting. In particular:
+
+* For `cli`, the `redirect_url` should be exactly
+  `http://localhost:44141/oauth`.
+* For `web`, the `redirect_url` should be
+  `<scheme>://<public_address>/oauth/<method>`, where `<scheme>` is either
+  `http` or `https` depending on whether your web server has TLS enabled,
+  `<public_address>` is the `public_address` value configured in the `[web]`
+  section, and `<method>` is the authentication method (currently only
+  `recurse_center` is supported here).
 
 ## Troubleshooting
 

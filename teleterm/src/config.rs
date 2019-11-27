@@ -913,22 +913,12 @@ where
                             auth_client,
                         })
                         .map_err(serde::de::Error::custom)?;
+                    // this is wrong for Web configs, but it gets fixed up
+                    // later since we need to calculate the real value from
+                    // other parts of the config
                     let redirect_url =
-                        if auth_client == crate::protocol::AuthClient::Cli {
-                            url::Url::parse(crate::oauth::CLI_REDIRECT_URL)
-                                .unwrap()
-                        } else {
-                            config
-                                .redirect_url
-                                .context(
-                                    crate::error::OauthMissingConfiguration {
-                                        field: "redirect_url",
-                                        auth_type,
-                                        auth_client,
-                                    },
-                                )
-                                .map_err(serde::de::Error::custom)?
-                        };
+                        url::Url::parse(crate::oauth::CLI_REDIRECT_URL)
+                            .unwrap();
                     crate::oauth::RecurseCenter::config(
                         &client_id,
                         &client_secret,

@@ -145,6 +145,10 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn set_redirect_url(&mut self, url: url::Url) {
+        self.redirect_url = url;
+    }
+
     fn into_basic_client(self) -> oauth2::basic::BasicClient {
         oauth2::basic::BasicClient::new(
             oauth2::ClientId::new(self.client_id),

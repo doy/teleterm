@@ -34,7 +34,12 @@ pub fn run(
         )
     });
     let auth = crate::protocol::Auth::plain(&username);
-    let client = crate::client::Client::raw("teleterm-web", connector, &auth);
+    let client = crate::client::Client::raw(
+        "teleterm-web",
+        connector,
+        &auth,
+        crate::protocol::AuthClient::Web,
+    );
 
     let (w_login, r_login) = tokio::sync::oneshot::channel();
 

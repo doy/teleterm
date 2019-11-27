@@ -189,13 +189,8 @@ impl std::convert::TryFrom<&str> for AuthType {
     Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize,
 )]
 pub enum Auth {
-    Plain {
-        username: String,
-    },
-    RecurseCenter {
-        auth_client: AuthClient,
-        id: Option<String>,
-    },
+    Plain { username: String },
+    RecurseCenter { id: Option<String> },
 }
 
 impl Auth {
@@ -205,9 +200,8 @@ impl Auth {
         }
     }
 
-    pub fn recurse_center(auth_client: AuthClient, id: Option<&str>) -> Self {
+    pub fn recurse_center(id: Option<&str>) -> Self {
         Self::RecurseCenter {
-            auth_client,
             id: id.map(std::string::ToString::to_string),
         }
     }
@@ -217,12 +211,7 @@ impl Auth {
     }
 
     pub fn name(&self) -> String {
-        match &self {
-            Self::RecurseCenter { auth_client, .. } => {
-                format!("{}.{}", self.auth_type().name(), auth_client.name())
-            }
-            _ => self.auth_type().name().to_string(),
-        }
+        self.auth_type().name().to_string()
     }
 
     pub fn auth_type(&self) -> AuthType {
@@ -285,6 +274,7 @@ pub enum Message {
     Login {
         proto_version: u8,
         auth: Auth,
+        auth_client: AuthClient,
         term_type: String,
         size: crate::term::Size,
     },
@@ -328,12 +318,14 @@ pub enum Message {
 impl Message {
     pub fn login(
         auth: &Auth,
+        auth_client: AuthClient,
         term_type: &str,
         size: crate::term::Size,
     ) -> Self {
         Self::Login {
             proto_version: PROTO_VERSION,
             auth: auth.clone(),
+            auth_client,
             term_type: term_type.to_string(),
             size,
         }
@@ -612,9 +604,8 @@ impl From<&Message> for Packet {
                 Auth::Plain { username } => {
                     write_str(username, data);
                 }
-                Auth::RecurseCenter { auth_client, id } => {
+                Auth::RecurseCenter { id } => {
                     let id = id.as_ref().map_or("", |s| s.as_str());
-                    write_u8(*auth_client as u8, data);
                     write_str(id, data);
                 }
             }
@@ -627,11 +618,13 @@ impl From<&Message> for Packet {
             Message::Login {
                 proto_version,
                 auth,
+                auth_client,
                 term_type,
                 size,
             } => {
                 write_u8(*proto_version, &mut data);
                 write_auth(auth, &mut data);
+                write_u8(*auth_client as u8, &mut data);
                 write_str(term_type, &mut data);
                 write_size(*size, &mut data);
             }
@@ -786,11 +779,9 @@ impl std::convert::TryFrom<Packet> for Message {
                     (auth, data)
                 }
                 AuthType::RecurseCenter => {
-                    let (auth_client, data) = read_u8(data)?;
-                    let auth_client = AuthClient::try_from(auth_client)?;
                     let (id, data) = read_str(data)?;
                     let id = if id == "" { None } else { Some(id) };
-                    let auth = Auth::RecurseCenter { auth_client, id };
+                    let auth = Auth::RecurseCenter { id };
                     (auth, data)
                 }
             };
@@ -803,6 +794,8 @@ impl std::convert::TryFrom<Packet> for Message {
             MessageType::Login => {
                 let (proto_version, data) = read_u8(data)?;
                 let (auth, data) = read_auth(data)?;
+                let (auth_client, data) = read_u8(data)?;
+                let auth_client = AuthClient::try_from(auth_client)?;
                 let (term_type, data) = read_str(data)?;
                 let (size, data) = read_size(data)?;
 
@@ -810,6 +803,7 @@ impl std::convert::TryFrom<Packet> for Message {
                     Self::Login {
                         proto_version,
                         auth,
+                        auth_client,
                         term_type,
                         size,
                     },
@@ -1013,22 +1007,21 @@ mod test {
                 &Auth::Plain {
                     username: "doy".to_string(),
                 },
+                AuthClient::Cli,
                 "screen",
                 crate::term::Size { rows: 24, cols: 80 },
             ),
             Message::login(
                 &Auth::RecurseCenter {
-                    auth_client: AuthClient::Cli,
                     id: Some("some-random-id".to_string()),
                 },
+                AuthClient::Cli,
                 "screen",
                 crate::term::Size { rows: 24, cols: 80 },
             ),
             Message::login(
-                &Auth::RecurseCenter {
-                    auth_client: AuthClient::Cli,
-                    id: None,
-                },
+                &Auth::RecurseCenter { id: None },
+                AuthClient::Cli,
                 "screen",
                 crate::term::Size { rows: 24, cols: 80 },
             ),

@@ -36,7 +36,6 @@ impl crate::config::Config for Config {
             crate::protocol::AuthType::RecurseCenter => {
                 let id = crate::oauth::load_client_auth_id(self.client.auth);
                 crate::protocol::Auth::recurse_center(
-                    crate::protocol::AuthClient::Cli,
                     id.as_ref().map(std::string::String::as_str),
                 )
             }
@@ -212,8 +211,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> Self {
         let term_type =
             std::env::var("TERM").unwrap_or_else(|_| "".to_string());
-        let list_client =
-            crate::client::Client::list(&term_type, make_connector(), auth);
+        let list_client = crate::client::Client::list(
+            &term_type,
+            make_connector(),
+            auth,
+            crate::protocol::AuthClient::Cli,
+        );
 
         Self {
             term_type,
@@ -332,6 +335,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         &self.term_type,
                         (self.make_connector)(),
                         &self.auth,
+                        crate::protocol::AuthClient::Cli,
                         id,
                     );
                     self.state.watching(client);

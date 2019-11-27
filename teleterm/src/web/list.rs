@@ -29,7 +29,12 @@ pub fn run(
                 .context(crate::error::Connect { address }),
         )
     });
-    let client = crate::client::Client::raw("teleterm-web", connector, auth);
+    let client = crate::client::Client::raw(
+        "teleterm-web",
+        connector,
+        auth,
+        crate::protocol::AuthClient::Web,
+    );
 
     let (w_sessions, r_sessions) = tokio::sync::oneshot::channel();
 

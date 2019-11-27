@@ -76,6 +76,7 @@ pub struct Client<
 > {
     connect: Connector<S>,
     auth: crate::protocol::Auth,
+    auth_client: crate::protocol::AuthClient,
 
     term_type: String,
 
@@ -104,11 +105,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         term_type: &str,
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
+        auth_client: crate::protocol::AuthClient,
     ) -> Self {
         Self::new(
             term_type,
             connect,
             auth,
+            auth_client,
             &[crate::protocol::Message::start_streaming()],
             false,
         )
@@ -118,12 +121,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         term_type: &str,
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
+        auth_client: crate::protocol::AuthClient,
         id: &str,
     ) -> Self {
         Self::new(
             term_type,
             connect,
             auth,
+            auth_client,
             &[crate::protocol::Message::start_watching(id)],
             false,
         )
@@ -133,22 +138,25 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         term_type: &str,
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
+        auth_client: crate::protocol::AuthClient,
     ) -> Self {
-        Self::new(term_type, connect, auth, &[], false)
+        Self::new(term_type, connect, auth, auth_client, &[], false)
     }
 
     pub fn raw(
         term_type: &str,
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
+        auth_client: crate::protocol::AuthClient,
     ) -> Self {
-        Self::new(term_type, connect, auth, &[], true)
+        Self::new(term_type, connect, auth, auth_client, &[], true)
     }
 
     fn new(
         term_type: &str,
         connect: Connector<S>,
         auth: &crate::protocol::Auth,
+        auth_client: crate::protocol::AuthClient,
         on_login: &[crate::protocol::Message],
         raw: bool,
     ) -> Self {
@@ -158,6 +166,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         Self {
             connect,
             auth: auth.clone(),
+            auth_client,
 
             term_type: term_type.to_string(),
 
@@ -234,6 +243,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         self.to_send.clear();
         self.send_message(crate::protocol::Message::login(
             &self.auth,
+            self.auth_client,
             &self.term_type,
             crate::term::Size::get()?,
         ));

@@ -38,7 +38,6 @@ impl crate::config::Config for Config {
             crate::protocol::AuthType::RecurseCenter => {
                 let id = crate::oauth::load_client_auth_id(self.client.auth);
                 crate::protocol::Auth::recurse_center(
-                    crate::protocol::AuthClient::Cli,
                     id.as_ref().map(std::string::String::as_str),
                 )
             }
@@ -144,7 +143,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     ) -> Self {
         let term_type =
             std::env::var("TERM").unwrap_or_else(|_| "".to_string());
-        let client = crate::client::Client::stream(&term_type, connect, auth);
+        let client = crate::client::Client::stream(
+            &term_type,
+            connect,
+            auth,
+            crate::protocol::AuthClient::Cli,
+        );
 
         // TODO: tokio::io::stdin is broken (it's blocking)
         // see https://github.com/tokio-rs/tokio/issues/589

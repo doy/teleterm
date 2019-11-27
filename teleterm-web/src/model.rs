@@ -62,13 +62,9 @@ impl Model {
             }
             crate::Msg::LoggedIn(response) => match response {
                 Ok(response) => {
-                    self.config.username = response.username.clone();
-                    if let Some(username) = response.username {
-                        log::debug!("logged in as {}", username);
-                        orders.send_msg(crate::Msg::Refresh);
-                    } else {
-                        log::error!("failed to log in");
-                    }
+                    log::debug!("logged in as {}", response.username);
+                    self.config.username = Some(response.username);
+                    orders.send_msg(crate::Msg::Refresh);
                 }
                 Err(e) => {
                     log::error!("error logging in: {:?}", e);

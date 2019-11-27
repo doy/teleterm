@@ -8,12 +8,12 @@ use gotham::state::FromState as _;
     gotham_derive::StaticResponseExtender,
 )]
 pub struct QueryParams {
-    username: Option<String>,
+    username: String,
 }
 
 #[derive(serde::Serialize)]
 struct Response {
-    username: Option<String>,
+    username: String,
 }
 
 pub fn run(
@@ -22,17 +22,6 @@ pub fn run(
     let username = {
         let query_params = QueryParams::borrow_from(&state);
         query_params.username.clone()
-    };
-    let username = if let Some(username) = username {
-        username
-    } else {
-        return (
-            state,
-            hyper::Response::builder()
-                .status(hyper::StatusCode::BAD_REQUEST)
-                .body(hyper::Body::empty())
-                .unwrap(),
-        );
     };
 
     let config = crate::web::Config::borrow_from(&state);
@@ -80,10 +69,7 @@ pub fn run(
     (
         state,
         hyper::Response::new(hyper::Body::from(
-            serde_json::to_string(&Response {
-                username: Some(username),
-            })
-            .unwrap(),
+            serde_json::to_string(&Response { username }).unwrap(),
         )),
     )
 }

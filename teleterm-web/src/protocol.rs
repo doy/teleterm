@@ -34,5 +34,5 @@ pub(crate) struct Size {
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub(crate) struct LoginResponse {
-    pub username: Option<String>,
+    pub username: String,
 }

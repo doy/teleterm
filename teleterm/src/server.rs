@@ -309,10 +309,7 @@ pub struct Server<
     allowed_auth_types: std::collections::HashSet<crate::protocol::AuthType>,
     oauth_configs: std::collections::HashMap<
         crate::protocol::AuthType,
-        std::collections::HashMap<
-            crate::protocol::AuthClient,
-            crate::oauth::Config,
-        >,
+        crate::oauth::Config,
     >,
 }
 
@@ -327,10 +324,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         >,
         oauth_configs: std::collections::HashMap<
             crate::protocol::AuthType,
-            std::collections::HashMap<
-                crate::protocol::AuthClient,
-                crate::oauth::Config,
-            >,
+            crate::oauth::Config,
         >,
     ) -> Self {
         Self {
@@ -385,27 +379,18 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 ));
             }
             oauth if oauth.is_oauth() => {
-                let configs = self.oauth_configs.get(&ty).context(
+                let config = self.oauth_configs.get(&ty).context(
                     crate::error::AuthTypeMissingOauthConfig { ty },
                 )?;
                 let (refresh, client) = match oauth {
-                    crate::protocol::Auth::RecurseCenter {
-                        auth_client,
-                        id,
-                        ..
-                    } => {
-                        let config = configs.get(auth_client).context(
-                            crate::error::AuthTypeMissingOauthConfig { ty },
-                        )?;
-                        (
-                            id.is_some(),
-                            ty.oauth_client(
-                                config,
-                                id.as_ref().map(std::string::String::as_str),
-                            )
-                            .unwrap(),
+                    crate::protocol::Auth::RecurseCenter { id, .. } => (
+                        id.is_some(),
+                        ty.oauth_client(
+                            config,
+                            id.as_ref().map(std::string::String::as_str),
                         )
-                    }
+                        .unwrap(),
+                    ),
                     _ => unreachable!(),
                 };
 

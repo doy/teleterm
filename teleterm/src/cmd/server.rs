@@ -31,13 +31,22 @@ impl crate::config::Config for Config {
     fn run(
         &self,
     ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
+        let oauth_configs = self
+            .oauth_configs
+            .iter()
+            .filter_map(|(ty, configs)| {
+                configs
+                    .get(&crate::protocol::AuthClient::Cli)
+                    .map(|config| (*ty, config.clone()))
+            })
+            .collect();
         if let Some(tls_identity_file) = &self.server.tls_identity_file {
             create_server_tls(
                 self.server.listen_address,
                 self.server.read_timeout,
                 tls_identity_file,
                 self.server.allowed_login_methods.clone(),
-                self.oauth_configs.clone(),
+                oauth_configs,
                 self.server.uid,
                 self.server.gid,
             )
@@ -46,7 +55,7 @@ impl crate::config::Config for Config {
                 self.server.listen_address,
                 self.server.read_timeout,
                 self.server.allowed_login_methods.clone(),
-                self.oauth_configs.clone(),
+                oauth_configs,
                 self.server.uid,
                 self.server.gid,
             )
@@ -79,10 +88,7 @@ fn create_server(
     >,
     oauth_configs: std::collections::HashMap<
         crate::protocol::AuthType,
-        std::collections::HashMap<
-            crate::protocol::AuthClient,
-            crate::oauth::Config,
-        >,
+        crate::oauth::Config,
     >,
     uid: Option<users::uid_t>,
     gid: Option<users::gid_t>,
@@ -112,10 +118,7 @@ fn create_server_tls(
     >,
     oauth_configs: std::collections::HashMap<
         crate::protocol::AuthType,
-        std::collections::HashMap<
-            crate::protocol::AuthClient,
-            crate::oauth::Config,
-        >,
+        crate::oauth::Config,
     >,
     uid: Option<users::uid_t>,
     gid: Option<users::gid_t>,

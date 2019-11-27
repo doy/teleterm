@@ -28,10 +28,7 @@ impl Server {
         >,
         oauth_configs: std::collections::HashMap<
             crate::protocol::AuthType,
-            std::collections::HashMap<
-                crate::protocol::AuthClient,
-                crate::oauth::Config,
-            >,
+            crate::oauth::Config,
         >,
     ) -> Self {
         let (tls_sock_w, tls_sock_r) = tokio::sync::mpsc::channel(100);

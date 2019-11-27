@@ -426,10 +426,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                             // XXX unwrap here isn't super safe
                             let refresh_token = refresh_token.unwrap();
                             client
-                                .get_access_token_from_refresh_token(
+                                .get_tokens_from_refresh_token(
                                     refresh_token.trim(),
                                 )
-                                .and_then(|access_token| {
+                                .and_then(|(access_token, _)| {
                                     client.get_username_from_access_token(
                                         &access_token,
                                     )
@@ -618,8 +618,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
         let term_info = conn.state.term_info().unwrap().clone();
         let fut = client
-            .get_access_token_from_auth_code(code)
-            .and_then(|token| client.get_username_from_access_token(&token))
+            .get_tokens_from_auth_code(code)
+            .and_then(|(access_token, _)| {
+                client.get_username_from_access_token(&access_token)
+            })
             .map(|username| {
                 (
                     ConnectionState::LoggedIn {

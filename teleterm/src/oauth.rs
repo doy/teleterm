@@ -29,10 +29,11 @@ pub trait Oauth {
         auth_url.to_string()
     }
 
-    fn get_access_token_from_auth_code(
+    fn get_tokens_from_auth_code(
         &self,
         code: &str,
-    ) -> Box<dyn futures::Future<Item = String, Error = Error> + Send> {
+    ) -> Box<dyn futures::Future<Item = (String, String), Error = Error> + Send>
+    {
         let token_cache_file = self.server_token_file(false).unwrap();
         let fut = self
             .client()
@@ -51,15 +52,16 @@ pub trait Oauth {
                     &access_token,
                     &refresh_token,
                 )
-                .map(move |_| access_token)
+                .map(move |_| (access_token, refresh_token))
             });
         Box::new(fut)
     }
 
-    fn get_access_token_from_refresh_token(
+    fn get_tokens_from_refresh_token(
         &self,
         token: &str,
-    ) -> Box<dyn futures::Future<Item = String, Error = Error> + Send> {
+    ) -> Box<dyn futures::Future<Item = (String, String), Error = Error> + Send>
+    {
         let token_cache_file = self.server_token_file(false).unwrap();
         let fut = self
             .client()
@@ -80,7 +82,7 @@ pub trait Oauth {
                     &access_token,
                     &refresh_token,
                 )
-                .map(move |_| access_token)
+                .map(move |_| (access_token, refresh_token))
             });
         Box::new(fut)
     }

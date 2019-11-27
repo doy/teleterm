@@ -74,8 +74,26 @@ pub enum Error {
     #[snafu(display("received EOF from server"))]
     EOF,
 
-    #[snafu(display("failed to retrieve access token: {:?}", msg))]
+    #[snafu(display(
+        "failed to retrieve access token from authorization code: {:?}",
+        msg
+    ))]
     ExchangeCode {
+        msg: String,
+        // XXX RequestTokenError doesn't implement the right traits
+        // source: oauth2::RequestTokenError<
+        //     oauth2::reqwest::Error,
+        //     oauth2::StandardErrorResponse<
+        //         oauth2::basic::BasicErrorResponseType,
+        //     >,
+        // >
+    },
+
+    #[snafu(display(
+        "failed to retrieve access token from refresh token: {:?}",
+        msg
+    ))]
+    ExchangeRefreshToken {
         msg: String,
         // XXX RequestTokenError doesn't implement the right traits
         // source: oauth2::RequestTokenError<

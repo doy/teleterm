@@ -71,7 +71,7 @@ pub trait Oauth {
             .request_async(oauth2::reqwest::async_http_client)
             .map_err(|e| {
                 let msg = stringify_oauth2_http_error(&e);
-                Error::ExchangeCode { msg }
+                Error::ExchangeRefreshToken { msg }
             })
             .and_then(|token| {
                 let access_token = token.access_token().secret().to_string();

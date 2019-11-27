@@ -259,7 +259,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
         if !self.raw {
             match msg {
-                crate::protocol::Message::OauthRequest { url, id } => {
+                crate::protocol::Message::OauthCliRequest { url, id } => {
                     let mut state = None;
                     let parsed_url = url::Url::parse(&url).unwrap();
                     for (k, v) in parsed_url.query_pairs() {
@@ -373,7 +373,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         return Err(Error::ParseHttpRequestMissingCode);
                     };
                     Ok((
-                        crate::protocol::Message::oauth_response_code(&code),
+                        crate::protocol::Message::oauth_cli_response(&code),
                         lines.into_inner().into_inner(),
                     ))
                 })

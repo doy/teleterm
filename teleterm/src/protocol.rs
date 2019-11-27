@@ -247,9 +247,10 @@ pub enum MessageType {
     Error,
     Resize,
     LoggedIn,
-    OauthRequest,
-    OauthResponseCode,
-    OauthResponseToken,
+    OauthCliRequest,
+    OauthCliResponse,
+    OauthWebRequest,
+    OauthWebResponse,
 }
 
 impl std::convert::TryFrom<u8> for MessageType {
@@ -268,9 +269,10 @@ impl std::convert::TryFrom<u8> for MessageType {
             8 => Self::Error,
             9 => Self::Resize,
             10 => Self::LoggedIn,
-            11 => Self::OauthRequest,
-            12 => Self::OauthResponseCode,
-            13 => Self::OauthResponseToken,
+            11 => Self::OauthCliRequest,
+            12 => Self::OauthCliResponse,
+            13 => Self::OauthWebRequest,
+            14 => Self::OauthWebResponse,
             _ => return Err(Error::InvalidMessageType { ty: n }),
         })
     }
@@ -308,16 +310,18 @@ pub enum Message {
     LoggedIn {
         username: String,
     },
-    OauthRequest {
+    OauthCliRequest {
         url: String,
         id: String,
     },
-    OauthResponseCode {
+    OauthCliResponse {
         code: String,
     },
-    OauthResponseToken {
+    OauthWebRequest {
+        id: String,
+    },
+    OauthWebResponse {
         access_token: String,
-        refresh_token: String,
     },
 }
 
@@ -383,26 +387,26 @@ impl Message {
         }
     }
 
-    pub fn oauth_request(url: &str, id: &str) -> Self {
-        Self::OauthRequest {
+    pub fn oauth_cli_request(url: &str, id: &str) -> Self {
+        Self::OauthCliRequest {
             url: url.to_string(),
             id: id.to_string(),
         }
     }
 
-    pub fn oauth_response_code(code: &str) -> Self {
-        Self::OauthResponseCode {
+    pub fn oauth_cli_response(code: &str) -> Self {
+        Self::OauthCliResponse {
             code: code.to_string(),
         }
     }
 
-    pub fn oauth_response_token(
-        access_token: &str,
-        refresh_token: &str,
-    ) -> Self {
-        Self::OauthResponseToken {
+    pub fn oauth_web_request(id: &str) -> Self {
+        Self::OauthWebRequest { id: id.to_string() }
+    }
+
+    pub fn oauth_web_response(access_token: &str) -> Self {
+        Self::OauthWebResponse {
             access_token: access_token.to_string(),
-            refresh_token: refresh_token.to_string(),
         }
     }
 
@@ -419,11 +423,10 @@ impl Message {
             Self::Error { .. } => MessageType::Error,
             Self::Resize { .. } => MessageType::Resize,
             Self::LoggedIn { .. } => MessageType::LoggedIn,
-            Self::OauthRequest { .. } => MessageType::OauthRequest,
-            Self::OauthResponseCode { .. } => MessageType::OauthResponseCode,
-            Self::OauthResponseToken { .. } => {
-                MessageType::OauthResponseToken
-            }
+            Self::OauthCliRequest { .. } => MessageType::OauthCliRequest,
+            Self::OauthCliResponse { .. } => MessageType::OauthCliResponse,
+            Self::OauthWebRequest { .. } => MessageType::OauthWebRequest,
+            Self::OauthWebResponse { .. } => MessageType::OauthWebResponse,
         }
     }
 
@@ -463,12 +466,17 @@ impl Message {
             }
 
             // these are security-sensitive, keep them out of logs
-            Self::OauthRequest { .. } => "OauthRequest {{ .. }}".to_string(),
-            Self::OauthResponseCode { .. } => {
-                "OauthResponseCode {{ .. }}".to_string()
+            Self::OauthCliRequest { .. } => {
+                "OauthCliRequest {{ .. }}".to_string()
             }
-            Self::OauthResponseToken { .. } => {
-                "OauthResponseToken {{ .. }}".to_string()
+            Self::OauthCliResponse { .. } => {
+                "OauthCliResponse {{ .. }}".to_string()
+            }
+            Self::OauthWebRequest { .. } => {
+                "OauthWebRequest {{ .. }}".to_string()
+            }
+            Self::OauthWebResponse { .. } => {
+                "OauthWebResponse {{ .. }}".to_string()
             }
 
             _ => format!("{:?}", self),
@@ -649,19 +657,18 @@ impl From<&Message> for Packet {
             Message::LoggedIn { username } => {
                 write_str(username, &mut data);
             }
-            Message::OauthRequest { url, id } => {
+            Message::OauthCliRequest { url, id } => {
                 write_str(url, &mut data);
                 write_str(id, &mut data);
             }
-            Message::OauthResponseCode { code } => {
+            Message::OauthCliResponse { code } => {
                 write_str(code, &mut data);
             }
-            Message::OauthResponseToken {
-                access_token,
-                refresh_token,
-            } => {
+            Message::OauthWebRequest { id } => {
+                write_str(id, &mut data);
+            }
+            Message::OauthWebResponse { access_token } => {
                 write_str(access_token, &mut data);
-                write_str(refresh_token, &mut data);
             }
         }
 
@@ -843,28 +850,26 @@ impl std::convert::TryFrom<Packet> for Message {
 
                 (Self::LoggedIn { username }, data)
             }
-            MessageType::OauthRequest => {
+            MessageType::OauthCliRequest => {
                 let (url, data) = read_str(data)?;
                 let (id, data) = read_str(data)?;
 
-                (Self::OauthRequest { url, id }, data)
+                (Self::OauthCliRequest { url, id }, data)
             }
-            MessageType::OauthResponseCode => {
+            MessageType::OauthCliResponse => {
                 let (code, data) = read_str(data)?;
 
-                (Self::OauthResponseCode { code }, data)
+                (Self::OauthCliResponse { code }, data)
             }
-            MessageType::OauthResponseToken => {
-                let (access_token, data) = read_str(data)?;
-                let (refresh_token, data) = read_str(data)?;
+            MessageType::OauthWebRequest => {
+                let (id, data) = read_str(data)?;
 
-                (
-                    Self::OauthResponseToken {
-                        access_token,
-                        refresh_token,
-                    },
-                    data,
-                )
+                (Self::OauthWebRequest { id }, data)
+            }
+            MessageType::OauthWebResponse => {
+                let (access_token, data) = read_str(data)?;
+
+                (Self::OauthWebResponse { access_token }, data)
             }
         };
 

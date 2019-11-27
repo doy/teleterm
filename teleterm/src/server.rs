@@ -383,6 +383,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     crate::error::AuthTypeMissingOauthConfig { ty },
                 )?;
                 let (refresh, client) = match oauth {
+                    // XXX handle this differently based on auth_client too
                     crate::protocol::Auth::RecurseCenter { id, .. } => (
                         id.is_some(),
                         ty.oauth_client(
@@ -426,10 +427,10 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                             // XXX unwrap here isn't super safe
                             let refresh_token = refresh_token.unwrap();
                             client
-                                .get_tokens_from_refresh_token(
+                                .get_access_token_from_refresh_token(
                                     refresh_token.trim(),
                                 )
-                                .and_then(|(access_token, _)| {
+                                .and_then(|access_token| {
                                     client.get_username_from_access_token(
                                         &access_token,
                                     )
@@ -455,7 +456,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     let authorize_url = client.generate_authorize_url();
                     let user_id = client.user_id().to_string();
                     conn.send_message(
-                        crate::protocol::Message::oauth_request(
+                        crate::protocol::Message::oauth_cli_request(
                             &authorize_url,
                             &user_id,
                         ),
@@ -596,7 +597,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         Ok(())
     }
 
-    fn handle_message_oauth_response_code(
+    fn handle_message_oauth_cli_response(
         &mut self,
         conn: &mut Connection<S>,
         code: &str,
@@ -612,14 +613,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     > {
         let client = conn.oauth_client.take().ok_or_else(|| {
             Error::UnexpectedMessage {
-                message: crate::protocol::Message::oauth_response_code(code),
+                message: crate::protocol::Message::oauth_cli_response(code),
             }
         })?;
 
         let term_info = conn.state.term_info().unwrap().clone();
         let fut = client
-            .get_tokens_from_auth_code(code)
-            .and_then(|(access_token, _)| {
+            .get_access_token_from_auth_code(code)
+            .and_then(|access_token| {
                 client.get_username_from_access_token(&access_token)
             })
             .map(|username| {
@@ -631,51 +632,6 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     crate::protocol::Message::logged_in(&username),
                 )
             });
-
-        Ok(Some(Box::new(fut)))
-    }
-
-    fn handle_message_oauth_response_token(
-        &mut self,
-        conn: &mut Connection<S>,
-        access_token: &str,
-        refresh_token: &str,
-    ) -> Result<
-        Option<
-            Box<
-                dyn futures::Future<
-                        Item = (ConnectionState, crate::protocol::Message),
-                        Error = Error,
-                    > + Send,
-            >,
-        >,
-    > {
-        let client = conn.oauth_client.take().ok_or_else(|| {
-            Error::UnexpectedMessage {
-                message: crate::protocol::Message::oauth_response_token(
-                    access_token,
-                    refresh_token,
-                ),
-            }
-        })?;
-
-        let term_info = conn.state.term_info().unwrap().clone();
-        let access_token = access_token.to_string();
-        let fut = client.save_tokens(&access_token, refresh_token).and_then(
-            move |_| {
-                client.get_username_from_access_token(&access_token).map(
-                    |username| {
-                        (
-                            ConnectionState::LoggedIn {
-                                term_info,
-                                username: username.clone(),
-                            },
-                            crate::protocol::Message::logged_in(&username),
-                        )
-                    },
-                )
-            },
-        );
 
         Ok(Some(Box::new(fut)))
     }
@@ -720,17 +676,9 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         >,
     > {
         match message {
-            crate::protocol::Message::OauthResponseCode { code } => {
-                self.handle_message_oauth_response_code(conn, &code)
+            crate::protocol::Message::OauthCliResponse { code } => {
+                self.handle_message_oauth_cli_response(conn, &code)
             }
-            crate::protocol::Message::OauthResponseToken {
-                access_token,
-                refresh_token,
-            } => self.handle_message_oauth_response_token(
-                conn,
-                &access_token,
-                &refresh_token,
-            ),
             m => Err(Error::UnauthenticatedMessage { message: m }),
         }
     }

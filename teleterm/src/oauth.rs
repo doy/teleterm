@@ -29,11 +29,10 @@ pub trait Oauth {
         auth_url.to_string()
     }
 
-    fn get_tokens_from_auth_code(
+    fn get_access_token_from_auth_code(
         &self,
         code: &str,
-    ) -> Box<dyn futures::Future<Item = (String, String), Error = Error> + Send>
-    {
+    ) -> Box<dyn futures::Future<Item = String, Error = Error> + Send> {
         let token_cache_file = self.server_token_file(false).unwrap();
         let fut = self
             .client()
@@ -44,24 +43,16 @@ pub trait Oauth {
                 Error::ExchangeCode { msg }
             })
             .and_then(|token| {
-                let access_token = token.access_token().secret().to_string();
-                let refresh_token =
-                    token.refresh_token().unwrap().secret().to_string();
-                cache_refresh_token(
-                    token_cache_file,
-                    &access_token,
-                    &refresh_token,
-                )
-                .map(move |_| (access_token, refresh_token))
+                cache_refresh_token(token_cache_file, &token)
+                    .map(move |_| token.access_token().secret().to_string())
             });
         Box::new(fut)
     }
 
-    fn get_tokens_from_refresh_token(
+    fn get_access_token_from_refresh_token(
         &self,
         token: &str,
-    ) -> Box<dyn futures::Future<Item = (String, String), Error = Error> + Send>
-    {
+    ) -> Box<dyn futures::Future<Item = String, Error = Error> + Send> {
         let token_cache_file = self.server_token_file(false).unwrap();
         let fut = self
             .client()
@@ -74,26 +65,10 @@ pub trait Oauth {
                 Error::ExchangeRefreshToken { msg }
             })
             .and_then(|token| {
-                let access_token = token.access_token().secret().to_string();
-                let refresh_token =
-                    token.refresh_token().unwrap().secret().to_string();
-                cache_refresh_token(
-                    token_cache_file,
-                    &access_token,
-                    &refresh_token,
-                )
-                .map(move |_| (access_token, refresh_token))
+                cache_refresh_token(token_cache_file, &token)
+                    .map(move |_| token.access_token().secret().to_string())
             });
         Box::new(fut)
-    }
-
-    fn save_tokens(
-        &self,
-        access_token: &str,
-        refresh_token: &str,
-    ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
-        let token_cache_file = self.server_token_file(false).unwrap();
-        cache_refresh_token(token_cache_file, access_token, refresh_token)
     }
 
     fn get_username_from_access_token(
@@ -141,10 +116,13 @@ fn client_id_file(
 
 fn cache_refresh_token(
     token_cache_file: std::path::PathBuf,
-    access_token: &str,
-    refresh_token: &str,
+    token: &oauth2::basic::BasicTokenResponse,
 ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
-    let token_data = format!("{}\n{}\n", refresh_token, access_token);
+    let token_data = format!(
+        "{}\n{}\n",
+        token.refresh_token().unwrap().secret(),
+        token.access_token().secret(),
+    );
     let fut = tokio::fs::File::create(token_cache_file.clone())
         .with_context(move || crate::error::CreateFile {
             filename: token_cache_file.to_string_lossy().to_string(),

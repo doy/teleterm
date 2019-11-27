@@ -29,8 +29,7 @@ pub fn run(
                 .context(crate::error::Connect { address }),
         )
     });
-    let client =
-        crate::client::Client::list("teleterm-web", connector, &auth);
+    let client = crate::client::Client::raw("teleterm-web", connector, auth);
 
     let (w_sessions, r_sessions) = tokio::sync::oneshot::channel();
 
@@ -95,6 +94,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             crate::protocol::Message::Error { msg } => {
                 Some(Err(Error::Server { message: msg }))
             }
+            crate::protocol::Message::LoggedIn { .. } => {
+                self.client
+                    .send_message(crate::protocol::Message::list_sessions());
+                None
+            }
             msg => Some(Err(crate::error::Error::UnexpectedMessage {
                 message: msg,
             })),
@@ -116,21 +120,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
 
     fn poll_client(&mut self) -> component_future::Poll<(), Error> {
         match component_future::try_ready!(self.client.poll()).unwrap() {
-            crate::client::Event::Disconnect => {
-                let res = Err(Error::ServerDisconnected);
-                self.w_sessions.take().unwrap().send(res).unwrap();
-                return Ok(component_future::Async::Ready(()));
-            }
-            crate::client::Event::Connect => {
-                self.client
-                    .send_message(crate::protocol::Message::list_sessions());
-            }
             crate::client::Event::ServerMessage(msg) => {
                 if let Some(res) = self.server_message(msg) {
                     self.w_sessions.take().unwrap().send(res).unwrap();
                     return Ok(component_future::Async::Ready(()));
                 }
             }
+            _ => unreachable!(),
         }
         Ok(component_future::Async::DidWork)
     }

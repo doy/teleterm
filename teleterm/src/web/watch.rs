@@ -59,17 +59,14 @@ pub fn run(
                     .context(crate::error::Connect { address }),
             )
         });
-        let client = crate::client::Client::watch(
-            "teleterm-web",
-            connector,
-            &auth,
-            &query_params.id,
-        );
+        let client =
+            crate::client::Client::raw("teleterm-web", connector, &auth);
 
         tokio::spawn(
             Connection::new(
                 gotham::state::request_id(&state),
                 client,
+                &query_params.id,
                 ConnectionState::Connecting(Box::new(
                     stream.context(crate::error::WebSocketAccept),
                 )),
@@ -151,6 +148,7 @@ struct Connection<
 > {
     id: String,
     client: crate::client::Client<S>,
+    watch_id: String,
     conn: ConnectionState,
 }
 
@@ -160,11 +158,13 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn new(
         id: &str,
         client: crate::client::Client<S>,
+        watch_id: &str,
         conn: ConnectionState,
     ) -> Self {
         Self {
             client,
             id: id.to_string(),
+            watch_id: watch_id.to_string(),
             conn,
         }
     }
@@ -180,6 +180,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 let json = serde_json::to_string(msg)
                     .context(crate::error::SerializeMessage)?;
                 Ok(Some(tungstenite::Message::Text(json)))
+            }
+            crate::protocol::Message::LoggedIn { .. } => {
+                self.client.send_message(
+                    crate::protocol::Message::start_watching(&self.watch_id),
+                );
+                Ok(None)
             }
             _ => Ok(None),
         }
@@ -215,16 +221,12 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         };
 
         match component_future::try_ready!(self.client.poll()).unwrap() {
-            crate::client::Event::Disconnect => {
-                // TODO: better reconnect handling?
-                return Ok(component_future::Async::Ready(()));
-            }
-            crate::client::Event::Connect => {}
             crate::client::Event::ServerMessage(msg) => {
                 if let Some(msg) = self.handle_client_message(&msg)? {
                     self.conn.send(msg);
                 }
             }
+            _ => unreachable!(),
         }
         Ok(component_future::Async::DidWork)
     }

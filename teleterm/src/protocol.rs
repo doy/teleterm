@@ -210,6 +210,22 @@ impl Auth {
         self.auth_type().is_oauth()
     }
 
+    pub fn oauth_client(
+        &self,
+        config: &crate::oauth::Config,
+    ) -> Option<Box<dyn crate::oauth::Oauth + Send>> {
+        self.auth_type().oauth_client(config, self.oauth_id())
+    }
+
+    pub fn oauth_id(&self) -> Option<&str> {
+        match self {
+            Self::RecurseCenter { id, .. } => {
+                id.as_ref().map(std::string::String::as_str)
+            }
+            _ => None,
+        }
+    }
+
     pub fn name(&self) -> String {
         self.auth_type().name().to_string()
     }

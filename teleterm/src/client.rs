@@ -373,7 +373,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         return Err(Error::ParseHttpRequestMissingCode);
                     };
                     Ok((
-                        crate::protocol::Message::oauth_response(&code),
+                        crate::protocol::Message::oauth_response_code(&code),
                         lines.into_inner().into_inner(),
                     ))
                 })

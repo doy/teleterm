@@ -248,7 +248,8 @@ pub enum MessageType {
     Resize,
     LoggedIn,
     OauthRequest,
-    OauthResponse,
+    OauthResponseCode,
+    OauthResponseToken,
 }
 
 impl std::convert::TryFrom<u8> for MessageType {
@@ -268,7 +269,8 @@ impl std::convert::TryFrom<u8> for MessageType {
             9 => Self::Resize,
             10 => Self::LoggedIn,
             11 => Self::OauthRequest,
-            12 => Self::OauthResponse,
+            12 => Self::OauthResponseCode,
+            13 => Self::OauthResponseToken,
             _ => return Err(Error::InvalidMessageType { ty: n }),
         })
     }
@@ -310,8 +312,11 @@ pub enum Message {
         url: String,
         id: String,
     },
-    OauthResponse {
+    OauthResponseCode {
         code: String,
+    },
+    OauthResponseToken {
+        token: String,
     },
 }
 
@@ -384,9 +389,15 @@ impl Message {
         }
     }
 
-    pub fn oauth_response(code: &str) -> Self {
-        Self::OauthResponse {
+    pub fn oauth_response_code(code: &str) -> Self {
+        Self::OauthResponseCode {
             code: code.to_string(),
+        }
+    }
+
+    pub fn oauth_response_token(token: &str) -> Self {
+        Self::OauthResponseToken {
+            token: token.to_string(),
         }
     }
 
@@ -404,7 +415,10 @@ impl Message {
             Self::Resize { .. } => MessageType::Resize,
             Self::LoggedIn { .. } => MessageType::LoggedIn,
             Self::OauthRequest { .. } => MessageType::OauthRequest,
-            Self::OauthResponse { .. } => MessageType::OauthResponse,
+            Self::OauthResponseCode { .. } => MessageType::OauthResponseCode,
+            Self::OauthResponseToken { .. } => {
+                MessageType::OauthResponseToken
+            }
         }
     }
 
@@ -445,8 +459,11 @@ impl Message {
 
             // these are security-sensitive, keep them out of logs
             Self::OauthRequest { .. } => "OauthRequest {{ .. }}".to_string(),
-            Self::OauthResponse { .. } => {
-                "OauthResponse {{ .. }}".to_string()
+            Self::OauthResponseCode { .. } => {
+                "OauthResponseCode {{ .. }}".to_string()
+            }
+            Self::OauthResponseToken { .. } => {
+                "OauthResponseToken {{ .. }}".to_string()
             }
 
             _ => format!("{:?}", self),
@@ -631,8 +648,11 @@ impl From<&Message> for Packet {
                 write_str(url, &mut data);
                 write_str(id, &mut data);
             }
-            Message::OauthResponse { code } => {
+            Message::OauthResponseCode { code } => {
                 write_str(code, &mut data);
+            }
+            Message::OauthResponseToken { token } => {
+                write_str(token, &mut data);
             }
         }
 
@@ -820,10 +840,15 @@ impl std::convert::TryFrom<Packet> for Message {
 
                 (Self::OauthRequest { url, id }, data)
             }
-            MessageType::OauthResponse => {
+            MessageType::OauthResponseCode => {
                 let (code, data) = read_str(data)?;
 
-                (Self::OauthResponse { code }, data)
+                (Self::OauthResponseCode { code }, data)
+            }
+            MessageType::OauthResponseToken => {
+                let (token, data) = read_str(data)?;
+
+                (Self::OauthResponseToken { token }, data)
             }
         };
 

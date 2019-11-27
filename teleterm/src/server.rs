@@ -627,7 +627,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     > {
         let client = conn.oauth_client.take().ok_or_else(|| {
             Error::UnexpectedMessage {
-                message: crate::protocol::Message::oauth_response(code),
+                message: crate::protocol::Message::oauth_response_code(code),
             }
         })?;
 
@@ -688,7 +688,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         >,
     > {
         match message {
-            crate::protocol::Message::OauthResponse { code } => {
+            crate::protocol::Message::OauthResponseCode { code } => {
                 self.handle_message_oauth_response(conn, &code)
             }
             m => Err(Error::UnauthenticatedMessage { message: m }),

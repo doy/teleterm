@@ -43,8 +43,15 @@ pub trait Oauth {
                 Error::ExchangeCode { msg }
             })
             .and_then(|token| {
-                cache_refresh_token(token_cache_file, &token)
-                    .map(move |_| token.access_token().secret().to_string())
+                let access_token = token.access_token().secret().to_string();
+                let refresh_token =
+                    token.refresh_token().unwrap().secret().to_string();
+                cache_refresh_token(
+                    token_cache_file,
+                    &access_token,
+                    &refresh_token,
+                )
+                .map(move |_| access_token)
             });
         Box::new(fut)
     }
@@ -65,10 +72,26 @@ pub trait Oauth {
                 Error::ExchangeCode { msg }
             })
             .and_then(|token| {
-                cache_refresh_token(token_cache_file, &token)
-                    .map(move |_| token.access_token().secret().to_string())
+                let access_token = token.access_token().secret().to_string();
+                let refresh_token =
+                    token.refresh_token().unwrap().secret().to_string();
+                cache_refresh_token(
+                    token_cache_file,
+                    &access_token,
+                    &refresh_token,
+                )
+                .map(move |_| access_token)
             });
         Box::new(fut)
+    }
+
+    fn save_tokens(
+        &self,
+        access_token: &str,
+        refresh_token: &str,
+    ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
+        let token_cache_file = self.server_token_file(false).unwrap();
+        cache_refresh_token(token_cache_file, access_token, refresh_token)
     }
 
     fn get_username_from_access_token(
@@ -116,13 +139,10 @@ fn client_id_file(
 
 fn cache_refresh_token(
     token_cache_file: std::path::PathBuf,
-    token: &oauth2::basic::BasicTokenResponse,
+    access_token: &str,
+    refresh_token: &str,
 ) -> Box<dyn futures::Future<Item = (), Error = Error> + Send> {
-    let token_data = format!(
-        "{}\n{}\n",
-        token.refresh_token().unwrap().secret(),
-        token.access_token().secret(),
-    );
+    let token_data = format!("{}\n{}\n", refresh_token, access_token);
     let fut = tokio::fs::File::create(token_cache_file.clone())
         .with_context(move || crate::error::CreateFile {
             filename: token_cache_file.to_string_lossy().to_string(),

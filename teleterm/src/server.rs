@@ -633,6 +633,51 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         Ok(Some(Box::new(fut)))
     }
 
+    fn handle_message_oauth_response_token(
+        &mut self,
+        conn: &mut Connection<S>,
+        access_token: &str,
+        refresh_token: &str,
+    ) -> Result<
+        Option<
+            Box<
+                dyn futures::Future<
+                        Item = (ConnectionState, crate::protocol::Message),
+                        Error = Error,
+                    > + Send,
+            >,
+        >,
+    > {
+        let client = conn.oauth_client.take().ok_or_else(|| {
+            Error::UnexpectedMessage {
+                message: crate::protocol::Message::oauth_response_token(
+                    access_token,
+                    refresh_token,
+                ),
+            }
+        })?;
+
+        let term_info = conn.state.term_info().unwrap().clone();
+        let access_token = access_token.to_string();
+        let fut = client.save_tokens(&access_token, refresh_token).and_then(
+            move |_| {
+                client.get_username_from_access_token(&access_token).map(
+                    |username| {
+                        (
+                            ConnectionState::LoggedIn {
+                                term_info,
+                                username: username.clone(),
+                            },
+                            crate::protocol::Message::logged_in(&username),
+                        )
+                    },
+                )
+            },
+        );
+
+        Ok(Some(Box::new(fut)))
+    }
+
     fn handle_accepted_message(
         &mut self,
         conn: &mut Connection<S>,
@@ -676,6 +721,14 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             crate::protocol::Message::OauthResponseCode { code } => {
                 self.handle_message_oauth_response_code(conn, &code)
             }
+            crate::protocol::Message::OauthResponseToken {
+                access_token,
+                refresh_token,
+            } => self.handle_message_oauth_response_token(
+                conn,
+                &access_token,
+                &refresh_token,
+            ),
             m => Err(Error::UnauthenticatedMessage { message: m }),
         }
     }

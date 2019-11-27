@@ -2,6 +2,7 @@ mod disk_session;
 mod list;
 mod login;
 mod logout;
+mod oauth;
 mod view;
 mod watch;
 mod ws;
@@ -158,6 +159,11 @@ fn router(data: &Config) -> impl gotham::handler::NewHandler {
             .get("/login")
             .with_query_string_extractor::<login::QueryParams>()
             .to(login::run);
+        route
+            .get("/oauth/:method")
+            .with_path_extractor::<oauth::PathParts>()
+            .with_query_string_extractor::<oauth::QueryParams>()
+            .to(oauth::run);
         route.get("/logout").to(logout::run);
     })
 }

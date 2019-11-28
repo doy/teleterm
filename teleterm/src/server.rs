@@ -425,13 +425,11 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             .oauth_configs
             .get(&ty)
             .context(crate::error::AuthTypeMissingOauthConfig { ty })?;
-        let refresh = auth.oauth_id().is_some();
+        let client = auth.oauth_client(config).unwrap();
 
-        conn.oauth_client = Some(auth.oauth_client(config).unwrap());
-        let client = conn.oauth_client.as_ref().unwrap();
-
-        let token_filename = client.server_token_file(true);
-        if let (Some(token_filename), true) = (token_filename, refresh) {
+        if let (Some(token_filename), true) =
+            (client.server_token_file(true), auth.oauth_id().is_some())
+        {
             let term_type = term_type.to_string();
             let client = conn.oauth_client.take().unwrap();
             let fut = tokio::fs::File::open(token_filename.clone())
@@ -470,6 +468,8 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                 });
             Ok(Some(Box::new(fut)))
         } else {
+            conn.oauth_client = Some(client);
+            let client = conn.oauth_client.as_ref().unwrap();
             conn.state.login_oauth_start(term_type, size);
             let authorize_url = client.generate_authorize_url();
             let user_id = client.user_id().to_string();

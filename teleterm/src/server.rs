@@ -451,7 +451,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                         .get_access_token_from_refresh_token(
                             refresh_token.trim(),
                         )
-                        .and_then(|access_token| {
+                        .and_then(move |access_token| {
                             client
                                 .get_username_from_access_token(&access_token)
                         })
@@ -647,7 +647,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         let term_info = conn.state.term_info().unwrap().clone();
         let fut = client
             .get_access_token_from_auth_code(code)
-            .and_then(|access_token| {
+            .and_then(move |access_token| {
                 client.get_username_from_access_token(&access_token)
             })
             .map(|username| {

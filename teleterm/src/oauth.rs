@@ -72,7 +72,7 @@ pub trait Oauth {
     }
 
     fn get_username_from_access_token(
-        self: Box<Self>,
+        &self,
         token: &str,
     ) -> Box<dyn futures::Future<Item = String, Error = Error> + Send>;
 }

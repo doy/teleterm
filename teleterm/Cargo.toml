@@ -31,7 +31,7 @@ lazy-static-include = "2"
 log = { version = "0.4", features = ["release_max_level_info"] }
 mio = "0.6.19"
 native-tls = "0.2"
-oauth2 = "3.0.0-alpha.4" # need the alpha for async support
+oauth2 = "=3.0.0-alpha.4" # need the alpha for async support
 open = "1.1"
 rand = "0.7"
 ratelimit_meter = "5"
@@ -40,7 +40,7 @@ reqwest = "0.9.22"
 serde = "1"
 serde_json = "1"
 sha1 = "0.6"
-snafu = { version = "0.5", features = ["futures-01"] }
+snafu = { version = "0.6", features = ["futures-01"] }
 tokio = "0.1.22"
 tokio-pty-process-stream = "0.2"
 tokio-terminal-resize = "0.1"
@@ -50,7 +50,7 @@ ttyrec = "0.2"
 url = "2"
 users = "0.9"
 uuid = { version = "0.8", features = ["v4"] }
-vt100 = "0.7"
+vt100 = "0.8"
 
 [[bin]]
 name = "tt"

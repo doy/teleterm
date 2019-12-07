@@ -37,7 +37,7 @@ pub trait Oauth {
         let fut = self
             .client()
             .exchange_code(oauth2::AuthorizationCode::new(code.to_string()))
-            .request_async(oauth2::reqwest::async_http_client)
+            .request_future(oauth2::reqwest::future_http_client)
             .map_err(|e| {
                 let msg = stringify_oauth2_http_error(&e);
                 Error::ExchangeCode { msg }
@@ -59,7 +59,7 @@ pub trait Oauth {
             .exchange_refresh_token(&oauth2::RefreshToken::new(
                 token.to_string(),
             ))
-            .request_async(oauth2::reqwest::async_http_client)
+            .request_future(oauth2::reqwest::future_http_client)
             .map_err(|e| {
                 let msg = stringify_oauth2_http_error(&e);
                 Error::ExchangeRefreshToken { msg }
@@ -153,10 +153,12 @@ impl Config {
         oauth2::basic::BasicClient::new(
             oauth2::ClientId::new(self.client_id),
             Some(oauth2::ClientSecret::new(self.client_secret)),
-            oauth2::AuthUrl::new(self.auth_url),
-            Some(oauth2::TokenUrl::new(self.token_url)),
+            oauth2::AuthUrl::new(self.auth_url.to_string()).unwrap(),
+            Some(oauth2::TokenUrl::new(self.token_url.to_string()).unwrap()),
         )
-        .set_redirect_url(oauth2::RedirectUrl::new(self.redirect_url))
+        .set_redirect_url(
+            oauth2::RedirectUrl::new(self.redirect_url.to_string()).unwrap(),
+        )
     }
 }
 
@@ -164,7 +166,7 @@ impl Config {
 // stringification is pretty useless
 fn stringify_oauth2_http_error(
     e: &oauth2::RequestTokenError<
-        oauth2::reqwest::Error,
+        oauth2::reqwest::Error<reqwest::Error>,
         oauth2::StandardErrorResponse<oauth2::basic::BasicErrorResponseType>,
     >,
 ) -> String {

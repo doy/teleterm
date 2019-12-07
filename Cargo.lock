@@ -88,16 +88,6 @@ dependencies = [
 
 [[package]]
 name = "base64"
-version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "489d6c0ed21b11d038c31b6ceccca973e65d73ba3bd8ecb9a2babf5546164643"
-dependencies = [
- "byteorder",
- "safemem",
-]
-
-[[package]]
-name = "base64"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b25d992356d2eb0ed82172f5248873db5560c4721f564b13cb5193bda5e668e"
@@ -635,7 +625,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6fdb60074c9b82c91f8702fa5351b85d22b668dae7f73bf06b44a09bc372380f"
 dependencies = [
  "hashbrown",
- "smallvec 0.6.13",
+ "smallvec",
 ]
 
 [[package]]
@@ -1295,11 +1285,11 @@ dependencies = [
 
 [[package]]
 name = "oauth2"
-version = "3.0.0-alpha.4"
+version = "3.0.0-alpha.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3f982c1bf94501cbc124343dd87490190169f0b1c9cfb4da9caa214876f4ad4"
+checksum = "8ab0a07654b6139dbedd80b904f396313370caa0b397c5d3956dd67909f1b676"
 dependencies = [
- "base64 0.9.3",
+ "base64 0.10.1",
  "failure",
  "failure_derive",
  "futures",
@@ -1307,10 +1297,9 @@ dependencies = [
  "rand 0.6.5",
  "reqwest",
  "serde",
- "serde_derive",
  "serde_json",
  "sha2",
- "tokio-io",
+ "unicode-normalization",
  "url 2.1.0",
 ]
 
@@ -1384,7 +1373,7 @@ dependencies = [
  "libc",
  "redox_syscall",
  "rustc_version",
- "smallvec 0.6.13",
+ "smallvec",
  "winapi 0.3.8",
 ]
 
@@ -1851,12 +1840,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfa8506c1de11c9c4e4c38863ccbe02a305c8188e85a05a784c9e11e1c3910c8"
 
 [[package]]
-name = "safemem"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef703b7cb59335eae2eb93ceb664c0eb7ea6bf567079d843e09420219668e072"
-
-[[package]]
 name = "same-file"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2074,12 +2057,6 @@ checksum = "f7b0758c52e15a8b5e3691eae6cc559f08eee9406e548a4477ba4e67770a82b6"
 dependencies = [
  "maybe-uninit",
 ]
-
-[[package]]
-name = "smallvec"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ecf3b85f68e8abaa7555aa5abdb1153079387e60b718283d732f03897fcfc86"
 
 [[package]]
 name = "snafu"
@@ -2725,11 +2702,11 @@ dependencies = [
 
 [[package]]
 name = "unicode-normalization"
-version = "0.1.11"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b561e267b2326bb4cebfc0ef9e68355c7abe6c6f522aeac2f5bf95d56c59bdcf"
+checksum = "09c8070a9942f5e7cfccd93f490fdebd230ee3c3c9f107cb25bad5351ef671cf"
 dependencies = [
- "smallvec 1.0.0",
+ "smallvec",
 ]
 
 [[package]]

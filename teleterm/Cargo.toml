@@ -31,7 +31,7 @@ lazy-static-include = "2"
 log = { version = "0.4", features = ["release_max_level_info"] }
 mio = "0.6.19"
 native-tls = "0.2"
-oauth2 = "=3.0.0-alpha.4" # need the alpha for async support
+oauth2 = { version = "=3.0.0-alpha.6", features = ["futures-01"] } # need the alpha for async support
 open = "1.1"
 rand = "0.7"
 ratelimit_meter = "5"

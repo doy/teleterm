@@ -21,9 +21,12 @@ enum Msg {
     LoggedOut(seed::fetch::FetchObject<()>),
 }
 
-fn init(_: Url, orders: &mut impl Orders<Msg>) -> Init<crate::model::Model> {
-    log::trace!("init");
-    Init::new(crate::model::Model::new(
+fn after_mount(
+    _url: Url,
+    orders: &mut impl Orders<Msg>,
+) -> AfterMount<crate::model::Model> {
+    log::trace!("after_mount");
+    AfterMount::new(crate::model::Model::new(
         crate::config::Config::load(),
         orders,
     ))
@@ -47,5 +50,7 @@ fn view(model: &crate::model::Model) -> impl View<Msg> {
 pub fn start() {
     console_log::init_with_level(log::Level::Debug).unwrap();
     log::debug!("start");
-    seed::App::build(init, update, view).build_and_start();
+    seed::App::builder(update, view)
+        .after_mount(after_mount)
+        .build_and_start();
 }

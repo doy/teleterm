@@ -1897,9 +1897,9 @@ dependencies = [
 
 [[package]]
 name = "seed"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6c7a232f602b6ff24f090ef43dd71527ad4cd12cb29e028c5e597565bc5c426"
+checksum = "dc7f19588e95ec9196a3957a5aa36e94604475542967b319a8d71d51bb1cb9f0"
 dependencies = [
  "console_error_panic_hook",
  "cookie",

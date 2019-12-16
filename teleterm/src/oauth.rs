@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use oauth2::TokenResponse as _;
-use std::io::Read as _;
 
 mod recurse_center;
 pub use recurse_center::RecurseCenter;
@@ -75,43 +74,6 @@ pub trait Oauth {
         &self,
         token: &str,
     ) -> Box<dyn futures::Future<Item = String, Error = Error> + Send>;
-}
-
-pub fn save_client_auth_id(
-    auth: crate::protocol::AuthType,
-    id: &str,
-) -> impl futures::Future<Item = (), Error = Error> {
-    let id_file = client_id_file(auth, false).unwrap();
-    let id = id.to_string();
-    tokio::fs::File::create(id_file.clone())
-        .with_context(move || crate::error::CreateFile {
-            filename: id_file.to_string_lossy().to_string(),
-        })
-        .and_then(|file| {
-            tokio::io::write_all(file, id).context(crate::error::WriteFile)
-        })
-        .map(|_| ())
-}
-
-pub fn load_client_auth_id(
-    auth: crate::protocol::AuthType,
-) -> Option<String> {
-    client_id_file(auth, true).and_then(|id_file| {
-        std::fs::File::open(id_file).ok().and_then(|mut file| {
-            let mut id = vec![];
-            file.read_to_end(&mut id).ok().map(|_| {
-                std::string::String::from_utf8_lossy(&id).to_string()
-            })
-        })
-    })
-}
-
-fn client_id_file(
-    auth: crate::protocol::AuthType,
-    must_exist: bool,
-) -> Option<std::path::PathBuf> {
-    let filename = format!("client-oauth-{}", auth.name());
-    crate::dirs::Dirs::new().data_file(&filename, must_exist)
 }
 
 fn cache_refresh_token(

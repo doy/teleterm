@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use rand::Rng as _;
+use std::io::Read as _;
 
 const HEARTBEAT_DURATION: std::time::Duration =
     std::time::Duration::from_secs(30);
@@ -388,8 +389,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
                     ))
                 })
                 .and_then(move |(msg, sock)| {
-                    crate::oauth::save_client_auth_id(auth_type, &id)
-                        .map(|_| (msg, sock))
+                    save_client_auth_id(auth_type, &id).map(|_| (msg, sock))
                 })
                 .and_then(|(msg, sock)| {
                     let response = format!(
@@ -647,4 +647,41 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
     fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
         component_future::poll_stream(self, Self::POLL_FNS)
     }
+}
+
+pub fn load_client_auth_id(
+    auth: crate::protocol::AuthType,
+) -> Option<String> {
+    client_id_file(auth, true).and_then(|id_file| {
+        std::fs::File::open(id_file).ok().and_then(|mut file| {
+            let mut id = vec![];
+            file.read_to_end(&mut id).ok().map(|_| {
+                std::string::String::from_utf8_lossy(&id).to_string()
+            })
+        })
+    })
+}
+
+fn save_client_auth_id(
+    auth: crate::protocol::AuthType,
+    id: &str,
+) -> impl futures::Future<Item = (), Error = Error> {
+    let id_file = client_id_file(auth, false).unwrap();
+    let id = id.to_string();
+    tokio::fs::File::create(id_file.clone())
+        .with_context(move || crate::error::CreateFile {
+            filename: id_file.to_string_lossy().to_string(),
+        })
+        .and_then(|file| {
+            tokio::io::write_all(file, id).context(crate::error::WriteFile)
+        })
+        .map(|_| ())
+}
+
+fn client_id_file(
+    auth: crate::protocol::AuthType,
+    must_exist: bool,
+) -> Option<std::path::PathBuf> {
+    let filename = format!("client-oauth-{}", auth.name());
+    crate::dirs::Dirs::new().data_file(&filename, must_exist)
 }

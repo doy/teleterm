@@ -20,6 +20,14 @@ test:
 	@cargo test
 .PHONY: test
 
+check:
+	@cargo check --all-targets
+.PHONY: check
+
+doc:
+	@cargo doc --workspace
+.PHONY: doc
+
 $(SUBCOMMANDS):
 	@cargo run $@
 .PHONY: $(SUBCOMMANDS)

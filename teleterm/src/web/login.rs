@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+use gotham::handler::IntoHandlerError as _;
 use gotham::state::FromState as _;
 
 #[derive(
@@ -18,7 +19,12 @@ struct Response {
 
 pub fn run(
     mut state: gotham::state::State,
-) -> (gotham::state::State, hyper::Response<hyper::Body>) {
+) -> Box<
+    dyn futures::Future<
+            Item = (gotham::state::State, hyper::Response<hyper::Body>),
+            Error = (gotham::state::State, gotham::handler::HandlerError),
+        > + Send,
+> {
     let username = {
         let query_params = QueryParams::borrow_from(&state);
         query_params.username.clone()
@@ -50,33 +56,51 @@ pub fn run(
             .map_err(|e| log::error!("error logging in: {}", e)),
     );
 
-    let session = gotham::middleware::session::SessionData::<
-        crate::web::SessionData,
-    >::borrow_mut_from(&mut state);
+    Box::new(r_login.then(|res| {
+        let session = gotham::middleware::session::SessionData::<
+            crate::web::SessionData,
+        >::borrow_mut_from(&mut state);
+        match res {
+            Ok(login) => {
+                let session = gotham::middleware::session::SessionData::<
+                    crate::web::SessionData,
+                >::borrow_mut_from(&mut state);
 
-    match r_login.wait().unwrap() {
-        Ok(login) => {
-            session.login = Some(login);
+                match login {
+                    Ok(login) => {
+                        session.login = Some(login);
+                        futures::future::ok((
+                            state,
+                            hyper::Response::new(hyper::Body::from(
+                                serde_json::to_string(&Response { username })
+                                    .unwrap(),
+                            )),
+                        ))
+                    }
+                    Err(e) => {
+                        session.login = None;
+                        log::error!("error logging in: {}", e);
+                        futures::future::err((
+                            state,
+                            e.into_handler_error().with_status(
+                                hyper::StatusCode::INTERNAL_SERVER_ERROR,
+                            ),
+                        ))
+                    }
+                }
+            }
+            Err(e) => {
+                session.login = None;
+                log::error!("error logging in: {}", e);
+                futures::future::err((
+                    state,
+                    e.into_handler_error().with_status(
+                        hyper::StatusCode::INTERNAL_SERVER_ERROR,
+                    ),
+                ))
+            }
         }
-        Err(e) => {
-            session.login = None;
-            log::error!("error logging in: {}", e);
-            return (
-                state,
-                hyper::Response::builder()
-                    .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(hyper::Body::empty())
-                    .unwrap(),
-            );
-        }
-    }
-
-    (
-        state,
-        hyper::Response::new(hyper::Body::from(
-            serde_json::to_string(&Response { username }).unwrap(),
-        )),
-    )
+    }))
 }
 
 pub(crate) struct Client<

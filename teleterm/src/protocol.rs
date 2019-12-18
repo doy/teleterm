@@ -144,20 +144,14 @@ impl AuthType {
         self,
         config: &crate::oauth::Config,
         id: Option<&str>,
-    ) -> Option<Box<dyn crate::oauth::Oauth + Send>> {
-        match self {
-            Self::RecurseCenter => {
-                Some(Box::new(crate::oauth::RecurseCenter::new(
-                    config.clone(),
-                    &id.map_or_else(
-                        || format!("{}", uuid::Uuid::new_v4()),
-                        std::string::ToString::to_string,
-                    ),
-                )))
-            }
-            ty if !ty.is_oauth() => None,
-            _ => unreachable!(),
-        }
+    ) -> Option<crate::oauth::Oauth> {
+        Some(crate::oauth::Oauth::new(
+            config.clone(),
+            id.map_or_else(
+                || format!("{}", uuid::Uuid::new_v4()),
+                std::string::ToString::to_string,
+            ),
+        ))
     }
 }
 
@@ -213,7 +207,7 @@ impl Auth {
     pub fn oauth_client(
         &self,
         config: &crate::oauth::Config,
-    ) -> Option<Box<dyn crate::oauth::Oauth + Send>> {
+    ) -> Option<crate::oauth::Oauth> {
         self.auth_type().oauth_client(config, self.oauth_id())
     }
 

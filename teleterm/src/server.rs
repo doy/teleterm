@@ -55,6 +55,7 @@ struct TerminalInfo {
 enum ConnectionState {
     Accepted,
     LoggingIn {
+        auth_type: crate::protocol::AuthType,
         term_info: TerminalInfo,
     },
     LoggedIn {
@@ -88,7 +89,17 @@ impl ConnectionState {
         }
     }
 
-    fn term_info(&mut self) -> Option<&TerminalInfo> {
+    fn auth_type(&self) -> Option<crate::protocol::AuthType> {
+        match self {
+            Self::Accepted => None,
+            Self::LoggingIn { auth_type, .. } => Some(*auth_type),
+            Self::LoggedIn { .. } => None,
+            Self::Streaming { .. } => None,
+            Self::Watching { .. } => None,
+        }
+    }
+
+    fn term_info(&self) -> Option<&TerminalInfo> {
         match self {
             Self::Accepted => None,
             Self::LoggingIn { term_info, .. } => Some(term_info),
@@ -159,11 +170,13 @@ impl ConnectionState {
 
     fn login_oauth_start(
         &mut self,
+        auth_type: crate::protocol::AuthType,
         term_type: &str,
         size: crate::term::Size,
     ) {
         if let Self::Accepted = self {
             *self = Self::LoggingIn {
+                auth_type,
                 term_info: TerminalInfo {
                     term: term_type.to_string(),
                     size,
@@ -218,7 +231,7 @@ struct Connection<
     closed: bool,
     state: ConnectionState,
     last_activity: std::time::Instant,
-    oauth_client: Option<Box<dyn crate::oauth::Oauth + Send>>,
+    oauth_client: Option<crate::oauth::Oauth>,
 }
 
 impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
@@ -427,32 +440,19 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             .context(crate::error::AuthTypeMissingOauthConfig { ty })?;
         let client = auth.oauth_client(config).unwrap();
 
-        if let (Some(token_filename), true) =
-            (client.server_token_file(true), auth.oauth_id().is_some())
+        if client.server_token_file(true).is_some()
+            && auth.oauth_id().is_some()
         {
             let term_type = term_type.to_string();
-            let client = conn.oauth_client.take().unwrap();
-            let fut = tokio::fs::File::open(token_filename.clone())
-                .with_context(move || crate::error::OpenFile {
-                    filename: token_filename.to_string_lossy().to_string(),
-                })
-                .and_then(|file| {
-                    tokio::io::lines(std::io::BufReader::new(file))
-                        .into_future()
-                        .map_err(|(e, _)| e)
-                        .context(crate::error::ReadFile)
-                })
-                .and_then(|(refresh_token, _)| {
-                    // XXX unwrap here isn't super safe
-                    let refresh_token = refresh_token.unwrap();
-                    client
-                        .get_access_token_from_refresh_token(
-                            refresh_token.trim(),
+            let fut = client
+                .get_access_token_from_refresh_token()
+                .and_then(move |access_token| match ty {
+                    crate::protocol::AuthType::RecurseCenter => {
+                        crate::auth::recurse_center::get_username(
+                            &access_token,
                         )
-                        .and_then(move |access_token| {
-                            client
-                                .get_username_from_access_token(&access_token)
-                        })
+                    }
+                    _ => unreachable!(),
                 })
                 .map(move |username| {
                     (
@@ -470,7 +470,7 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
         } else {
             conn.oauth_client = Some(client);
             let client = conn.oauth_client.as_ref().unwrap();
-            conn.state.login_oauth_start(term_type, size);
+            conn.state.login_oauth_start(ty, term_type, size);
             let authorize_url = client.generate_authorize_url();
             let user_id = client.user_id().to_string();
             conn.send_message(crate::protocol::Message::oauth_cli_request(
@@ -644,11 +644,15 @@ impl<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + 'static>
             }
         })?;
 
+        let ty = conn.state.auth_type().unwrap();
         let term_info = conn.state.term_info().unwrap().clone();
         let fut = client
             .get_access_token_from_auth_code(code)
-            .and_then(move |access_token| {
-                client.get_username_from_access_token(&access_token)
+            .and_then(move |access_token| match ty {
+                crate::protocol::AuthType::RecurseCenter => {
+                    crate::auth::recurse_center::get_username(&access_token)
+                }
+                _ => unreachable!(),
             })
             .map(|username| {
                 (

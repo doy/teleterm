@@ -919,7 +919,7 @@ where
                     let redirect_url =
                         url::Url::parse(crate::oauth::CLI_REDIRECT_URL)
                             .unwrap();
-                    crate::oauth::RecurseCenter::config(
+                    crate::auth::recurse_center::oauth_config(
                         &client_id,
                         &client_secret,
                         &redirect_url,

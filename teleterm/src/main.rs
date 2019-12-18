@@ -18,6 +18,7 @@ const _DUMMY_DEPENDENCY: &str = include_str!("../Cargo.toml");
 mod prelude;
 
 mod async_stdin;
+mod auth;
 mod client;
 mod cmd;
 mod config;

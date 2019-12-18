@@ -17,7 +17,7 @@ release:
 .PHONY: release
 
 test:
-	@cargo test
+	@RUST_BACKTRACE=1 cargo test
 .PHONY: test
 
 check:
@@ -29,16 +29,16 @@ doc:
 .PHONY: doc
 
 $(SUBCOMMANDS):
-	@cargo run $@
+	@RUST_BACKTRACE=1 cargo run $@
 .PHONY: $(SUBCOMMANDS)
 
 $(NONINTERACTIVE_SUBCOMMANDS:%=d%):
-	@RUST_LOG=tt=debug cargo run $$(echo $@ | sed 's/^d//')
+	@RUST_LOG=tt=debug RUST_BACKTRACE=1 cargo run $$(echo $@ | sed 's/^d//')
 .PHONY: $(NONINTERACTIVE_SUBCOMMANDS:%=d%)
 
 $(INTERACTIVE_SUBCOMMANDS:%=d%):
 	@echo "logging to $$(echo $@ | sed 's/^d//').log"
-	@RUST_LOG=tt=debug cargo run $$(echo $@ | sed 's/^d//') 2>>$$(echo $@ | sed 's/^d//').log
+	@RUST_LOG=tt=debug RUST_BACKTRACE=1 cargo run $$(echo $@ | sed 's/^d//') 2>>$$(echo $@ | sed 's/^d//').log
 .PHONY: $(INTERACTIVE_SUBCOMMANDS:%=d%)
 
 $(SUBCOMMANDS:%=r%):

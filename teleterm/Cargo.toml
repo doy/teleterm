@@ -25,7 +25,7 @@ futures = "0.1.29"
 gotham = { git = "https://github.com/gotham-rs/gotham", rev = "d2395926b93710832f8d72b49c9bd3e77516e386" }
 gotham_derive = "0.4"
 handlebars = "2"
-hyper = "0.12"
+hyper = "0.14"
 lazy_static = "1"
 lazy-static-include = "2"
 log = { version = "0.4", features = ["release_max_level_info"] }

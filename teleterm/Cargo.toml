@@ -41,7 +41,7 @@ serde = "1"
 serde_json = "1"
 sha1 = "0.6"
 snafu = { version = "0.6", features = ["futures-01"] }
-tokio = "0.1.22"
+tokio = "1.18.5"
 tokio-pty-process-stream = "0.2"
 tokio-terminal-resize = "0.1"
 tokio-tls = "0.2"
